@@ -69,3 +69,16 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.p2paudio.AudioBroadcastExtension
         PRODUCT_NAME: AudioBroadcastExtension
+
+  P2PAudioTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Tests
+    dependencies:
+      - target: P2PAudio
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.p2paudio.tests
+        PRODUCT_NAME: P2PAudioTests

@@ -102,9 +102,12 @@ final class ReplayKitAudioCaptureController: ObservableObject {
 
 private extension Data {
     func readUInt32LE(at offset: Int) -> UInt32 {
-        let range = offset..<(offset + MemoryLayout<UInt32>.size)
-        return subdata(in: range).withUnsafeBytes { bytes in
-            UInt32(littleEndian: bytes.load(as: UInt32.self))
+        guard offset + 3 < count else {
+            return 0
         }
+        return UInt32(self[offset])
+            | (UInt32(self[offset + 1]) << 8)
+            | (UInt32(self[offset + 2]) << 16)
+            | (UInt32(self[offset + 3]) << 24)
     }
 }

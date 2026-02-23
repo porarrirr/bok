@@ -14,9 +14,13 @@
 - iOS ReplayKit extension PCM bridge into app process via App Group shared file.
 - iOS receiver PCM media playback pipeline (`AVAudioEngine`).
 - iOS QR camera scanner UI integration (AVFoundation).
+- Cross-platform QR payload transport compression (zlib + Base64URL) with legacy JSON decode fallback.
+- iOS ICE gathering timeout handling to avoid indefinite connect wait.
+- Android lint blockers addressed for capture permission handling and camera feature declaration.
+- QR payload codec regression tests expanded for compressed transport failure cases (Android + iOS test sources).
 
 ## Pending follow-up
 
 - iOS Xcode project wiring, entitlements, and on-device signing validation.
-- QR payload chunking/compression for very large SDPs in strict camera environments.
+- Optional QR payload chunking for edge cases where compressed SDP still exceeds one symbol.
 - Optional migration from DataChannel PCM transport to RTP custom audio device path.

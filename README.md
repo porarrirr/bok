@@ -13,4 +13,5 @@ This repository contains a native Android + iOS implementation for relaying devi
 - No media relay server and no signaling server.
 - LAN-only connection using host ICE candidates.
 - 1:1 session via QR exchange.
+- QR payload transport supports compressed mode (`p2paudio-z1:` zlib + Base64URL) and legacy raw JSON.
 - iOS sender can capture ReplayKit app audio only (not system-wide sounds).

@@ -1,8 +1,10 @@
 package com.example.p2paudio.capture
 
+import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
@@ -23,15 +25,21 @@ class AndroidAudioCaptureManager(
         if (!isSupported()) {
             return Result.failure(IllegalStateException("AudioPlaybackCapture requires Android 10+"))
         }
+        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            return Result.failure(SecurityException("RECORD_AUDIO permission is required"))
+        }
 
         val projectionManager = context.getSystemService(MediaProjectionManager::class.java)
         val projection = projectionManager.getMediaProjection(Activity.RESULT_OK, mediaProjectionPermissionResultData)
             ?: return Result.failure(IllegalStateException("Failed to create MediaProjection"))
 
-        val config = AudioPlaybackCaptureConfiguration.Builder(projection)
-            .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
-            .addMatchingUsage(AudioAttributes.USAGE_GAME)
-            .build()
+        val configBuilder = AudioPlaybackCaptureConfiguration.Builder(projection)
+        CAPTURE_USAGES.forEach { usage ->
+            runCatching {
+                configBuilder.addMatchingUsage(usage)
+            }
+        }
+        val config = configBuilder.build()
 
         val format = AudioFormat.Builder()
             .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
@@ -50,7 +58,8 @@ class AndroidAudioCaptureManager(
                 IllegalStateException("Invalid AudioRecord min buffer size: $minBuffer")
             )
         }
-        return runCatching {
+
+        return try {
             val record = AudioRecord.Builder()
                 .setAudioPlaybackCaptureConfig(config)
                 .setAudioFormat(format)
@@ -65,9 +74,13 @@ class AndroidAudioCaptureManager(
 
             mediaProjection = projection
             audioRecord = record
-            record
-        }.onFailure {
+            Result.success(record)
+        } catch (e: SecurityException) {
             projection.stop()
+            Result.failure(IllegalStateException("RECORD_AUDIO permission denied while starting capture", e))
+        } catch (e: Exception) {
+            projection.stop()
+            Result.failure(e)
         }
     }
 
@@ -86,5 +99,13 @@ class AndroidAudioCaptureManager(
 
     companion object {
         const val SAMPLE_RATE = 48_000
+        private val CAPTURE_USAGES = intArrayOf(
+            AudioAttributes.USAGE_MEDIA,
+            AudioAttributes.USAGE_GAME,
+            AudioAttributes.USAGE_UNKNOWN,
+            AudioAttributes.USAGE_NOTIFICATION,
+            AudioAttributes.USAGE_NOTIFICATION_RINGTONE,
+            AudioAttributes.USAGE_ASSISTANCE_SONIFICATION
+        )
     }
 }

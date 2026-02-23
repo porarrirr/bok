@@ -37,6 +37,16 @@
 }
 ```
 
+## QR Transport Encoding
+
+- Canonical payload is JSON (`SessionOfferPayload` / `SessionAnswerPayload`).
+- Implementations may emit a compressed transport string:
+  - Prefix: `p2paudio-z1:`
+  - Body: `zlib(json-bytes)` encoded as Base64URL without padding.
+- Decoders must accept both:
+  - legacy raw JSON string
+  - compressed transport string with the prefix above
+
 ## Audio PCM Packet (`audio-pcm`)
 
 Binary packet format (little-endian):
