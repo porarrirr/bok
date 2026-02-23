@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/p2p-audio/session-answer.schema.json",
+  "title": "SessionAnswerPayload",
+  "type": "object",
+  "required": [
+    "version",
+    "role",
+    "sessionId",
+    "receiverDeviceName",
+    "receiverPubKeyFingerprint",
+    "answerSdp",
+    "expiresAtUnixMs"
+  ],
+  "properties": {
+    "version": { "const": "1" },
+    "role": { "const": "receiver" },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "receiverDeviceName": { "type": "string", "minLength": 1 },
+    "receiverPubKeyFingerprint": { "type": "string", "minLength": 1 },
+    "answerSdp": { "type": "string", "minLength": 1 },
+    "expiresAtUnixMs": { "type": "integer", "minimum": 1 }
+  },
+  "additionalProperties": false
+}

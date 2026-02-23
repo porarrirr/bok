@@ -1,0 +1,11 @@
+package com.example.p2paudio.model
+
+enum class FailureCode {
+    PERMISSION_DENIED,
+    AUDIO_CAPTURE_NOT_SUPPORTED,
+    WEBRTC_NEGOTIATION_FAILED,
+    PEER_UNREACHABLE,
+    NETWORK_CHANGED,
+    SESSION_EXPIRED,
+    INVALID_PAYLOAD
+}

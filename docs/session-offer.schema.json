@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/p2p-audio/session-offer.schema.json",
+  "title": "SessionOfferPayload",
+  "type": "object",
+  "required": [
+    "version",
+    "role",
+    "sessionId",
+    "senderDeviceName",
+    "senderPubKeyFingerprint",
+    "offerSdp",
+    "expiresAtUnixMs"
+  ],
+  "properties": {
+    "version": { "const": "1" },
+    "role": { "const": "sender" },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "senderDeviceName": { "type": "string", "minLength": 1 },
+    "senderPubKeyFingerprint": { "type": "string", "minLength": 1 },
+    "offerSdp": { "type": "string", "minLength": 1 },
+    "expiresAtUnixMs": { "type": "integer", "minimum": 1 }
+  },
+  "additionalProperties": false
+}
