@@ -1,4 +1,4 @@
-# iOS App Skeleton
+# iOS App
 
 This folder contains Swift source files for an iOS target using ReplayKit + WebRTC.
 
@@ -15,6 +15,25 @@ This folder contains Swift source files for an iOS target using ReplayKit + WebR
    - `NSCameraUsageDescription` (QR scanner).
    - `NSMicrophoneUsageDescription` (if ReplayKit UI path requests it in your target setup).
 6. Wire these source files into app/extension targets.
+7. Optional: use `mobile-ios/project.yml` (`xcodegen`) to generate `P2PAudio.xcodeproj`.
+
+## GitHub Actions: IPA build
+
+Workflow: `.github/workflows/ios-ipa.yml`
+
+Run it from `Actions -> Build iOS IPA -> Run workflow`.
+This workflow builds an unsigned `.ipa` (no code signing secrets required).
+If `project_path` is missing, CI auto-generates the project from `project_spec_path` using `xcodegen`.
+
+`workflow_dispatch` inputs:
+
+- `project_path`: `.xcodeproj` or `.xcworkspace` path in this repo.
+- `project_spec_path`: `xcodegen` spec path used as fallback when `project_path` does not exist.
+- `scheme`: Scheme name to archive.
+- `configuration`: Usually `Release`.
+- `publish_release`: `true` にすると `unsigned.ipa` を GitHub Releases に配置。
+- `release_tag`: リリースタグ（空なら `ios-unsigned-<run_number>`）。
+- `release_name`: リリース名（空なら自動）。
 
 ## Notes
 
@@ -22,3 +41,5 @@ This folder contains Swift source files for an iOS target using ReplayKit + WebR
 - Ringtones/notifications/system-wide audio cannot be captured by third-party apps.
 - There is no relay/signaling server. QR payload exchange is device-to-device.
 - PCM audio is transported over WebRTC DataChannel label `audio-pcm`.
+- QR payload transport supports compressed mode (`p2paudio-z1:` zlib + Base64URL) and legacy raw JSON decode fallback.
+- Unsigned IPA cannot be installed directly on physical iOS devices without re-signing.

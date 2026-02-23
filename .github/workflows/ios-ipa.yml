@@ -1,0 +1,195 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_path:
+        description: "Path to .xcodeproj or .xcworkspace"
+        required: true
+        default: "mobile-ios/P2PAudio.xcodeproj"
+      project_spec_path:
+        description: "Path to xcodegen project spec (used when project_path is missing)"
+        required: true
+        default: "mobile-ios/project.yml"
+      scheme:
+        description: "Xcode scheme to archive"
+        required: true
+        default: "P2PAudio"
+      configuration:
+        description: "Build configuration"
+        required: true
+        default: "Release"
+      publish_release:
+        description: "Publish IPA to GitHub Releases"
+        required: true
+        type: boolean
+        default: true
+      release_tag:
+        description: "Release tag (empty = auto)"
+        required: false
+        default: ""
+      release_name:
+        description: "Release name (empty = auto)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build-ipa:
+    runs-on: macos-15
+    env:
+      ARCHIVE_PATH: ${{ github.workspace }}/build/P2PAudio.xcarchive
+      EXPORT_PATH: ${{ github.workspace }}/build/export
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve project container
+        run: |
+          set -euo pipefail
+          PROJECT_PATH="${{ inputs.project_path }}"
+          SPEC_PATH="${{ inputs.project_spec_path }}"
+
+          if [ -e "$PROJECT_PATH" ]; then
+            case "$PROJECT_PATH" in
+              *.xcodeproj|*.xcworkspace) ;;
+              *)
+                echo "project_path must be .xcodeproj or .xcworkspace"
+                exit 1
+                ;;
+            esac
+            echo "RESOLVED_PROJECT_PATH=$PROJECT_PATH" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          if [ ! -e "$SPEC_PATH" ]; then
+            echo "Project container not found: $PROJECT_PATH"
+            echo "Project spec not found: $SPEC_PATH"
+            exit 1
+          fi
+
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+
+          xcodegen generate --spec "$SPEC_PATH"
+
+          if [ -e "$PROJECT_PATH" ]; then
+            echo "RESOLVED_PROJECT_PATH=$PROJECT_PATH" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          SPEC_DIR="$(cd "$(dirname "$SPEC_PATH")" && pwd)"
+          GENERATED_PROJECT="$(find "$SPEC_DIR" -maxdepth 1 -name '*.xcodeproj' | head -n 1)"
+          GENERATED_WORKSPACE="$(find "$SPEC_DIR" -maxdepth 1 -name '*.xcworkspace' | head -n 1)"
+
+          if [ -n "$GENERATED_PROJECT" ]; then
+            echo "RESOLVED_PROJECT_PATH=$GENERATED_PROJECT" >> "$GITHUB_ENV"
+          elif [ -n "$GENERATED_WORKSPACE" ]; then
+            echo "RESOLVED_PROJECT_PATH=$GENERATED_WORKSPACE" >> "$GITHUB_ENV"
+          else
+            echo "xcodegen completed but no .xcodeproj/.xcworkspace was found in $SPEC_DIR"
+            exit 1
+          fi
+
+      - name: Validate resolved project path
+        run: |
+          set -euo pipefail
+          case "${RESOLVED_PROJECT_PATH}" in
+            *.xcodeproj|*.xcworkspace) ;;
+            *)
+              echo "Resolved path must be .xcodeproj or .xcworkspace"
+              exit 1
+              ;;
+          esac
+
+      - name: Archive (unsigned)
+        run: |
+          set -euo pipefail
+          rm -rf "$ARCHIVE_PATH" "$EXPORT_PATH"
+
+          PROJECT_PATH="${RESOLVED_PROJECT_PATH}"
+          SCHEME="${{ inputs.scheme }}"
+          CONFIGURATION="${{ inputs.configuration }}"
+
+          if [[ "$PROJECT_PATH" == *.xcworkspace ]]; then
+            xcodebuild archive \
+              -workspace "$PROJECT_PATH" \
+              -scheme "$SCHEME" \
+              -configuration "$CONFIGURATION" \
+              -sdk iphoneos \
+              -archivePath "$ARCHIVE_PATH" \
+              -destination generic/platform=iOS \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY=""
+          else
+            xcodebuild archive \
+              -project "$PROJECT_PATH" \
+              -scheme "$SCHEME" \
+              -configuration "$CONFIGURATION" \
+              -sdk iphoneos \
+              -archivePath "$ARCHIVE_PATH" \
+              -destination generic/platform=iOS \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY=""
+          fi
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          mkdir -p "$EXPORT_PATH/Payload"
+          APP_PATH="$(find "$ARCHIVE_PATH/Products/Applications" -maxdepth 1 -name '*.app' | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app found in archive: $ARCHIVE_PATH"
+            exit 1
+          fi
+          cp -R "$APP_PATH" "$EXPORT_PATH/Payload/"
+          (cd "$EXPORT_PATH" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/build/unsigned.ipa" Payload)
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa-unsigned
+          path: |
+            build/unsigned.ipa
+            build/P2PAudio.xcarchive/dSYMs/*.dSYM
+          if-no-files-found: error
+
+      - name: Resolve release metadata
+        if: ${{ inputs.publish_release }}
+        run: |
+          set -euo pipefail
+          TAG_INPUT="${{ inputs.release_tag }}"
+          NAME_INPUT="${{ inputs.release_name }}"
+
+          if [ -n "$TAG_INPUT" ]; then
+            RELEASE_TAG="$TAG_INPUT"
+          else
+            RELEASE_TAG="ios-unsigned-${GITHUB_RUN_NUMBER}"
+          fi
+
+          if [ -n "$NAME_INPUT" ]; then
+            RELEASE_NAME="$NAME_INPUT"
+          else
+            RELEASE_NAME="iOS Unsigned IPA ${GITHUB_RUN_NUMBER}"
+          fi
+
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "RELEASE_NAME=$RELEASE_NAME" >> "$GITHUB_ENV"
+
+      - name: Publish to GitHub Releases
+        if: ${{ inputs.publish_release }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_NAME }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            build/unsigned.ipa
