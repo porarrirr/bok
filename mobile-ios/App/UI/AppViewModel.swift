@@ -9,15 +9,8 @@ final class AppViewModel: ObservableObject {
     @Published var answerPayloadRaw: String = ""
     @Published var activeSessionId: String = ""
 
-    private let sessionController: WebRTCSessionController
-    private let replayKitController = ReplayKitAudioCaptureController()
-    private let pcmPlayer = PcmPlayer()
-
-    private var isConsumingReplayKitFrames = false
-    private var didShowReceivingMessage = false
-
-    init() {
-        self.sessionController = WebRTCSessionController(
+    private lazy var sessionController: WebRTCSessionController = {
+        WebRTCSessionController(
             stateHandler: { [weak self] state, message in
                 DispatchQueue.main.async {
                     self?.streamState = state
@@ -35,7 +28,12 @@ final class AppViewModel: ObservableObject {
                 }
             }
         )
-    }
+    }()
+    private let replayKitController = ReplayKitAudioCaptureController()
+    private let pcmPlayer = PcmPlayer()
+
+    private var isConsumingReplayKitFrames = false
+    private var didShowReceivingMessage = false
 
     func startSenderFlow() {
         replayKitController.refreshBroadcastState()
@@ -51,6 +49,8 @@ final class AppViewModel: ObservableObject {
             }
             isConsumingReplayKitFrames = true
         }
+        streamState = .capturing
+        statusMessage = "Capturing ReplayKit app audio"
 
         sessionController.createOffer { [weak self] result in
             guard let self else { return }
