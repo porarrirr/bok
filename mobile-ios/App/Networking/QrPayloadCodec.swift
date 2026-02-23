@@ -1,4 +1,5 @@
 import Foundation
+import Compression
 
 enum QrPayloadCodec {
     private static let encoder = JSONEncoder()
@@ -43,10 +44,7 @@ enum QrPayloadCodec {
         if data.count < minBytesForCompression {
             return raw
         }
-        guard #available(iOS 13.0, *) else {
-            return raw
-        }
-        guard let compressed = try? data.compressed(using: .zlib) else {
+        guard let compressed = zlibCompress(data) else {
             return raw
         }
         let encoded = makeBase64UrlSafe(compressed.base64EncodedString())
@@ -69,11 +67,7 @@ enum QrPayloadCodec {
         guard let compressedData = Data(base64Encoded: standardBase64) else {
             throw SessionFailure(code: .invalidPayload, message: "Compressed payload base64 is invalid")
         }
-        guard #available(iOS 13.0, *) else {
-            throw SessionFailure(code: .invalidPayload, message: "Compressed payload is unsupported on this iOS version")
-        }
-        guard let decompressed = try? compressedData.decompressed(using: .zlib),
-              decompressed.count <= maxDecompressedBytes,
+        guard let decompressed = zlibDecompress(compressedData, maxOutputBytes: maxDecompressedBytes),
               let normalized = String(data: decompressed, encoding: .utf8) else {
             throw SessionFailure(code: .invalidPayload, message: "Failed to decode compressed payload")
         }
@@ -96,5 +90,74 @@ enum QrPayloadCodec {
             normalized += String(repeating: "=", count: 4 - remainder)
         }
         return normalized
+    }
+
+    private static func zlibCompress(_ data: Data) -> Data? {
+        if data.isEmpty {
+            return Data()
+        }
+        let sourceCount = data.count
+        let maxOutputSize = max(1024, sourceCount * 4)
+        var destinationSize = max(512, sourceCount / 2)
+
+        return data.withUnsafeBytes { sourceBuffer in
+            guard let sourceBase = sourceBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return nil
+            }
+
+            while destinationSize <= maxOutputSize {
+                var destination = Data(count: destinationSize)
+                let compressedCount = destination.withUnsafeMutableBytes { destinationBuffer in
+                    guard let destinationBase = destinationBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                        return 0
+                    }
+                    return compression_encode_buffer(
+                        destinationBase,
+                        destinationSize,
+                        sourceBase,
+                        sourceCount,
+                        nil,
+                        COMPRESSION_ZLIB
+                    )
+                }
+                if compressedCount > 0 {
+                    destination.count = compressedCount
+                    return destination
+                }
+                destinationSize *= 2
+            }
+            return nil
+        }
+    }
+
+    private static func zlibDecompress(_ data: Data, maxOutputBytes: Int) -> Data? {
+        if data.isEmpty {
+            return Data()
+        }
+
+        return data.withUnsafeBytes { sourceBuffer in
+            guard let sourceBase = sourceBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return nil
+            }
+            var destination = Data(count: maxOutputBytes)
+            let decompressedCount = destination.withUnsafeMutableBytes { destinationBuffer in
+                guard let destinationBase = destinationBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                    return 0
+                }
+                return compression_decode_buffer(
+                    destinationBase,
+                    maxOutputBytes,
+                    sourceBase,
+                    data.count,
+                    nil,
+                    COMPRESSION_ZLIB
+                )
+            }
+            guard decompressedCount > 0 else {
+                return nil
+            }
+            destination.count = decompressedCount
+            return destination
+        }
     }
 }
