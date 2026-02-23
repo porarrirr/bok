@@ -66,43 +66,54 @@ enum PcmPacketCodec {
 private extension Data {
     mutating func appendUInt16LE(_ value: UInt16) {
         var little = value.littleEndian
-        withUnsafeBytes(of: &little) { bytes in
+        Swift.withUnsafeBytes(of: &little) { bytes in
             append(contentsOf: bytes)
         }
     }
 
     mutating func appendUInt32LE(_ value: UInt32) {
         var little = value.littleEndian
-        withUnsafeBytes(of: &little) { bytes in
+        Swift.withUnsafeBytes(of: &little) { bytes in
             append(contentsOf: bytes)
         }
     }
 
     mutating func appendUInt64LE(_ value: UInt64) {
         var little = value.littleEndian
-        withUnsafeBytes(of: &little) { bytes in
+        Swift.withUnsafeBytes(of: &little) { bytes in
             append(contentsOf: bytes)
         }
     }
 
     func readUInt16LE(at offset: Int) -> UInt16 {
-        let range = offset..<(offset + MemoryLayout<UInt16>.size)
-        return subdata(in: range).withUnsafeBytes { bytes in
-            UInt16(littleEndian: bytes.load(as: UInt16.self))
+        guard offset + 1 < count else {
+            return 0
         }
+        return UInt16(self[offset])
+            | (UInt16(self[offset + 1]) << 8)
     }
 
     func readUInt32LE(at offset: Int) -> UInt32 {
-        let range = offset..<(offset + MemoryLayout<UInt32>.size)
-        return subdata(in: range).withUnsafeBytes { bytes in
-            UInt32(littleEndian: bytes.load(as: UInt32.self))
+        guard offset + 3 < count else {
+            return 0
         }
+        return UInt32(self[offset])
+            | (UInt32(self[offset + 1]) << 8)
+            | (UInt32(self[offset + 2]) << 16)
+            | (UInt32(self[offset + 3]) << 24)
     }
 
     func readUInt64LE(at offset: Int) -> UInt64 {
-        let range = offset..<(offset + MemoryLayout<UInt64>.size)
-        return subdata(in: range).withUnsafeBytes { bytes in
-            UInt64(littleEndian: bytes.load(as: UInt64.self))
+        guard offset + 7 < count else {
+            return 0
         }
+        return UInt64(self[offset])
+            | (UInt64(self[offset + 1]) << 8)
+            | (UInt64(self[offset + 2]) << 16)
+            | (UInt64(self[offset + 3]) << 24)
+            | (UInt64(self[offset + 4]) << 32)
+            | (UInt64(self[offset + 5]) << 40)
+            | (UInt64(self[offset + 6]) << 48)
+            | (UInt64(self[offset + 7]) << 56)
     }
 }

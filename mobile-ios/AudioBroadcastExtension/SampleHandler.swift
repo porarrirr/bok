@@ -204,21 +204,21 @@ private enum BridgePcmPacketCodec {
 private extension Data {
     mutating func appendUInt16LE(_ value: UInt16) {
         var little = value.littleEndian
-        withUnsafeBytes(of: &little) { bytes in
+        Swift.withUnsafeBytes(of: &little) { bytes in
             append(contentsOf: bytes)
         }
     }
 
     mutating func appendUInt32LE(_ value: UInt32) {
         var little = value.littleEndian
-        withUnsafeBytes(of: &little) { bytes in
+        Swift.withUnsafeBytes(of: &little) { bytes in
             append(contentsOf: bytes)
         }
     }
 
     mutating func appendUInt64LE(_ value: UInt64) {
         var little = value.littleEndian
-        withUnsafeBytes(of: &little) { bytes in
+        Swift.withUnsafeBytes(of: &little) { bytes in
             append(contentsOf: bytes)
         }
     }
