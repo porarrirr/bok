@@ -3,10 +3,15 @@ import WebRTC
 
 final class WebRTCSessionController: NSObject {
     typealias StateHandler = (AudioStreamState, String?) -> Void
+    private struct IceWaitCallbacks {
+        let onSuccess: () -> Void
+        let onTimeout: () -> Void
+    }
 
     private let factory: RTCPeerConnectionFactory
     private var peerConnection: RTCPeerConnection?
-    private var iceCompletion: (() -> Void)?
+    private var iceWaitCallbacks: IceWaitCallbacks?
+    private var iceTimeoutWorkItem: DispatchWorkItem?
     private let stateHandler: StateHandler
     private let pcmFrameHandler: (PcmFrame) -> Void
 
@@ -28,6 +33,7 @@ final class WebRTCSessionController: NSObject {
 
     func createOffer(completion: @escaping (Result<(sdp: String, fingerprint: String), Error>) -> Void) {
         stateHandler(.connecting, nil)
+        cancelIceWait()
         let peer = makePeerConnection()
         self.peerConnection = peer
         createLocalDataChannel(for: peer)
@@ -52,14 +58,16 @@ final class WebRTCSessionController: NSObject {
                     self.stateHandler(.failed, setError.localizedDescription)
                     return
                 }
-                self.waitIceComplete { [weak self] in
+                self.waitIceComplete(onSuccess: { [weak self] in
                     guard let self else { return }
                     guard let sdp = peer.localDescription?.sdp else {
                         completion(.failure(SessionFailure(code: .webrtcNegotiationFailed, message: "Local offer missing")))
                         return
                     }
                     completion(.success((sdp: sdp, fingerprint: self.extractFingerprint(from: sdp))))
-                }
+                }, onTimeout: {
+                    completion(.failure(SessionFailure(code: .webrtcNegotiationFailed, message: "ICE gathering timed out")))
+                })
             }
         }
     }
@@ -69,6 +77,7 @@ final class WebRTCSessionController: NSObject {
         completion: @escaping (Result<(sdp: String, fingerprint: String), Error>) -> Void
     ) {
         stateHandler(.connecting, nil)
+        cancelIceWait()
         let peer = makePeerConnection()
         self.peerConnection = peer
 
@@ -99,13 +108,15 @@ final class WebRTCSessionController: NSObject {
                         self.stateHandler(.failed, localError.localizedDescription)
                         return
                     }
-                    self.waitIceComplete {
+                    self.waitIceComplete(onSuccess: {
                         guard let sdp = peer.localDescription?.sdp else {
                             completion(.failure(SessionFailure(code: .webrtcNegotiationFailed, message: "Local answer missing")))
                             return
                         }
                         completion(.success((sdp: sdp, fingerprint: self.extractFingerprint(from: sdp))))
-                    }
+                    }, onTimeout: {
+                        completion(.failure(SessionFailure(code: .webrtcNegotiationFailed, message: "ICE gathering timed out")))
+                    })
                 }
             }
         }
@@ -147,6 +158,7 @@ final class WebRTCSessionController: NSObject {
     }
 
     func close() {
+        cancelIceWait()
         syncLock.lock()
         audioDataChannel?.delegate = nil
         audioDataChannel?.close()
@@ -166,7 +178,10 @@ final class WebRTCSessionController: NSObject {
         config.tcpCandidatePolicy = .disabled
 
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
-        return factory.peerConnection(with: config, constraints: constraints, delegate: self)
+        guard let peer = factory.peerConnection(with: config, constraints: constraints, delegate: self) else {
+            fatalError("Failed to create RTCPeerConnection")
+        }
+        return peer
     }
 
     private func createLocalDataChannel(for peer: RTCPeerConnection) {
@@ -188,12 +203,54 @@ final class WebRTCSessionController: NSObject {
         dataChannel.delegate = self
     }
 
-    private func waitIceComplete(completion: @escaping () -> Void) {
+    private func waitIceComplete(onSuccess: @escaping () -> Void, onTimeout: @escaping () -> Void) {
         if peerConnection?.iceGatheringState == .complete {
-            completion()
+            onSuccess()
             return
         }
-        iceCompletion = completion
+
+        syncLock.lock()
+        iceWaitCallbacks = IceWaitCallbacks(onSuccess: onSuccess, onTimeout: onTimeout)
+        iceTimeoutWorkItem?.cancel()
+        let timeoutWorkItem = DispatchWorkItem { [weak self] in
+            self?.finishIceWait(timedOut: true)
+        }
+        iceTimeoutWorkItem = timeoutWorkItem
+        syncLock.unlock()
+
+        DispatchQueue.global().asyncAfter(
+            deadline: .now() + iceGatherTimeoutSeconds,
+            execute: timeoutWorkItem
+        )
+    }
+
+    private func finishIceWait(timedOut: Bool) {
+        syncLock.lock()
+        let callbacks = iceWaitCallbacks
+        iceWaitCallbacks = nil
+        let timeoutWorkItem = iceTimeoutWorkItem
+        iceTimeoutWorkItem = nil
+        syncLock.unlock()
+
+        timeoutWorkItem?.cancel()
+        guard let callbacks else {
+            return
+        }
+        if timedOut {
+            stateHandler(.failed, "ICE gathering timed out")
+            callbacks.onTimeout()
+        } else {
+            callbacks.onSuccess()
+        }
+    }
+
+    private func cancelIceWait() {
+        syncLock.lock()
+        iceWaitCallbacks = nil
+        let timeoutWorkItem = iceTimeoutWorkItem
+        iceTimeoutWorkItem = nil
+        syncLock.unlock()
+        timeoutWorkItem?.cancel()
     }
 
     private func extractFingerprint(from sdp: String) -> String {
@@ -207,6 +264,7 @@ final class WebRTCSessionController: NSObject {
 
     private let audioChannelLabel = "audio-pcm"
     private let maxBufferedAmountBytes: UInt64 = 256_000
+    private let iceGatherTimeoutSeconds: TimeInterval = 8
 }
 
 extension WebRTCSessionController: RTCPeerConnectionDelegate {
@@ -233,9 +291,7 @@ extension WebRTCSessionController: RTCPeerConnectionDelegate {
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
         if newState == .complete {
-            let completion = iceCompletion
-            iceCompletion = nil
-            completion?()
+            finishIceWait(timedOut: false)
         }
     }
 

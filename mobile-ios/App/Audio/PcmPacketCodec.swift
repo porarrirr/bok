@@ -107,13 +107,14 @@ private extension Data {
         guard offset + 7 < count else {
             return 0
         }
-        return UInt64(self[offset])
-            | (UInt64(self[offset + 1]) << 8)
-            | (UInt64(self[offset + 2]) << 16)
-            | (UInt64(self[offset + 3]) << 24)
-            | (UInt64(self[offset + 4]) << 32)
-            | (UInt64(self[offset + 5]) << 40)
-            | (UInt64(self[offset + 6]) << 48)
-            | (UInt64(self[offset + 7]) << 56)
+        let b0 = UInt64(self[offset])
+        let b1 = UInt64(self[offset + 1]) << 8
+        let b2 = UInt64(self[offset + 2]) << 16
+        let b3 = UInt64(self[offset + 3]) << 24
+        let b4 = UInt64(self[offset + 4]) << 32
+        let b5 = UInt64(self[offset + 5]) << 40
+        let b6 = UInt64(self[offset + 6]) << 48
+        let b7 = UInt64(self[offset + 7]) << 56
+        return b0 | b1 | b2 | b3 | b4 | b5 | b6 | b7
     }
 }
