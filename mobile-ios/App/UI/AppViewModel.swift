@@ -21,8 +21,8 @@ final class AppViewModel: ObservableObject {
 
     let logStore: LogStore
 
-    init(logStore: LogStore = LogStore()) {
-        self.logStore = logStore
+    init(logStore: LogStore? = nil) {
+        self.logStore = logStore ?? LogStore()
     }
 
     private lazy var sessionController: WebRTCSessionController = {
