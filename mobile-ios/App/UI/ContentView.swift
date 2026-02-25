@@ -4,17 +4,16 @@ import UIKit
 
 struct ContentView: View {
     @StateObject private var viewModel = AppViewModel()
-    @State private var offerInput = ""
-    @State private var answerInput = ""
     @State private var scanTarget: ScanTarget?
     @State private var transientMessage: String?
+    @State private var showingLogs = false
 
     var body: some View {
         ZStack(alignment: .top) {
             LinearGradient(
                 colors: [
-                    Color(red: 0.92, green: 0.97, blue: 0.98),
-                    Color(red: 0.97, green: 0.94, blue: 0.90)
+                    Color(red: 0.93, green: 0.96, blue: 1.00),
+                    Color(red: 1.00, green: 0.95, blue: 0.90)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -25,57 +24,19 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     headerBlock
                     statusCard
-                    actionRow
+                    entryCard
 
                     if let transientMessage {
                         Text(transientMessage)
                             .font(.footnote.weight(.semibold))
-                            .foregroundStyle(Color(red: 0.03, green: 0.35, blue: 0.47))
+                            .foregroundStyle(Color(red: 0.05, green: 0.36, blue: 0.49))
                             .padding(.horizontal, 4)
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
 
-                    PayloadFlowCard(
-                        title: "Receiver Flow",
-                        subtitle: "Scan or paste sender offer, then return generated answer.",
-                        inputTitle: "Offer payload",
-                        inputText: $offerInput,
-                        scanButtonTitle: "Scan Offer QR",
-                        submitButtonTitle: "Create Answer",
-                        onScan: { scanTarget = .offer },
-                        onSubmit: {
-                            viewModel.createAnswer(from: offerInput.trimmingCharacters(in: .whitespacesAndNewlines))
-                        },
-                        payloadTitle: "Generated answer payload",
-                        payloadValue: viewModel.answerPayloadRaw,
-                        payloadQrDescription: "Answer QR",
-                        onCopyPayload: {
-                            UIPasteboard.general.string = viewModel.answerPayloadRaw
-                            showTransientMessage("Answer payload copied.")
-                        }
-                    )
+                    flowSection
 
-                    PayloadFlowCard(
-                        title: "Sender Flow",
-                        subtitle: "Start sender to generate offer, then import receiver answer.",
-                        inputTitle: "Answer payload",
-                        inputText: $answerInput,
-                        scanButtonTitle: "Scan Answer QR",
-                        submitButtonTitle: "Apply Answer",
-                        onScan: { scanTarget = .answer },
-                        onSubmit: {
-                            viewModel.applyAnswer(from: answerInput.trimmingCharacters(in: .whitespacesAndNewlines))
-                        },
-                        payloadTitle: "Generated offer payload",
-                        payloadValue: viewModel.offerPayloadRaw,
-                        payloadQrDescription: "Offer QR",
-                        onCopyPayload: {
-                            UIPasteboard.general.string = viewModel.offerPayloadRaw
-                            showTransientMessage("Offer payload copied.")
-                        }
-                    )
-
-                    Text("iOS sender captures ReplayKit app audio only (not ringtones/system sounds).")
+                    Text(L10n.tr("main.capture_hint"))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -86,12 +47,10 @@ struct ContentView: View {
             QrScannerView(
                 onScanned: { payload in
                     switch target {
-                    case .offer:
-                        offerInput = payload
-                        viewModel.createAnswer(from: payload)
-                    case .answer:
-                        answerInput = payload
-                        viewModel.applyAnswer(from: payload)
+                    case .initPayload:
+                        viewModel.createConfirm(from: payload)
+                    case .confirmPayload:
+                        viewModel.prepareConfirmForVerification(from: payload)
                     }
                     scanTarget = nil
                 },
@@ -101,30 +60,44 @@ struct ContentView: View {
             )
             .ignoresSafeArea()
         }
+        .sheet(isPresented: $showingLogs) {
+            LogView(logStore: viewModel.logStore)
+        }
     }
 
     private var headerBlock: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("P2P Audio Bridge")
-                .font(.system(size: 30, weight: .bold, design: .rounded))
-                .foregroundStyle(Color(red: 0.07, green: 0.17, blue: 0.25))
-            Text("Pair devices locally via QR or payload text.")
-                .font(.subheadline)
-                .foregroundStyle(Color(red: 0.22, green: 0.34, blue: 0.42))
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L10n.tr("main.title"))
+                    .font(.system(size: 32, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Color(red: 0.05, green: 0.17, blue: 0.28))
+                Text(L10n.tr("main.subtitle"))
+                    .font(.subheadline)
+                    .foregroundStyle(Color(red: 0.24, green: 0.34, blue: 0.42))
+            }
+            Spacer(minLength: 12)
+            Button(L10n.tr("action.open_logs")) {
+                showingLogs = true
+            }
+            .buttonStyle(SecondaryActionButtonStyle())
+            .frame(width: 88)
         }
     }
 
     private var statusCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Connection Status")
+            Text(L10n.tr("status.connection_title"))
                 .font(.headline)
+
             Text(viewModel.streamState.readableLabel)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(viewModel.streamState.themeColor)
+
             Text(viewModel.statusMessage)
                 .font(.subheadline)
+
             if !viewModel.activeSessionId.isEmpty {
-                Text("Session ID")
+                Text(L10n.tr("status.session_id"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text(viewModel.activeSessionId)
@@ -132,6 +105,13 @@ struct ContentView: View {
                     .lineLimit(1)
                     .textSelection(.enabled)
             }
+
+            Divider().padding(.top, 2)
+            Text(L10n.tr("status.next_action_title"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(recommendedActionText)
+                .font(.subheadline)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
@@ -142,17 +122,133 @@ struct ContentView: View {
         )
     }
 
-    private var actionRow: some View {
-        HStack(spacing: 10) {
-            Button("Start Sender") {
-                viewModel.startSenderFlow()
-            }
-            .buttonStyle(PrimaryActionButtonStyle())
+    private var entryCard: some View {
+        StepCard(
+            number: 1,
+            title: L10n.tr("flow.entry.title"),
+            description: L10n.tr("flow.entry.description")
+        ) {
+            HStack(spacing: 10) {
+                Button(L10n.tr("action.start_sender")) {
+                    viewModel.startSenderFlow()
+                }
+                .buttonStyle(PrimaryActionButtonStyle())
 
-            Button("Stop Session") {
+                Button(L10n.tr("action.start_listener_scan")) {
+                    viewModel.beginListenerFlow()
+                    scanTarget = .initPayload
+                }
+                .buttonStyle(PrimaryActionButtonStyle())
+            }
+
+            Button(L10n.tr("action.stop_session")) {
                 viewModel.endSession()
             }
             .buttonStyle(SecondaryActionButtonStyle())
+        }
+    }
+
+    @ViewBuilder
+    private var flowSection: some View {
+        switch viewModel.setupStep {
+        case .entry:
+            EmptyView()
+        case .senderShowInit:
+            StepCard(
+                number: 2,
+                title: L10n.tr("flow.sender.step_title"),
+                description: L10n.tr("flow.sender.step_description")
+            ) {
+                if viewModel.initPayloadRaw.isEmpty {
+                    Text(L10n.tr("flow.sender.waiting_code"))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ConnectionCodePanel(
+                        payloadTitle: L10n.tr("flow.sender.payload_title"),
+                        payloadValue: viewModel.initPayloadRaw,
+                        payloadQrDescription: L10n.tr("flow.sender.qr_description"),
+                        onCopyPayload: {
+                            UIPasteboard.general.string = viewModel.initPayloadRaw
+                            showTransientMessage(L10n.tr("toast.init_payload_copied"))
+                        }
+                    )
+                }
+
+                Button(L10n.tr("flow.sender.scan_button")) {
+                    scanTarget = .confirmPayload
+                }
+                .buttonStyle(SecondaryActionButtonStyle())
+                .disabled(viewModel.initPayloadRaw.isEmpty)
+                .opacity(viewModel.initPayloadRaw.isEmpty ? 0.6 : 1)
+            }
+        case .senderVerifyCode:
+            StepCard(
+                number: 3,
+                title: L10n.tr("flow.verification.title"),
+                description: L10n.tr("flow.verification.description")
+            ) {
+                VerificationCodeBlock(code: viewModel.verificationCode)
+                HStack(spacing: 10) {
+                    Button(L10n.tr("flow.verification.match")) {
+                        viewModel.approveVerificationAndConnect()
+                    }
+                    .buttonStyle(PrimaryActionButtonStyle())
+
+                    Button(L10n.tr("flow.verification.mismatch")) {
+                        viewModel.rejectVerificationAndRestart()
+                    }
+                    .buttonStyle(SecondaryActionButtonStyle())
+                }
+            }
+        case .listenerScanInit:
+            StepCard(
+                number: 2,
+                title: L10n.tr("flow.receiver.step_title"),
+                description: L10n.tr("flow.receiver.step_description")
+            ) {
+                Text(L10n.tr("flow.receiver.waiting_code"))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        case .listenerShowConfirm:
+            StepCard(
+                number: 3,
+                title: L10n.tr("flow.receiver.confirm_title"),
+                description: L10n.tr("flow.receiver.confirm_description")
+            ) {
+                ConnectionCodePanel(
+                    payloadTitle: L10n.tr("flow.receiver.payload_title"),
+                    payloadValue: viewModel.confirmPayloadRaw,
+                    payloadQrDescription: L10n.tr("flow.receiver.qr_description"),
+                    onCopyPayload: {
+                        UIPasteboard.general.string = viewModel.confirmPayloadRaw
+                        showTransientMessage(L10n.tr("toast.confirm_payload_copied"))
+                    }
+                )
+                VerificationCodeBlock(code: viewModel.verificationCode)
+            }
+        }
+    }
+
+    private var recommendedActionText: String {
+        if viewModel.streamState == .streaming {
+            return L10n.tr("status.next_action_connected")
+        }
+        if viewModel.streamState == .failed {
+            return L10n.tr("status.next_action_restart")
+        }
+        switch viewModel.setupStep {
+        case .entry:
+            return L10n.tr("status.next_action_entry")
+        case .senderShowInit:
+            return L10n.tr("status.next_action_show_init")
+        case .senderVerifyCode:
+            return L10n.tr("status.next_action_verify")
+        case .listenerScanInit:
+            return L10n.tr("status.next_action_scan_init")
+        case .listenerShowConfirm:
+            return L10n.tr("status.next_action_show_confirm")
         }
     }
 
@@ -168,104 +264,40 @@ struct ContentView: View {
     }
 
     private enum ScanTarget: String, Identifiable {
-        case offer
-        case answer
+        case initPayload
+        case confirmPayload
 
         var id: String { rawValue }
     }
 }
 
-private struct PayloadFlowCard: View {
+private struct StepCard<Content: View>: View {
+    let number: Int
     let title: String
-    let subtitle: String
-    let inputTitle: String
-    @Binding var inputText: String
-    let scanButtonTitle: String
-    let submitButtonTitle: String
-    let onScan: () -> Void
-    let onSubmit: () -> Void
-    let payloadTitle: String
-    let payloadValue: String
-    let payloadQrDescription: String
-    let onCopyPayload: () -> Void
-
-    private var trimmedInput: String {
-        inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
+    let description: String
+    @ViewBuilder var content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(Color(red: 0.08, green: 0.21, blue: 0.28))
-            Text(subtitle)
+            HStack(spacing: 8) {
+                Text("\(number)")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color(red: 0.02, green: 0.35, blue: 0.49))
+                    .frame(width: 24, height: 24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(Color(red: 0.84, green: 0.93, blue: 1.00))
+                    )
+                Text(title)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(Color(red: 0.08, green: 0.21, blue: 0.28))
+            }
+
+            Text(description)
                 .font(.subheadline)
                 .foregroundStyle(Color(red: 0.30, green: 0.39, blue: 0.45))
 
-            Text(inputTitle)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            TextEditor(text: $inputText)
-                .frame(minHeight: 110)
-                .padding(8)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.black.opacity(0.15), lineWidth: 1)
-                )
-
-            HStack(spacing: 10) {
-                Button(scanButtonTitle, action: onScan)
-                    .buttonStyle(SecondaryActionButtonStyle())
-                Button(submitButtonTitle, action: onSubmit)
-                    .buttonStyle(PrimaryActionButtonStyle())
-                    .disabled(trimmedInput.isEmpty)
-                    .opacity(trimmedInput.isEmpty ? 0.6 : 1)
-            }
-
-            if !payloadValue.isEmpty {
-                Divider().padding(.top, 4)
-                Text(payloadTitle)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                ScrollView {
-                    Text(payloadValue)
-                        .font(.caption.monospaced())
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                }
-                .frame(minHeight: 88, maxHeight: 140)
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.black.opacity(0.12), lineWidth: 1)
-                )
-
-                HStack {
-                    Button("Copy payload", action: onCopyPayload)
-                        .font(.caption.weight(.semibold))
-                    Spacer()
-                    Text("\(payloadValue.count) chars")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                HStack {
-                    Spacer()
-                    QRCodeImage(payload: payloadValue)
-                        .frame(width: 220, height: 220)
-                        .accessibilityLabel(Text(payloadQrDescription))
-                    Spacer()
-                }
-            }
+            content
         }
         .padding(14)
         .background(
@@ -279,11 +311,79 @@ private struct PayloadFlowCard: View {
     }
 }
 
+private struct VerificationCodeBlock: View {
+    let code: String
+
+    var body: some View {
+        if code.isEmpty {
+            EmptyView()
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L10n.tr("flow.verification.code_label"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(code)
+                    .font(.system(size: 34, weight: .black, design: .rounded))
+                    .foregroundStyle(Color(red: 0.05, green: 0.17, blue: 0.28))
+            }
+        }
+    }
+}
+
+private struct ConnectionCodePanel: View {
+    let payloadTitle: String
+    let payloadValue: String
+    let payloadQrDescription: String
+    let onCopyPayload: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(payloadTitle)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            ScrollView {
+                Text(payloadValue)
+                    .font(.caption.monospaced())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+            .frame(minHeight: 88, maxHeight: 140)
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.black.opacity(0.12), lineWidth: 1)
+            )
+
+            HStack {
+                Button(L10n.tr("action.copy_payload"), action: onCopyPayload)
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Text(L10n.tr("common.char_count_format", payloadValue.count))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Spacer()
+                QRCodeImage(payload: payloadValue)
+                    .frame(width: 220, height: 220)
+                    .accessibilityLabel(Text(payloadQrDescription))
+                Spacer()
+            }
+        }
+    }
+}
+
 private struct PrimaryActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .padding(.vertical, 10)
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.white)
             .background(
@@ -298,8 +398,8 @@ private struct PrimaryActionButtonStyle: ButtonStyle {
 private struct SecondaryActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .padding(.vertical, 10)
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(Color(red: 0.02, green: 0.36, blue: 0.47))
             .background(
@@ -318,13 +418,13 @@ private struct SecondaryActionButtonStyle: ButtonStyle {
 private extension AudioStreamState {
     var readableLabel: String {
         switch self {
-        case .idle: return "Idle"
-        case .capturing: return "Capturing"
-        case .connecting: return "Connecting"
-        case .streaming: return "Streaming"
-        case .interrupted: return "Interrupted"
-        case .failed: return "Failed"
-        case .ended: return "Ended"
+        case .idle: return L10n.tr("stream_state.idle")
+        case .capturing: return L10n.tr("stream_state.capturing")
+        case .connecting: return L10n.tr("stream_state.connecting")
+        case .streaming: return L10n.tr("stream_state.streaming")
+        case .interrupted: return L10n.tr("stream_state.interrupted")
+        case .failed: return L10n.tr("stream_state.failed")
+        case .ended: return L10n.tr("stream_state.ended")
         }
     }
 

@@ -20,7 +20,7 @@
 - Use 4-space indentation for Kotlin and Swift.
 - Types/protocols: `UpperCamelCase`; methods/properties/variables: `lowerCamelCase`; constants: `UPPER_SNAKE_CASE` only when truly constant.
 - Keep packages/namespaces aligned to feature areas (for example `...protocol.QrPayloadCodec`).
-- Keep payload field names and semantics consistent with `docs/session-offer.schema.json` and `docs/session-answer.schema.json`.
+- Keep payload field names and semantics consistent with `docs/session-init.schema.json` and `docs/session-confirm.schema.json`.
 
 ## Testing Guidelines
 - Android test stack is JUnit4 (`app/src/test`) plus AndroidX/Espresso/Compose instrumentation (`app/src/androidTest`).

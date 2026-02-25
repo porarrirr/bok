@@ -25,3 +25,14 @@ Open this folder as a Gradle project in Android Studio.
 - Audio capture works only for source apps that allow playback capture (`allowAudioPlaybackCapture`).
 - LAN host ICE only (no relay/signaling/NAT traversal).
 - Very large SDP payloads may require QR chunking in future revisions.
+
+## Debug logging
+
+- App logs use `Logcat` with tags prefixed by `P2PAudio/`.
+- Useful categories:
+  - `P2PAudio/MainViewModel`
+  - `P2PAudio/PeerConnection`
+  - `P2PAudio/CaptureManager`
+  - `P2PAudio/AudioSendService`
+- Example filter:
+  - `adb logcat | findstr P2PAudio/`

@@ -1,7 +1,7 @@
 package com.example.p2paudio.protocol
 
-import com.example.p2paudio.model.SessionAnswerPayload
-import com.example.p2paudio.model.SessionOfferPayload
+import com.example.p2paudio.model.PairingConfirmPayload
+import com.example.p2paudio.model.PairingInitPayload
 import java.io.ByteArrayOutputStream
 import java.util.Base64
 import java.util.zip.Deflater
@@ -15,8 +15,8 @@ import org.junit.Test
 class QrPayloadCodecTest {
 
     @Test
-    fun `encodeOffer compresses and decodes large payload`() {
-        val payload = SessionOfferPayload(
+    fun `encodeInit compresses and decodes large payload`() {
+        val payload = PairingInitPayload(
             sessionId = "session-1",
             senderDeviceName = "pixel",
             senderPubKeyFingerprint = "fp",
@@ -24,42 +24,35 @@ class QrPayloadCodecTest {
             expiresAtUnixMs = 1_760_000_000_000L
         )
 
-        val encoded = QrPayloadCodec.encodeOffer(payload)
+        val encoded = QrPayloadCodec.encodeInit(payload)
         assertTrue(encoded.startsWith("p2paudio-z1:"))
 
-        val decoded = QrPayloadCodec.decodeOffer(encoded)
+        val decoded = QrPayloadCodec.decodeInit(encoded)
         assertEquals(payload, decoded)
     }
 
     @Test
-    fun `decodeOffer supports legacy raw json`() {
-        val payload = SessionOfferPayload(
-            sessionId = "session-legacy",
-            senderDeviceName = "pixel",
-            senderPubKeyFingerprint = "fp",
-            offerSdp = "v=0\na=fingerprint:sha-256 test\n",
-            expiresAtUnixMs = 1_760_000_000_000L
-        )
-
+    fun `decodeInit rejects legacy v1 raw json`() {
         val rawJson = """
             {
               "version":"1",
               "role":"sender",
-              "sessionId":"${payload.sessionId}",
-              "senderDeviceName":"${payload.senderDeviceName}",
-              "senderPubKeyFingerprint":"${payload.senderPubKeyFingerprint}",
-              "offerSdp":"${payload.offerSdp.replace("\n", "\\n")}",
-              "expiresAtUnixMs":${payload.expiresAtUnixMs}
+              "sessionId":"session-legacy",
+              "senderDeviceName":"pixel",
+              "senderPubKeyFingerprint":"fp",
+              "offerSdp":"v=0\\na=fingerprint:sha-256 test\\n",
+              "expiresAtUnixMs":1760000000000
             }
         """.trimIndent()
 
-        val decoded = QrPayloadCodec.decodeOffer(rawJson)
-        assertEquals(payload, decoded)
+        assertThrows(Exception::class.java) {
+            QrPayloadCodec.decodeInit(rawJson)
+        }
     }
 
     @Test
-    fun `encodeAnswer keeps short payload as plain json`() {
-        val payload = SessionAnswerPayload(
+    fun `encodeConfirm keeps short payload as plain json`() {
+        val payload = PairingConfirmPayload(
             sessionId = "session-2",
             receiverDeviceName = "iphone",
             receiverPubKeyFingerprint = "fp",
@@ -67,35 +60,35 @@ class QrPayloadCodecTest {
             expiresAtUnixMs = 1_760_000_000_000L
         )
 
-        val encoded = QrPayloadCodec.encodeAnswer(payload)
+        val encoded = QrPayloadCodec.encodeConfirm(payload)
         assertFalse(encoded.startsWith("p2paudio-z1:"))
 
-        val decoded = QrPayloadCodec.decodeAnswer(encoded)
+        val decoded = QrPayloadCodec.decodeConfirm(encoded)
         assertEquals(payload, decoded)
     }
 
     @Test
-    fun `decodeOffer rejects empty compressed payload`() {
+    fun `decodeInit rejects empty compressed payload`() {
         assertThrows(IllegalArgumentException::class.java) {
-            QrPayloadCodec.decodeOffer("p2paudio-z1:")
+            QrPayloadCodec.decodeInit("p2paudio-z1:")
         }
     }
 
     @Test
-    fun `decodeOffer rejects invalid compressed base64`() {
+    fun `decodeInit rejects invalid compressed base64`() {
         assertThrows(IllegalArgumentException::class.java) {
-            QrPayloadCodec.decodeOffer("p2paudio-z1:***invalid***")
+            QrPayloadCodec.decodeInit("p2paudio-z1:***invalid***")
         }
     }
 
     @Test
-    fun `decodeOffer rejects compressed payload that exceeds decompressed size limit`() {
+    fun `decodeInit rejects compressed payload that exceeds decompressed size limit`() {
         val oversizedPlain = ByteArray(530_000) { 'a'.code.toByte() }
         val compressed = zlibCompress(oversizedPlain)
         val encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(compressed)
 
         assertThrows(IllegalArgumentException::class.java) {
-            QrPayloadCodec.decodeOffer("p2paudio-z1:$encoded")
+            QrPayloadCodec.decodeInit("p2paudio-z1:$encoded")
         }
     }
 

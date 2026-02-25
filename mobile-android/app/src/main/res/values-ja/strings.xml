@@ -1,0 +1,103 @@
+<resources>
+    <string name="app_name">P2P Audio</string>
+    <string name="scanner_prompt">ペアリングQRを読み取ってください</string>
+
+    <string name="main_title">Audio Link</string>
+    <string name="main_subtitle">同じWi-Fi上の2台を、QRのみで接続します。</string>
+
+    <string name="action_start_sender">共有を開始</string>
+    <string name="action_start_listener_scan">送信側QRを読む</string>
+    <string name="action_stop_session">停止</string>
+
+    <string name="status_connection_title">接続状態</string>
+    <string name="status_session_id">セッションID</string>
+    <string name="status_failure_format">問題: %1$s</string>
+    <string name="status_next_action_title">次にやること</string>
+    <string name="status_ready">下の開始アクションを選んでください。</string>
+    <string name="status_listener_ready_to_scan">送信側のinit QRを読み取ってください。</string>
+    <string name="status_receiving_remote_audio">相手の音声を受信しています</string>
+    <string name="status_capturing">音声共有の準備中</string>
+    <string name="status_init_generated">init QRを作成しました。受信側で読み取ってください。</string>
+    <string name="status_confirm_generated">confirm QRを作成しました。送信側に表示してください。</string>
+    <string name="status_verification_ready">両端末の6桁コードが一致するか確認してください。</string>
+    <string name="status_verification_mismatch">照合コードが一致しません。Step 1からやり直してください。</string>
+    <string name="status_answer_applied">照合が完了しました。接続を確定します。</string>
+    <string name="status_session_ended">接続を停止しました</string>
+    <string name="status_streaming_captured_audio">この端末の音声を共有中</string>
+    <string name="status_peer_disconnected">相手端末の接続が切れました</string>
+    <string name="status_ice_connection_failed">直接接続を確立できませんでした</string>
+
+    <string name="status_next_action_entry">「共有を開始」または「送信側QRを読む」を押してください。</string>
+    <string name="status_next_action_show_init">init QRを表示し、受信側に読み取ってもらってください。</string>
+    <string name="status_next_action_scan_init">送信側のinit QRを読み取ってください。</string>
+    <string name="status_next_action_show_confirm">confirm QRと6桁コードを送信側に見せてください。</string>
+    <string name="status_next_action_verify">両端末の6桁コードが一致することを確認してください。</string>
+    <string name="status_next_action_connected">接続済みです。共有中はこの画面を開いたままにしてください。</string>
+    <string name="status_next_action_restart">Step 1からやり直してください。</string>
+    <string name="status_next_action_permission">画面/音声権限を許可してから、もう一度共有を開始してください。</string>
+    <string name="status_next_action_capture_not_supported">この端末は内部音声共有に対応していません。Android 10+対応端末をご利用ください。</string>
+
+    <string name="state_idle">待機中</string>
+    <string name="state_capturing">準備中</string>
+    <string name="state_connecting">接続中</string>
+    <string name="state_streaming">接続済み</string>
+    <string name="state_interrupted">中断</string>
+    <string name="state_failed">対応が必要</string>
+    <string name="state_ended">停止済み</string>
+
+    <string name="flow_entry_title">Step 1: 開始方法を選ぶ</string>
+    <string name="flow_entry_description">手入力は廃止しました。QR読み取りのみで接続します。</string>
+
+    <string name="flow_sender_step_title">Step 2: init QRを表示</string>
+    <string name="flow_sender_step_description">受信側がこのQRを読んだ後、受信側のconfirm QRを読み取ります。</string>
+    <string name="flow_sender_waiting_code">共有開始後にinit QRが表示されます。</string>
+    <string name="flow_sender_scan_button">confirm QRを読む</string>
+    <string name="flow_sender_payload_title">あなたのinit QRペイロード</string>
+    <string name="flow_sender_qr_description">送信側のinit QR</string>
+    <string name="flow_sender_payload_copied">initペイロードをコピーしました。</string>
+
+    <string name="flow_receiver_step_title">Step 2: 送信側init QRを読む</string>
+    <string name="flow_receiver_step_description">開始ボタンから送信側のinit QRを読み取ってください。</string>
+    <string name="flow_receiver_waiting_code">送信側init QRの読み取り待ちです。</string>
+    <string name="flow_receiver_confirm_title">Step 3: confirm QRを表示</string>
+    <string name="flow_receiver_confirm_description">このQRと6桁コードを送信側に見せてください。</string>
+    <string name="flow_receiver_payload_title">あなたのconfirm QRペイロード</string>
+    <string name="flow_receiver_qr_description">受信側のconfirm QR</string>
+    <string name="flow_receiver_payload_copied">confirmペイロードをコピーしました。</string>
+
+    <string name="flow_verification_title">Step 3: 6桁コード照合</string>
+    <string name="flow_verification_description">両端末で同じコードが表示される場合のみ接続します。</string>
+    <string name="flow_verification_code_label">照合コード</string>
+    <string name="flow_verification_match">一致している</string>
+    <string name="flow_verification_mismatch">一致しない</string>
+
+    <string name="flow_copy_payload">ペイロードをコピー</string>
+    <string name="flow_payload_chars">%1$d 文字</string>
+
+    <string name="notification_channel_name">P2P音声セッション</string>
+    <string name="notification_content_title">P2P Audio</string>
+    <string name="notification_content_text">端末音声を共有中</string>
+
+    <string name="error_audio_capture_android10">音声共有はAndroid 10以降で利用できます</string>
+    <string name="error_permission_denied">権限が拒否されました</string>
+    <string name="error_capture_start_failed">音声共有を開始できませんでした</string>
+    <string name="error_create_offer_failed">init QRペイロードを作成できませんでした</string>
+    <string name="error_create_answer_failed">confirm QRペイロードを作成できませんでした</string>
+    <string name="error_apply_answer_failed">confirmペイロードを適用できませんでした</string>
+    <string name="error_invalid_init_payload">init QRペイロードが不正です</string>
+    <string name="error_invalid_confirm_payload">confirm QRペイロードが不正です</string>
+    <string name="error_audio_capture_not_supported">この端末は音声共有に対応していません。</string>
+    <string name="error_webrtc_negotiation_failed">直接接続を確立できませんでした。</string>
+    <string name="error_peer_unreachable">相手端末に接続できませんでした。</string>
+    <string name="error_network_changed">接続中にネットワークが変更されました。</string>
+    <string name="error_session_expired">QRペイロードの有効期限が切れています。</string>
+    <string name="error_invalid_payload">QRペイロードが不正です。</string>
+
+    <string name="failure_code_permission_denied">権限が拒否されました</string>
+    <string name="failure_code_audio_capture_not_supported">この端末は音声共有に非対応です</string>
+    <string name="failure_code_webrtc_negotiation_failed">接続準備に失敗しました</string>
+    <string name="failure_code_peer_unreachable">相手端末に到達できません</string>
+    <string name="failure_code_network_changed">ネットワークが変更されました</string>
+    <string name="failure_code_session_expired">QRペイロード期限切れ</string>
+    <string name="failure_code_invalid_payload">QRペイロードが不正です</string>
+</resources>

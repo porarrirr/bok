@@ -3,21 +3,20 @@
 ## Completed
 
 - Android project scaffold with Gradle wrapper and buildable debug APK.
-- Session payload models, codec, and validation on Android and iOS.
-- QR generation on both platforms.
-- Android sender/receiver flow wiring (permission -> offer -> answer -> apply).
-- iOS sender/receiver flow wiring (offer/answer generation and application).
+- iOS app source scaffold with ReplayKit + WebRTC integration.
+- Cross-platform v2 pairing payload models (`init` / `confirm`) and validation.
+- Cross-platform QR payload transport compression (`p2paudio-z1:` zlib + Base64URL).
+- QR-only wizard flow on Android and iOS (manual code entry removed).
+- 6-digit verification code gate before sender applies remote confirm payload.
+- Failure handling reset to Step 1 for payload mismatch/expiry/verification mismatch.
 - WebRTC peer controller on Android and iOS using host ICE and full SDP exchange.
 - DataChannel-based PCM transport (`audio-pcm`) on Android and iOS.
 - Android device-audio capture (`AudioPlaybackCapture`) to PCM sender pipeline.
-- Android receiver PCM media playback pipeline (`AudioTrack`).
+- Android receiver PCM playback pipeline (`AudioTrack`).
 - iOS ReplayKit extension PCM bridge into app process via App Group shared file.
-- iOS receiver PCM media playback pipeline (`AVAudioEngine`).
+- iOS receiver PCM playback pipeline (`AVAudioEngine`).
 - iOS QR camera scanner UI integration (AVFoundation).
-- Cross-platform QR payload transport compression (zlib + Base64URL) with legacy JSON decode fallback.
-- iOS ICE gathering timeout handling to avoid indefinite connect wait.
-- Android lint blockers addressed for capture permission handling and camera feature declaration.
-- QR payload codec regression tests expanded for compressed transport failure cases (Android + iOS test sources).
+- Android + iOS QR payload codec regression tests updated for v2 decode behavior.
 
 ## Pending follow-up
 

@@ -1,34 +1,34 @@
 import Foundation
 
 enum PairingPayloadValidator {
-    static func validateOffer(_ payload: SessionOfferPayload, nowUnixMs: Int64) throws {
-        guard payload.version == "1", payload.role == "sender" else {
-            throw SessionFailure(code: .invalidPayload, message: "Invalid offer version or role")
+    static func validateInit(_ payload: PairingInitPayload, nowUnixMs: Int64) throws {
+        guard payload.version == "2", payload.phase == "init" else {
+            throw SessionFailure(code: .invalidPayload, message: L10n.tr("error.invalid_init_payload"))
         }
         guard payload.expiresAtUnixMs >= nowUnixMs else {
-            throw SessionFailure(code: .sessionExpired, message: "Offer expired")
+            throw SessionFailure(code: .sessionExpired, message: L10n.tr("error.session_expired"))
         }
         guard !payload.sessionId.isEmpty, !payload.offerSdp.isEmpty else {
-            throw SessionFailure(code: .invalidPayload, message: "Offer missing required fields")
+            throw SessionFailure(code: .invalidPayload, message: L10n.tr("error.invalid_init_payload"))
         }
     }
 
-    static func validateAnswer(
-        _ payload: SessionAnswerPayload,
+    static func validateConfirm(
+        _ payload: PairingConfirmPayload,
         expectedSessionId: String,
         nowUnixMs: Int64
     ) throws {
-        guard payload.version == "1", payload.role == "receiver" else {
-            throw SessionFailure(code: .invalidPayload, message: "Invalid answer version or role")
+        guard payload.version == "2", payload.phase == "confirm" else {
+            throw SessionFailure(code: .invalidPayload, message: L10n.tr("error.invalid_confirm_payload"))
         }
         guard payload.expiresAtUnixMs >= nowUnixMs else {
-            throw SessionFailure(code: .sessionExpired, message: "Answer expired")
+            throw SessionFailure(code: .sessionExpired, message: L10n.tr("error.session_expired"))
         }
         guard payload.sessionId == expectedSessionId else {
-            throw SessionFailure(code: .invalidPayload, message: "Session ID mismatch")
+            throw SessionFailure(code: .invalidPayload, message: L10n.tr("error.invalid_confirm_payload"))
         }
         guard !payload.answerSdp.isEmpty else {
-            throw SessionFailure(code: .invalidPayload, message: "Answer SDP is empty")
+            throw SessionFailure(code: .invalidPayload, message: L10n.tr("error.invalid_confirm_payload"))
         }
     }
 }

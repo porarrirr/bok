@@ -7,11 +7,14 @@ import android.app.Service
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import com.example.p2paudio.R
+import com.example.p2paudio.logging.AppLogger
 
 class AudioSendService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        AppLogger.i("AudioSendService", "service_create", "Foreground service created")
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
     }
@@ -19,10 +22,17 @@ class AudioSendService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        AppLogger.d(
+            "AudioSendService",
+            "service_start_command",
+            "Received onStartCommand",
+            context = mapOf("startId" to startId, "flags" to flags)
+        )
         return START_STICKY
     }
 
     override fun onDestroy() {
+        AppLogger.i("AudioSendService", "service_destroy", "Foreground service destroyed")
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
@@ -34,7 +44,7 @@ class AudioSendService : Service() {
         val manager = getSystemService(NotificationManager::class.java)
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "P2P audio session",
+            getString(R.string.notification_channel_name),
             NotificationManager.IMPORTANCE_LOW
         )
         manager.createNotificationChannel(channel)
@@ -48,8 +58,8 @@ class AudioSendService : Service() {
         }
 
         return builder
-            .setContentTitle("P2P Audio")
-            .setContentText("Sending device audio")
+            .setContentTitle(getString(R.string.notification_content_title))
+            .setContentText(getString(R.string.notification_content_text))
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setOngoing(true)
             .build()

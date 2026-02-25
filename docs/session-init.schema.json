@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://example.local/p2p-audio/session-offer.schema.json",
-  "title": "SessionOfferPayload",
+  "$id": "https://example.local/p2p-audio/session-init.schema.json",
+  "title": "PairingInitPayload",
   "type": "object",
   "required": [
     "version",
-    "role",
+    "phase",
     "sessionId",
     "senderDeviceName",
     "senderPubKeyFingerprint",
@@ -13,8 +13,8 @@
     "expiresAtUnixMs"
   ],
   "properties": {
-    "version": { "const": "1" },
-    "role": { "const": "sender" },
+    "version": { "const": "2" },
+    "phase": { "const": "init" },
     "sessionId": { "type": "string", "minLength": 1 },
     "senderDeviceName": { "type": "string", "minLength": 1 },
     "senderPubKeyFingerprint": { "type": "string", "minLength": 1 },

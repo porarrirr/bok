@@ -1,8 +1,8 @@
 import Foundation
 
-struct SessionOfferPayload: Codable {
+struct PairingInitPayload: Codable {
     let version: String
-    let role: String
+    let phase: String
     let sessionId: String
     let senderDeviceName: String
     let senderPubKeyFingerprint: String
@@ -16,8 +16,8 @@ struct SessionOfferPayload: Codable {
         offerSdp: String,
         expiresAtUnixMs: Int64
     ) {
-        self.version = "1"
-        self.role = "sender"
+        self.version = "2"
+        self.phase = "init"
         self.sessionId = sessionId
         self.senderDeviceName = senderDeviceName
         self.senderPubKeyFingerprint = senderPubKeyFingerprint
@@ -26,9 +26,9 @@ struct SessionOfferPayload: Codable {
     }
 }
 
-struct SessionAnswerPayload: Codable {
+struct PairingConfirmPayload: Codable {
     let version: String
-    let role: String
+    let phase: String
     let sessionId: String
     let receiverDeviceName: String
     let receiverPubKeyFingerprint: String
@@ -42,8 +42,8 @@ struct SessionAnswerPayload: Codable {
         answerSdp: String,
         expiresAtUnixMs: Int64
     ) {
-        self.version = "1"
-        self.role = "receiver"
+        self.version = "2"
+        self.phase = "confirm"
         self.sessionId = sessionId
         self.receiverDeviceName = receiverDeviceName
         self.receiverPubKeyFingerprint = receiverPubKeyFingerprint

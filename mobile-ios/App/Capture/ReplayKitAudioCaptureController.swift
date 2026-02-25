@@ -10,13 +10,26 @@ final class ReplayKitAudioCaptureController: ObservableObject {
     private var pollTimer: DispatchSourceTimer?
     private var readOffset = 0
     private var frameHandler: ((PcmFrame) -> Void)?
+    private let logHandler: ((AppLogLevel, String, String, [String: String]) -> Void)?
+    private var hasLoggedMissingBridgeURL = false
+
+    init(logHandler: ((AppLogLevel, String, String, [String: String]) -> Void)? = nil) {
+        self.logHandler = logHandler
+    }
 
     func refreshBroadcastState() {
         isBroadcastActive = sharedDefaults?.bool(forKey: Self.broadcastActiveKey) ?? false
+        log(
+            .debug,
+            "ReplayKit",
+            "Broadcast state refreshed",
+            metadata: ["isActive": String(isBroadcastActive)]
+        )
     }
 
     func startConsumingFrames(_ onFrame: @escaping (PcmFrame) -> Void) {
         frameHandler = onFrame
+        log(.info, "ReplayKit", "Start consuming bridge frames")
         ioQueue.async { [weak self] in
             guard let self else { return }
             self.startTimerIfNeeded()
@@ -24,6 +37,7 @@ final class ReplayKitAudioCaptureController: ObservableObject {
     }
 
     func stopConsumingFrames() {
+        log(.info, "ReplayKit", "Stop consuming bridge frames")
         ioQueue.async { [weak self] in
             guard let self else { return }
             self.pollTimer?.cancel()
@@ -36,6 +50,7 @@ final class ReplayKitAudioCaptureController: ObservableObject {
     func stopBroadcastFlag() {
         sharedDefaults?.set(false, forKey: Self.broadcastActiveKey)
         isBroadcastActive = false
+        log(.info, "ReplayKit", "Broadcast flag cleared")
         stopConsumingFrames()
     }
 
@@ -43,6 +58,7 @@ final class ReplayKitAudioCaptureController: ObservableObject {
         if pollTimer != nil {
             return
         }
+        log(.debug, "ReplayKit", "Starting bridge poll timer")
         let timer = DispatchSource.makeTimerSource(queue: ioQueue)
         timer.schedule(deadline: .now() + .milliseconds(20), repeating: .milliseconds(20))
         timer.setEventHandler { [weak self] in
@@ -54,8 +70,13 @@ final class ReplayKitAudioCaptureController: ObservableObject {
 
     private func pollBridgeFile() {
         guard let fileURL = bridgeFileURL else {
+            if !hasLoggedMissingBridgeURL {
+                hasLoggedMissingBridgeURL = true
+                log(.warning, "ReplayKit", "Bridge file URL unavailable")
+            }
             return
         }
+        hasLoggedMissingBridgeURL = false
         guard let data = try? Data(contentsOf: fileURL), !data.isEmpty else {
             return
         }
@@ -79,6 +100,8 @@ final class ReplayKitAudioCaptureController: ObservableObject {
             let packet = data.subdata(in: packetStart..<packetEnd)
             if let frame = PcmPacketCodec.decode(packet) {
                 frameHandler?(frame)
+            } else {
+                log(.warning, "ReplayKit", "Failed to decode bridge PCM packet")
             }
             cursor = packetEnd
         }
@@ -98,6 +121,15 @@ final class ReplayKitAudioCaptureController: ObservableObject {
     private static let appGroupId = "group.com.example.p2paudio"
     private static let broadcastActiveKey = "broadcast_active"
     private static let bridgeFileName = "replaykit_pcm_bridge.bin"
+
+    private func log(
+        _ level: AppLogLevel,
+        _ category: String,
+        _ message: String,
+        metadata: [String: String] = [:]
+    ) {
+        logHandler?(level, category, message, metadata)
+    }
 }
 
 private extension Data {

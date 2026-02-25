@@ -2,6 +2,7 @@ package com.example.p2paudio.webrtc
 
 import com.example.p2paudio.audio.PcmFrame
 import com.example.p2paudio.audio.PcmPacketCodec
+import com.example.p2paudio.logging.AppLogger
 import com.example.p2paudio.model.AudioStreamState
 import java.nio.ByteBuffer
 import java.util.UUID
@@ -28,8 +29,10 @@ class PeerConnectionController(
     private var peerConnection: PeerConnection? = null
     private var audioDataChannel: DataChannel? = null
     private var currentSessionId: String? = null
+    private var lastSendDropLogAtMs = 0L
 
     suspend fun createOfferSession(): Result<LocalOfferResult> = withContext(Dispatchers.IO) {
+        AppLogger.i("PeerConnection", "create_offer_start", "Creating local offer session")
         stateListener(AudioStreamState.CONNECTING, null)
         runCatching {
             val peer = createPeerConnection()
@@ -47,17 +50,40 @@ class PeerConnectionController(
             val sessionId = UUID.randomUUID().toString()
             currentSessionId = sessionId
 
+            AppLogger.i(
+                "PeerConnection",
+                "create_offer_success",
+                "Created local offer session",
+                context = mapOf(
+                    "sessionId" to sessionId,
+                    "offerLength" to localSdp.length,
+                    "fingerprintHead" to fingerprint.take(16)
+                )
+            )
             LocalOfferResult(
                 sessionId = sessionId,
                 offerSdp = localSdp,
                 localFingerprint = fingerprint
             )
         }.onFailure {
+            AppLogger.e(
+                "PeerConnection",
+                "create_offer_failure",
+                "Failed to create local offer session",
+                context = mapOf("reason" to (it.message ?: "unknown")),
+                throwable = it
+            )
             stateListener(AudioStreamState.FAILED, it.message)
         }
     }
 
     suspend fun createAnswerForOffer(offerSdp: String): Result<LocalAnswerResult> = withContext(Dispatchers.IO) {
+        AppLogger.i(
+            "PeerConnection",
+            "create_answer_start",
+            "Creating local answer for remote offer",
+            context = mapOf("offerLength" to offerSdp.length)
+        )
         stateListener(AudioStreamState.CONNECTING, null)
         runCatching {
             val peer = createPeerConnection()
@@ -74,20 +100,55 @@ class PeerConnectionController(
             val localSdp = peer.localDescription?.description
                 ?: error("Missing local answer SDP")
 
+            AppLogger.i(
+                "PeerConnection",
+                "create_answer_success",
+                "Created local answer",
+                context = mapOf(
+                    "answerLength" to localSdp.length,
+                    "fingerprintHead" to extractFingerprint(localSdp).take(16)
+                )
+            )
             LocalAnswerResult(
                 answerSdp = localSdp,
                 localFingerprint = extractFingerprint(localSdp)
             )
         }.onFailure {
+            AppLogger.e(
+                "PeerConnection",
+                "create_answer_failure",
+                "Failed to create local answer",
+                context = mapOf("reason" to (it.message ?: "unknown")),
+                throwable = it
+            )
             stateListener(AudioStreamState.FAILED, it.message)
         }
     }
 
     suspend fun applyRemoteAnswer(answerSdp: String): Result<Unit> = withContext(Dispatchers.IO) {
+        AppLogger.i(
+            "PeerConnection",
+            "apply_answer_start",
+            "Applying remote answer",
+            context = mapOf("answerLength" to answerSdp.length, "sessionId" to currentSessionId)
+        )
         runCatching {
             val peer = peerConnection ?: error("PeerConnection is not initialized")
             setRemoteDescription(peer, SessionDescription(SessionDescription.Type.ANSWER, answerSdp))
+            AppLogger.i(
+                "PeerConnection",
+                "apply_answer_success",
+                "Remote answer applied",
+                context = mapOf("sessionId" to currentSessionId)
+            )
         }.onFailure {
+            AppLogger.e(
+                "PeerConnection",
+                "apply_answer_failure",
+                "Failed to apply remote answer",
+                context = mapOf("reason" to (it.message ?: "unknown")),
+                throwable = it
+            )
             stateListener(AudioStreamState.FAILED, it.message)
         }
     }
@@ -96,15 +157,29 @@ class PeerConnectionController(
         val packet = PcmPacketCodec.encode(frame)
         val channel = synchronized(lock) { audioDataChannel } ?: return false
         if (channel.state() != DataChannel.State.OPEN) {
+            logDroppedFrame(
+                reason = "data_channel_not_open",
+                context = mapOf("state" to channel.state().name)
+            )
             return false
         }
         if (channel.bufferedAmount() > MAX_BUFFERED_AMOUNT_BYTES) {
+            logDroppedFrame(
+                reason = "buffered_amount_exceeded",
+                context = mapOf("bufferedAmount" to channel.bufferedAmount())
+            )
             return false
         }
         return channel.send(DataChannel.Buffer(ByteBuffer.wrap(packet), true))
     }
 
     fun close() {
+        AppLogger.i(
+            "PeerConnection",
+            "peer_close",
+            "Closing peer connection",
+            context = mapOf("sessionId" to currentSessionId)
+        )
         synchronized(lock) {
             audioDataChannel?.unregisterObserver()
             audioDataChannel?.close()
@@ -123,6 +198,7 @@ class PeerConnectionController(
         }
         val channel = peer.createDataChannel(AUDIO_CHANNEL_LABEL, init)
             ?: error("Failed to create audio data channel")
+        AppLogger.i("PeerConnection", "data_channel_create", "Created local audio data channel")
         bindAudioDataChannel(channel)
     }
 
@@ -137,6 +213,12 @@ class PeerConnectionController(
             override fun onBufferedAmountChange(previousAmount: Long) = Unit
 
             override fun onStateChange() {
+                AppLogger.i(
+                    "PeerConnection",
+                    "data_channel_state_change",
+                    "Data channel state changed",
+                    context = mapOf("state" to channel.state().name)
+                )
                 if (channel.state() == DataChannel.State.OPEN) {
                     stateListener(AudioStreamState.STREAMING, null)
                 }
@@ -169,6 +251,12 @@ class PeerConnectionController(
                     override fun onSignalingChange(state: PeerConnection.SignalingState?) = Unit
 
                     override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
+                        AppLogger.i(
+                            "PeerConnection",
+                            "ice_connection_state_change",
+                            "ICE connection state changed",
+                            context = mapOf("state" to (state?.name ?: "null"))
+                        )
                         when (state) {
                             PeerConnection.IceConnectionState.CONNECTED,
                             PeerConnection.IceConnectionState.COMPLETED -> {
@@ -188,7 +276,14 @@ class PeerConnectionController(
                     }
 
                     override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
-                    override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) = Unit
+                    override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {
+                        AppLogger.d(
+                            "PeerConnection",
+                            "ice_gathering_state_change",
+                            "ICE gathering state changed",
+                            context = mapOf("state" to (state?.name ?: "null"))
+                        )
+                    }
                     override fun onIceCandidate(candidate: org.webrtc.IceCandidate?) = Unit
                     override fun onIceCandidatesRemoved(candidates: Array<out org.webrtc.IceCandidate>?) = Unit
                     override fun onAddStream(mediaStream: org.webrtc.MediaStream?) = Unit
@@ -201,6 +296,12 @@ class PeerConnectionController(
                         if (dataChannel == null) {
                             return
                         }
+                        AppLogger.i(
+                            "PeerConnection",
+                            "remote_data_channel_open",
+                            "Remote data channel opened",
+                            context = mapOf("label" to dataChannel.label())
+                        )
                         if (dataChannel.label() == AUDIO_CHANNEL_LABEL) {
                             bindAudioDataChannel(dataChannel)
                         }
@@ -313,14 +414,31 @@ class PeerConnectionController(
     }
 
     private fun waitForIceComplete(peer: PeerConnection) {
+        AppLogger.d("PeerConnection", "ice_wait_start", "Waiting for ICE gathering completion")
         val deadlineMs = System.currentTimeMillis() + ICE_GATHER_TIMEOUT_MS
         while (System.currentTimeMillis() < deadlineMs) {
             if (peer.iceGatheringState() == PeerConnection.IceGatheringState.COMPLETE) {
+                AppLogger.d("PeerConnection", "ice_wait_complete", "ICE gathering completed")
                 return
             }
             Thread.sleep(30)
         }
+        AppLogger.e("PeerConnection", "ice_wait_timeout", "ICE gathering timed out")
         error("ICE gathering did not complete in time")
+    }
+
+    private fun logDroppedFrame(reason: String, context: Map<String, Any?> = emptyMap()) {
+        val now = System.currentTimeMillis()
+        if (now - lastSendDropLogAtMs < SEND_DROP_LOG_INTERVAL_MS) {
+            return
+        }
+        lastSendDropLogAtMs = now
+        AppLogger.w(
+            "PeerConnection",
+            "pcm_send_dropped",
+            "PCM frame send dropped",
+            context = context + mapOf("reason" to reason)
+        )
     }
 
     private fun extractFingerprint(sdp: String): String {
@@ -346,5 +464,6 @@ class PeerConnectionController(
         private const val ICE_GATHER_TIMEOUT_MS = 8_000L
         private const val AUDIO_CHANNEL_LABEL = "audio-pcm"
         private const val MAX_BUFFERED_AMOUNT_BYTES = 256_000L
+        private const val SEND_DROP_LOG_INTERVAL_MS = 3_000L
     }
 }

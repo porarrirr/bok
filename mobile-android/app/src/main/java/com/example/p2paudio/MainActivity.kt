@@ -8,8 +8,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,32 +27,38 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.lifecycle.lifecycleScope
+import com.example.p2paudio.logging.AppLogger
 import com.example.p2paudio.model.AudioStreamState
+import com.example.p2paudio.model.FailureCode
 import com.example.p2paudio.qr.QrCodeEncoder
 import com.example.p2paudio.service.AudioSendService
 import com.example.p2paudio.ui.MainUiState
 import com.example.p2paudio.ui.MainViewModel
+import com.example.p2paudio.ui.SetupStep
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.delay
@@ -65,20 +74,28 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
+            AppLogger.i("MainActivity", "projection_permission_granted", "Projection permission granted")
             val captureStarted = viewModel.onProjectionPermissionResult(result.data)
             if (captureStarted) {
                 startForegroundSendService()
             }
         } else {
+            AppLogger.w("MainActivity", "projection_permission_denied", "Projection permission denied")
             viewModel.onProjectionPermissionResult(null)
         }
     }
 
     private val qrScanLauncher = registerForActivityResult(ScanContract()) { result ->
         val contents = result.contents ?: return@registerForActivityResult
+        AppLogger.d(
+            "MainActivity",
+            "qr_scan_result",
+            "QR payload received",
+            context = mapOf("target" to pendingScanTarget.name, "length" to contents.length)
+        )
         when (pendingScanTarget) {
-            ScanTarget.OFFER -> viewModel.createAnswerFromOffer(contents)
-            ScanTarget.ANSWER -> viewModel.applyAnswer(contents)
+            ScanTarget.INIT -> viewModel.createConfirmFromInit(contents)
+            ScanTarget.CONFIRM -> viewModel.applyConfirm(contents)
             ScanTarget.NONE -> Unit
         }
         pendingScanTarget = ScanTarget.NONE
@@ -104,16 +121,17 @@ class MainActivity : ComponentActivity() {
                     MainScreen(
                         uiState = uiState,
                         onStartSender = viewModel::requestProjectionPermission,
-                        onScanOffer = {
-                            pendingScanTarget = ScanTarget.OFFER
+                        onStartListenerScan = {
+                            viewModel.beginListenerFlow()
+                            pendingScanTarget = ScanTarget.INIT
                             launchQrScanner()
                         },
-                        onScanAnswer = {
-                            pendingScanTarget = ScanTarget.ANSWER
+                        onScanConfirm = {
+                            pendingScanTarget = ScanTarget.CONFIRM
                             launchQrScanner()
                         },
-                        onSubmitOfferText = viewModel::createAnswerFromOffer,
-                        onSubmitAnswerText = viewModel::applyAnswer,
+                        onVerificationMatch = viewModel::approveVerificationAndConnect,
+                        onVerificationMismatch = viewModel::rejectVerificationAndRestart,
                         onStop = {
                             stopService(Intent(this, AudioSendService::class.java))
                             viewModel.stopSession()
@@ -125,9 +143,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun launchQrScanner() {
+        AppLogger.i(
+            "MainActivity",
+            "qr_scanner_launch",
+            "Launching QR scanner",
+            context = mapOf("target" to pendingScanTarget.name)
+        )
         val options = ScanOptions()
             .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-            .setPrompt("Scan QR payload")
+            .setPrompt(getString(R.string.scanner_prompt))
             .setBeepEnabled(false)
             .setCameraId(0)
             .setOrientationLocked(false)
@@ -135,14 +159,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startForegroundSendService() {
+        AppLogger.i("MainActivity", "start_foreground_service", "Starting AudioSendService")
         val intent = Intent(this, AudioSendService::class.java)
         startForegroundService(intent)
     }
 
     private enum class ScanTarget {
         NONE,
-        OFFER,
-        ANSWER
+        INIT,
+        CONFIRM
     }
 }
 
@@ -150,22 +175,22 @@ class MainActivity : ComponentActivity() {
 private fun MainScreen(
     uiState: MainUiState,
     onStartSender: () -> Unit,
-    onScanOffer: () -> Unit,
-    onScanAnswer: () -> Unit,
-    onSubmitOfferText: (String) -> Unit,
-    onSubmitAnswerText: (String) -> Unit,
+    onStartListenerScan: () -> Unit,
+    onScanConfirm: () -> Unit,
+    onVerificationMatch: () -> Unit,
+    onVerificationMismatch: () -> Unit,
     onStop: () -> Unit
 ) {
-    var offerInput by rememberSaveable { mutableStateOf("") }
-    var answerInput by rememberSaveable { mutableStateOf("") }
     var transientMessage by remember { mutableStateOf("") }
     val clipboardManager = LocalClipboardManager.current
+    val initCopiedText = stringResource(R.string.flow_sender_payload_copied)
+    val confirmCopiedText = stringResource(R.string.flow_receiver_payload_copied)
 
-    val offerQr = remember(uiState.offerPayload) {
-        uiState.offerPayload.takeIf { it.isNotBlank() }?.let { QrCodeEncoder.generate(it) }
+    val initQr = remember(uiState.initPayload) {
+        uiState.initPayload.takeIf { it.isNotBlank() }?.let { QrCodeEncoder.generate(it) }
     }
-    val answerQr = remember(uiState.answerPayload) {
-        uiState.answerPayload.takeIf { it.isNotBlank() }?.let { QrCodeEncoder.generate(it) }
+    val confirmQr = remember(uiState.confirmPayload) {
+        uiState.confirmPayload.takeIf { it.isNotBlank() }?.let { QrCodeEncoder.generate(it) }
     }
 
     LaunchedEffect(transientMessage) {
@@ -175,110 +200,194 @@ private fun MainScreen(
         }
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xFFF4F8FF),
+                        Color(0xFFFFF5EC)
+                    )
+                )
+            )
     ) {
-        Text(
-            text = "P2P Audio Bridge",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold
-        )
-        Text(
-            text = "Pair devices via QR or payload text on the same network.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        SessionStatusCard(uiState = uiState)
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Button(
-                modifier = Modifier.weight(1f),
-                onClick = onStartSender
-            ) {
-                Text("Start Sender")
+            HeaderCard()
+            SessionStatusCard(uiState = uiState)
+
+            EntryActionsCard(
+                onStartSender = onStartSender,
+                onStartListenerScan = onStartListenerScan,
+                onStop = onStop
+            )
+
+            if (transientMessage.isNotBlank()) {
+                Text(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp),
+                    text = transientMessage,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Color(0xFF145A72)
+                )
             }
-            FilledTonalButton(
-                modifier = Modifier.weight(1f),
-                onClick = onStop
-            ) {
-                Text("Stop Session")
+
+            when (uiState.setupStep) {
+                SetupStep.ENTRY -> Unit
+                SetupStep.SENDER_SHOW_INIT -> StepCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("sender_init_step_card"),
+                    number = 1,
+                    title = stringResource(R.string.flow_sender_step_title),
+                    description = stringResource(R.string.flow_sender_step_description)
+                ) {
+                    if (uiState.initPayload.isBlank()) {
+                        Text(
+                            text = stringResource(R.string.flow_sender_waiting_code),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        ConnectionCodeBlock(
+                            payloadTitle = stringResource(R.string.flow_sender_payload_title),
+                            payloadValue = uiState.initPayload,
+                            payloadQr = initQr,
+                            payloadQrDescription = stringResource(R.string.flow_sender_qr_description),
+                            onCopyPayload = {
+                                clipboardManager.setText(AnnotatedString(uiState.initPayload))
+                                transientMessage = initCopiedText
+                            }
+                        )
+                    }
+                    FilledTonalButton(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 46.dp)
+                            .testTag("scan_confirm_button"),
+                        enabled = uiState.initPayload.isNotBlank(),
+                        onClick = onScanConfirm
+                    ) {
+                        Text(stringResource(R.string.flow_sender_scan_button))
+                    }
+                }
+
+                SetupStep.SENDER_VERIFY_CODE -> StepCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("sender_verify_card"),
+                    number = 2,
+                    title = stringResource(R.string.flow_verification_title),
+                    description = stringResource(R.string.flow_verification_description)
+                ) {
+                    VerificationCodeBlock(code = uiState.verificationCode)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 46.dp)
+                                .testTag("verification_match_button"),
+                            onClick = onVerificationMatch
+                        ) {
+                            Text(stringResource(R.string.flow_verification_match))
+                        }
+                        FilledTonalButton(
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 46.dp)
+                                .testTag("verification_mismatch_button"),
+                            onClick = onVerificationMismatch
+                        ) {
+                            Text(stringResource(R.string.flow_verification_mismatch))
+                        }
+                    }
+                }
+
+                SetupStep.LISTENER_SCAN_INIT -> StepCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("listener_scan_step_card"),
+                    number = 1,
+                    title = stringResource(R.string.flow_receiver_step_title),
+                    description = stringResource(R.string.flow_receiver_step_description)
+                ) {
+                    Text(
+                        text = stringResource(R.string.flow_receiver_waiting_code),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                SetupStep.LISTENER_SHOW_CONFIRM -> StepCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("listener_confirm_step_card"),
+                    number = 2,
+                    title = stringResource(R.string.flow_receiver_confirm_title),
+                    description = stringResource(R.string.flow_receiver_confirm_description)
+                ) {
+                    ConnectionCodeBlock(
+                        payloadTitle = stringResource(R.string.flow_receiver_payload_title),
+                        payloadValue = uiState.confirmPayload,
+                        payloadQr = confirmQr,
+                        payloadQrDescription = stringResource(R.string.flow_receiver_qr_description),
+                        onCopyPayload = {
+                            clipboardManager.setText(AnnotatedString(uiState.confirmPayload))
+                            transientMessage = confirmCopiedText
+                        }
+                    )
+                    VerificationCodeBlock(code = uiState.verificationCode)
+                }
             }
         }
+    }
+}
 
-        if (transientMessage.isNotBlank()) {
+@Composable
+private fun HeaderCard() {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
             Text(
-                text = transientMessage,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary
+                text = stringResource(R.string.main_title),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = stringResource(R.string.main_subtitle),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-
-        FlowCard(
-            title = "Receiver Flow",
-            description = "Scan or paste a sender offer. Then share the generated answer back.",
-            inputLabel = "Offer payload",
-            inputValue = offerInput,
-            onInputValueChange = { offerInput = it },
-            onScanClick = onScanOffer,
-            onSubmitClick = { onSubmitOfferText(offerInput.trim()) },
-            scanButtonLabel = "Scan Offer QR",
-            submitButtonLabel = "Use Offer Text",
-            payloadTitle = "Generated answer payload",
-            payloadValue = uiState.answerPayload,
-            payloadQr = answerQr,
-            payloadQrDescription = "Answer QR",
-            onCopyPayload = {
-                clipboardManager.setText(AnnotatedString(uiState.answerPayload))
-                transientMessage = "Answer payload copied."
-            }
-        )
-
-        FlowCard(
-            title = "Sender Flow",
-            description = "Start sender to create an offer. Then import receiver answer.",
-            inputLabel = "Answer payload",
-            inputValue = answerInput,
-            onInputValueChange = { answerInput = it },
-            onScanClick = onScanAnswer,
-            onSubmitClick = { onSubmitAnswerText(answerInput.trim()) },
-            scanButtonLabel = "Scan Answer QR",
-            submitButtonLabel = "Use Answer Text",
-            payloadTitle = "Generated offer payload",
-            payloadValue = uiState.offerPayload,
-            payloadQr = offerQr,
-            payloadQrDescription = "Offer QR",
-            onCopyPayload = {
-                clipboardManager.setText(AnnotatedString(uiState.offerPayload))
-                transientMessage = "Offer payload copied."
-            }
-        )
     }
 }
 
 @Composable
 private fun SessionStatusCard(uiState: MainUiState) {
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = "Connection Status",
+                text = stringResource(R.string.status_connection_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
-                text = uiState.streamState.toReadableLabel(),
+                text = stringResource(uiState.streamState.labelResId()),
                 style = MaterialTheme.typography.labelLarge,
                 color = statusColor(uiState.streamState)
             )
@@ -286,9 +395,10 @@ private fun SessionStatusCard(uiState: MainUiState) {
                 text = uiState.statusMessage,
                 style = MaterialTheme.typography.bodyMedium
             )
+
             if (uiState.activeSessionId.isNotBlank()) {
                 Text(
-                    text = "Session ID",
+                    text = stringResource(R.string.status_session_id),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -301,119 +411,193 @@ private fun SessionStatusCard(uiState: MainUiState) {
                     )
                 }
             }
+
             uiState.failure?.let { failure ->
                 HorizontalDivider()
                 Text(
-                    text = "Failure: ${failure.code.name}",
+                    text = stringResource(
+                        R.string.status_failure_format,
+                        stringResource(failure.code.labelResId())
+                    ),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.error
                 )
             }
+
+            HorizontalDivider()
+            Text(
+                text = stringResource(R.string.status_next_action_title),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = stringResource(recommendedActionRes(uiState)),
+                style = MaterialTheme.typography.bodyMedium
+            )
         }
     }
 }
 
 @Composable
-private fun FlowCard(
+private fun EntryActionsCard(
+    onStartSender: () -> Unit,
+    onStartListenerScan: () -> Unit,
+    onStop: () -> Unit
+) {
+    StepCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("entry_actions_card"),
+        number = 1,
+        title = stringResource(R.string.flow_entry_title),
+        description = stringResource(R.string.flow_entry_description)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Button(
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 46.dp)
+                    .testTag("entry_start_sender_button"),
+                onClick = onStartSender
+            ) {
+                Text(stringResource(R.string.action_start_sender))
+            }
+            Button(
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 46.dp)
+                    .testTag("entry_scan_init_button"),
+                onClick = onStartListenerScan
+            ) {
+                Text(stringResource(R.string.action_start_listener_scan))
+            }
+        }
+        FilledTonalButton(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 46.dp),
+            onClick = onStop
+        ) {
+            Text(stringResource(R.string.action_stop_session))
+        }
+    }
+}
+
+@Composable
+private fun VerificationCodeBlock(code: String) {
+    if (code.isBlank()) {
+        return
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = stringResource(R.string.flow_verification_code_label),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = code,
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+private fun StepCard(
+    modifier: Modifier = Modifier,
+    number: Int,
     title: String,
     description: String,
-    inputLabel: String,
-    inputValue: String,
-    onInputValueChange: (String) -> Unit,
-    onScanClick: () -> Unit,
-    onSubmitClick: () -> Unit,
-    scanButtonLabel: String,
-    submitButtonLabel: String,
-    payloadTitle: String,
-    payloadValue: String,
-    payloadQr: android.graphics.Bitmap?,
-    payloadQrDescription: String,
-    onCopyPayload: () -> Unit
+    content: @Composable ColumnScope.() -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Card(modifier = modifier) {
         Column(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            shape = MaterialTheme.shapes.small
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = number.toString(),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
             Text(
                 text = description,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            OutlinedTextField(
-                value = inputValue,
-                onValueChange = onInputValueChange,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 112.dp),
-                label = { Text(inputLabel) },
-                supportingText = { Text("Paste full payload string here.") }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun ConnectionCodeBlock(
+    payloadTitle: String,
+    payloadValue: String,
+    payloadQr: android.graphics.Bitmap?,
+    payloadQrDescription: String,
+    onCopyPayload: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = payloadTitle,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold
+        )
+        SelectionContainer {
+            Text(
+                text = payloadValue,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.fillMaxWidth()
             )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                FilledTonalButton(
-                    modifier = Modifier.weight(1f),
-                    onClick = onScanClick
-                ) {
-                    Text(scanButtonLabel)
-                }
-                Button(
-                    modifier = Modifier.weight(1f),
-                    enabled = inputValue.isNotBlank(),
-                    onClick = onSubmitClick
-                ) {
-                    Text(submitButtonLabel)
-                }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onCopyPayload) {
+                Text(stringResource(R.string.flow_copy_payload))
             }
+            Text(
+                text = stringResource(R.string.flow_payload_chars, payloadValue.length),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
 
-            if (payloadValue.isNotBlank()) {
-                HorizontalDivider()
-                Text(
-                    text = payloadTitle,
-                    style = MaterialTheme.typography.labelLarge
-                )
-                OutlinedTextField(
-                    value = payloadValue,
-                    onValueChange = {},
-                    readOnly = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 96.dp),
-                    maxLines = 5
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    TextButton(onClick = onCopyPayload) {
-                        Text("Copy payload")
-                    }
-                    Text(
-                        text = "${payloadValue.length} chars",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                payloadQr?.let { qr ->
-                    QrBlock(
-                        qr = qr,
-                        description = payloadQrDescription,
-                        size = 220.dp
-                    )
-                }
-            }
+        payloadQr?.let { qr ->
+            QrBlock(
+                qr = qr,
+                description = payloadQrDescription,
+                size = 220.dp
+            )
         }
     }
 }
@@ -438,19 +622,45 @@ private fun QrBlock(
 
 @Composable
 private fun statusColor(state: AudioStreamState) = when (state) {
-    AudioStreamState.STREAMING -> MaterialTheme.colorScheme.primary
+    AudioStreamState.STREAMING -> Color(0xFF176C2E)
     AudioStreamState.FAILED -> MaterialTheme.colorScheme.error
     AudioStreamState.CONNECTING,
-    AudioStreamState.CAPTURING -> MaterialTheme.colorScheme.tertiary
+    AudioStreamState.CAPTURING -> Color(0xFFAD5D0C)
     else -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
-private fun AudioStreamState.toReadableLabel(): String = when (this) {
-    AudioStreamState.IDLE -> "Idle"
-    AudioStreamState.CAPTURING -> "Capturing"
-    AudioStreamState.CONNECTING -> "Connecting"
-    AudioStreamState.STREAMING -> "Streaming"
-    AudioStreamState.INTERRUPTED -> "Interrupted"
-    AudioStreamState.FAILED -> "Failed"
-    AudioStreamState.ENDED -> "Ended"
+private fun recommendedActionRes(uiState: MainUiState): Int {
+    if (uiState.streamState == AudioStreamState.STREAMING) {
+        return R.string.status_next_action_connected
+    }
+    if (uiState.failure != null) {
+        return R.string.status_next_action_restart
+    }
+    return when (uiState.setupStep) {
+        SetupStep.ENTRY -> R.string.status_next_action_entry
+        SetupStep.SENDER_SHOW_INIT -> R.string.status_next_action_show_init
+        SetupStep.SENDER_VERIFY_CODE -> R.string.status_next_action_verify
+        SetupStep.LISTENER_SCAN_INIT -> R.string.status_next_action_scan_init
+        SetupStep.LISTENER_SHOW_CONFIRM -> R.string.status_next_action_show_confirm
+    }
+}
+
+private fun AudioStreamState.labelResId(): Int = when (this) {
+    AudioStreamState.IDLE -> R.string.state_idle
+    AudioStreamState.CAPTURING -> R.string.state_capturing
+    AudioStreamState.CONNECTING -> R.string.state_connecting
+    AudioStreamState.STREAMING -> R.string.state_streaming
+    AudioStreamState.INTERRUPTED -> R.string.state_interrupted
+    AudioStreamState.FAILED -> R.string.state_failed
+    AudioStreamState.ENDED -> R.string.state_ended
+}
+
+private fun FailureCode.labelResId(): Int = when (this) {
+    FailureCode.PERMISSION_DENIED -> R.string.failure_code_permission_denied
+    FailureCode.AUDIO_CAPTURE_NOT_SUPPORTED -> R.string.failure_code_audio_capture_not_supported
+    FailureCode.WEBRTC_NEGOTIATION_FAILED -> R.string.failure_code_webrtc_negotiation_failed
+    FailureCode.PEER_UNREACHABLE -> R.string.failure_code_peer_unreachable
+    FailureCode.NETWORK_CHANGED -> R.string.failure_code_network_changed
+    FailureCode.SESSION_EXPIRED -> R.string.failure_code_session_expired
+    FailureCode.INVALID_PAYLOAD -> R.string.failure_code_invalid_payload
 }

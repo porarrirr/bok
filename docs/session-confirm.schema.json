@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://example.local/p2p-audio/session-answer.schema.json",
-  "title": "SessionAnswerPayload",
+  "$id": "https://example.local/p2p-audio/session-confirm.schema.json",
+  "title": "PairingConfirmPayload",
   "type": "object",
   "required": [
     "version",
-    "role",
+    "phase",
     "sessionId",
     "receiverDeviceName",
     "receiverPubKeyFingerprint",
@@ -13,8 +13,8 @@
     "expiresAtUnixMs"
   ],
   "properties": {
-    "version": { "const": "1" },
-    "role": { "const": "receiver" },
+    "version": { "const": "2" },
+    "phase": { "const": "confirm" },
     "sessionId": { "type": "string", "minLength": 1 },
     "receiverDeviceName": { "type": "string", "minLength": 1 },
     "receiverPubKeyFingerprint": { "type": "string", "minLength": 1 },

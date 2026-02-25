@@ -1,7 +1,7 @@
 package com.example.p2paudio.protocol
 
-import com.example.p2paudio.model.SessionAnswerPayload
-import com.example.p2paudio.model.SessionOfferPayload
+import com.example.p2paudio.model.PairingConfirmPayload
+import com.example.p2paudio.model.PairingInitPayload
 import java.io.ByteArrayOutputStream
 import java.util.Base64
 import java.util.zip.Deflater
@@ -15,24 +15,24 @@ object QrPayloadCodec {
         prettyPrint = false
     }
 
-    fun encodeOffer(payload: SessionOfferPayload): String {
-        val raw = json.encodeToString(SessionOfferPayload.serializer(), payload)
+    fun encodeInit(payload: PairingInitPayload): String {
+        val raw = json.encodeToString(PairingInitPayload.serializer(), payload)
         return encodeTransportString(raw)
     }
 
-    fun encodeAnswer(payload: SessionAnswerPayload): String {
-        val raw = json.encodeToString(SessionAnswerPayload.serializer(), payload)
+    fun encodeConfirm(payload: PairingConfirmPayload): String {
+        val raw = json.encodeToString(PairingConfirmPayload.serializer(), payload)
         return encodeTransportString(raw)
     }
 
-    fun decodeOffer(raw: String): SessionOfferPayload {
+    fun decodeInit(raw: String): PairingInitPayload {
         val decoded = decodeTransportString(raw)
-        return json.decodeFromString(SessionOfferPayload.serializer(), decoded)
+        return json.decodeFromString(PairingInitPayload.serializer(), decoded)
     }
 
-    fun decodeAnswer(raw: String): SessionAnswerPayload {
+    fun decodeConfirm(raw: String): PairingConfirmPayload {
         val decoded = decodeTransportString(raw)
-        return json.decodeFromString(SessionAnswerPayload.serializer(), decoded)
+        return json.decodeFromString(PairingConfirmPayload.serializer(), decoded)
     }
 
     private fun encodeTransportString(raw: String): String {

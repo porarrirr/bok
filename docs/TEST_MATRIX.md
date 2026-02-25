@@ -6,7 +6,11 @@
 - Android -> iOS: media/game audio playback on receiver.
 - iOS -> Android: ReplayKit captured app audio playback on receiver.
 - iOS -> iOS: ReplayKit captured app audio playback on receiver.
-- QR camera scan flow on iOS for both Offer and Answer payloads.
+- QR-only flow on both platforms:
+  - sender init QR generation
+  - listener confirm QR generation
+  - sender confirm QR scan
+  - 6-digit code verification
 
 ## Failure
 
@@ -14,7 +18,11 @@
 - Capture unsupported (`audio_capture_not_supported`).
 - SDP mismatch (`webrtc_negotiation_failed`).
 - LAN disconnect (`network_changed`).
-- Expired QR payload (`session_expired`).
+- Expired init/confirm payload (`session_expired`).
+- Invalid payload version/phase (`invalid_payload`).
+- Session ID mismatch between init/confirm (`invalid_payload`).
+- Verification mismatch (user chooses mismatch -> forced restart).
+- Legacy v1 payload provided to v2 decoder (must fail validation).
 - DataChannel closed or backpressured (`interrupted`/`failed` state transition).
 
 ## Performance

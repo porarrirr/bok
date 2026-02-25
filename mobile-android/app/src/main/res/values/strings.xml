@@ -1,3 +1,103 @@
 <resources>
     <string name="app_name">P2P Audio</string>
+    <string name="scanner_prompt">Scan a pairing QR code</string>
+
+    <string name="main_title">Audio Link</string>
+    <string name="main_subtitle">Connect two devices on the same Wi-Fi with QR-only steps.</string>
+
+    <string name="action_start_sender">Start Sharing</string>
+    <string name="action_start_listener_scan">Scan Sender QR</string>
+    <string name="action_stop_session">Stop</string>
+
+    <string name="status_connection_title">Connection Status</string>
+    <string name="status_session_id">Session ID</string>
+    <string name="status_failure_format">Issue: %1$s</string>
+    <string name="status_next_action_title">Next step</string>
+    <string name="status_ready">Choose one start action below.</string>
+    <string name="status_listener_ready_to_scan">Scan the sender init QR.</string>
+    <string name="status_receiving_remote_audio">Receiving audio from the other device</string>
+    <string name="status_capturing">Preparing audio sharing</string>
+    <string name="status_init_generated">Init QR is ready. Let the listener scan it.</string>
+    <string name="status_confirm_generated">Confirm QR is ready. Show it to the sender.</string>
+    <string name="status_verification_ready">Check that both devices show the same 6-digit code.</string>
+    <string name="status_verification_mismatch">Verification mismatch. Start again from Step 1.</string>
+    <string name="status_answer_applied">Verification accepted. Finishing connection.</string>
+    <string name="status_session_ended">Connection stopped</string>
+    <string name="status_streaming_captured_audio">Sharing this device\'s audio</string>
+    <string name="status_peer_disconnected">The other device disconnected</string>
+    <string name="status_ice_connection_failed">Could not establish a direct connection</string>
+
+    <string name="status_next_action_entry">Tap either Start Sharing or Scan Sender QR.</string>
+    <string name="status_next_action_show_init">Show the init QR and ask the listener to scan it.</string>
+    <string name="status_next_action_scan_init">Use Scan Sender QR to read the sender init QR.</string>
+    <string name="status_next_action_show_confirm">Show your confirm QR and 6-digit code to the sender.</string>
+    <string name="status_next_action_verify">Confirm both devices show the same 6-digit code.</string>
+    <string name="status_next_action_connected">You\'re connected. Keep this screen open while sharing audio.</string>
+    <string name="status_next_action_restart">Restart from Step 1.</string>
+    <string name="status_next_action_permission">Allow screen/audio capture, then tap Start Sharing again.</string>
+    <string name="status_next_action_capture_not_supported">This device cannot share internal audio. Use a supported Android 10+ device.</string>
+
+    <string name="state_idle">Idle</string>
+    <string name="state_capturing">Preparing</string>
+    <string name="state_connecting">Connecting</string>
+    <string name="state_streaming">Connected</string>
+    <string name="state_interrupted">Interrupted</string>
+    <string name="state_failed">Needs attention</string>
+    <string name="state_ended">Stopped</string>
+
+    <string name="flow_entry_title">Step 1: Choose start action</string>
+    <string name="flow_entry_description">No manual code input. Use QR scan only.</string>
+
+    <string name="flow_sender_step_title">Step 2: Show init QR</string>
+    <string name="flow_sender_step_description">After the listener scans this QR, scan their confirm QR.</string>
+    <string name="flow_sender_waiting_code">Init QR appears here after sharing starts.</string>
+    <string name="flow_sender_scan_button">Scan Confirm QR</string>
+    <string name="flow_sender_payload_title">Your init QR payload</string>
+    <string name="flow_sender_qr_description">Init QR for sender</string>
+    <string name="flow_sender_payload_copied">Init payload copied.</string>
+
+    <string name="flow_receiver_step_title">Step 2: Scan sender init QR</string>
+    <string name="flow_receiver_step_description">Use the entry button to scan the sender init QR.</string>
+    <string name="flow_receiver_waiting_code">Waiting for sender init QR scan.</string>
+    <string name="flow_receiver_confirm_title">Step 3: Show confirm QR</string>
+    <string name="flow_receiver_confirm_description">Show this QR and the 6-digit code to the sender.</string>
+    <string name="flow_receiver_payload_title">Your confirm QR payload</string>
+    <string name="flow_receiver_qr_description">Confirm QR for listener</string>
+    <string name="flow_receiver_payload_copied">Confirm payload copied.</string>
+
+    <string name="flow_verification_title">Step 3: Verify 6-digit code</string>
+    <string name="flow_verification_description">Both devices must show the same code before connecting.</string>
+    <string name="flow_verification_code_label">Verification code</string>
+    <string name="flow_verification_match">Codes Match</string>
+    <string name="flow_verification_mismatch">Codes Differ</string>
+
+    <string name="flow_copy_payload">Copy payload</string>
+    <string name="flow_payload_chars">%1$d chars</string>
+
+    <string name="notification_channel_name">P2P audio session</string>
+    <string name="notification_content_title">P2P Audio</string>
+    <string name="notification_content_text">Sharing device audio</string>
+
+    <string name="error_audio_capture_android10">Audio sharing is available on Android 10 or newer.</string>
+    <string name="error_permission_denied">Permission was denied.</string>
+    <string name="error_capture_start_failed">Could not start audio sharing.</string>
+    <string name="error_create_offer_failed">Could not create an init QR payload.</string>
+    <string name="error_create_answer_failed">Could not create a confirm QR payload.</string>
+    <string name="error_apply_answer_failed">Could not apply the confirm payload.</string>
+    <string name="error_invalid_init_payload">The init QR payload is invalid.</string>
+    <string name="error_invalid_confirm_payload">The confirm QR payload is invalid.</string>
+    <string name="error_audio_capture_not_supported">Audio sharing is not supported on this device.</string>
+    <string name="error_webrtc_negotiation_failed">Could not establish a direct connection.</string>
+    <string name="error_peer_unreachable">The other device could not be reached.</string>
+    <string name="error_network_changed">Network changed during setup.</string>
+    <string name="error_session_expired">The QR payload expired.</string>
+    <string name="error_invalid_payload">The QR payload is invalid.</string>
+
+    <string name="failure_code_permission_denied">Permission denied</string>
+    <string name="failure_code_audio_capture_not_supported">Audio sharing unavailable on this device</string>
+    <string name="failure_code_webrtc_negotiation_failed">Connection setup failed</string>
+    <string name="failure_code_peer_unreachable">Other device not reachable</string>
+    <string name="failure_code_network_changed">Network changed</string>
+    <string name="failure_code_session_expired">QR payload expired</string>
+    <string name="failure_code_invalid_payload">Invalid QR payload</string>
 </resources>

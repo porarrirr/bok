@@ -4,8 +4,8 @@ import XCTest
 
 final class QrPayloadCodecTests: XCTestCase {
 
-    func testEncodeOfferCompressesAndDecodesLargePayload() throws {
-        let payload = SessionOfferPayload(
+    func testEncodeInitCompressesAndDecodesLargePayload() throws {
+        let payload = PairingInitPayload(
             sessionId: "session-1",
             senderDeviceName: "iphone",
             senderPubKeyFingerprint: "fp",
@@ -13,31 +13,30 @@ final class QrPayloadCodecTests: XCTestCase {
             expiresAtUnixMs: 1_760_000_000_000
         )
 
-        let encoded = try QrPayloadCodec.encodeOffer(payload)
+        let encoded = try QrPayloadCodec.encodeInit(payload)
         XCTAssertTrue(encoded.hasPrefix("p2paudio-z1:"))
 
-        let decoded = try QrPayloadCodec.decodeOffer(encoded)
-        assertEqualOffer(decoded, payload)
+        let decoded = try QrPayloadCodec.decodeInit(encoded)
+        assertEqualInit(decoded, payload)
     }
 
-    func testDecodeOfferSupportsLegacyRawJson() throws {
-        let payload = SessionOfferPayload(
-            sessionId: "session-legacy",
-            senderDeviceName: "iphone",
-            senderPubKeyFingerprint: "fp",
-            offerSdp: "v=0\na=fingerprint:sha-256 test\n",
-            expiresAtUnixMs: 1_760_000_000_000
-        )
-
-        let data = try JSONEncoder().encode(payload)
-        let raw = try XCTUnwrap(String(data: data, encoding: .utf8))
-
-        let decoded = try QrPayloadCodec.decodeOffer(raw)
-        assertEqualOffer(decoded, payload)
+    func testDecodeInitRejectsLegacyRawJson() {
+        let raw = """
+        {
+          "version":"1",
+          "role":"sender",
+          "sessionId":"session-legacy",
+          "senderDeviceName":"iphone",
+          "senderPubKeyFingerprint":"fp",
+          "offerSdp":"v=0\\na=fingerprint:sha-256 test\\n",
+          "expiresAtUnixMs":1760000000000
+        }
+        """
+        XCTAssertThrowsError(try QrPayloadCodec.decodeInit(raw))
     }
 
-    func testDecodeOfferRejectsEmptyCompressedPayload() {
-        XCTAssertThrowsError(try QrPayloadCodec.decodeOffer("p2paudio-z1:")) { error in
+    func testDecodeInitRejectsEmptyCompressedPayload() {
+        XCTAssertThrowsError(try QrPayloadCodec.decodeInit("p2paudio-z1:")) { error in
             guard let failure = error as? SessionFailure else {
                 return XCTFail("Expected SessionFailure")
             }
@@ -45,8 +44,8 @@ final class QrPayloadCodecTests: XCTestCase {
         }
     }
 
-    func testDecodeOfferRejectsInvalidCompressedBase64() {
-        XCTAssertThrowsError(try QrPayloadCodec.decodeOffer("p2paudio-z1:***invalid***")) { error in
+    func testDecodeInitRejectsInvalidCompressedBase64() {
+        XCTAssertThrowsError(try QrPayloadCodec.decodeInit("p2paudio-z1:***invalid***")) { error in
             guard let failure = error as? SessionFailure else {
                 return XCTFail("Expected SessionFailure")
             }
@@ -54,9 +53,9 @@ final class QrPayloadCodecTests: XCTestCase {
         }
     }
 
-    private func assertEqualOffer(_ lhs: SessionOfferPayload, _ rhs: SessionOfferPayload) {
+    private func assertEqualInit(_ lhs: PairingInitPayload, _ rhs: PairingInitPayload) {
         XCTAssertEqual(lhs.version, rhs.version)
-        XCTAssertEqual(lhs.role, rhs.role)
+        XCTAssertEqual(lhs.phase, rhs.phase)
         XCTAssertEqual(lhs.sessionId, rhs.sessionId)
         XCTAssertEqual(lhs.senderDeviceName, rhs.senderDeviceName)
         XCTAssertEqual(lhs.senderPubKeyFingerprint, rhs.senderPubKeyFingerprint)

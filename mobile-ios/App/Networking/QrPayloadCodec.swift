@@ -8,36 +8,36 @@ enum QrPayloadCodec {
     private static let minBytesForCompression = 256
     private static let maxDecompressedBytes = 512_000
 
-    static func encodeOffer(_ payload: SessionOfferPayload) throws -> String {
+    static func encodeInit(_ payload: PairingInitPayload) throws -> String {
         let data = try encoder.encode(payload)
         guard let raw = String(data: data, encoding: .utf8) else {
-            throw SessionFailure(code: .invalidPayload, message: "Failed to encode offer payload")
+            throw SessionFailure(code: .invalidPayload, message: L10n.tr("error.failed_encode_offer"))
         }
         return compressTransportIfBeneficial(raw, data: data)
     }
 
-    static func encodeAnswer(_ payload: SessionAnswerPayload) throws -> String {
+    static func encodeConfirm(_ payload: PairingConfirmPayload) throws -> String {
         let data = try encoder.encode(payload)
         guard let raw = String(data: data, encoding: .utf8) else {
-            throw SessionFailure(code: .invalidPayload, message: "Failed to encode answer payload")
+            throw SessionFailure(code: .invalidPayload, message: L10n.tr("error.failed_encode_answer"))
         }
         return compressTransportIfBeneficial(raw, data: data)
     }
 
-    static func decodeOffer(_ raw: String) throws -> SessionOfferPayload {
+    static func decodeInit(_ raw: String) throws -> PairingInitPayload {
         let normalized = try decodeTransportString(raw)
         guard let data = normalized.data(using: .utf8) else {
-            throw SessionFailure(code: .invalidPayload, message: "Offer payload is not UTF-8")
+            throw SessionFailure(code: .invalidPayload, message: L10n.tr("error.invalid_init_payload"))
         }
-        return try decoder.decode(SessionOfferPayload.self, from: data)
+        return try decoder.decode(PairingInitPayload.self, from: data)
     }
 
-    static func decodeAnswer(_ raw: String) throws -> SessionAnswerPayload {
+    static func decodeConfirm(_ raw: String) throws -> PairingConfirmPayload {
         let normalized = try decodeTransportString(raw)
         guard let data = normalized.data(using: .utf8) else {
-            throw SessionFailure(code: .invalidPayload, message: "Answer payload is not UTF-8")
+            throw SessionFailure(code: .invalidPayload, message: L10n.tr("error.invalid_confirm_payload"))
         }
-        return try decoder.decode(SessionAnswerPayload.self, from: data)
+        return try decoder.decode(PairingConfirmPayload.self, from: data)
     }
 
     private static func compressTransportIfBeneficial(_ raw: String, data: Data) -> String {
@@ -60,16 +60,16 @@ enum QrPayloadCodec {
         }
         let encoded = String(raw.dropFirst(compressedPrefix.count))
         guard !encoded.isEmpty else {
-            throw SessionFailure(code: .invalidPayload, message: "Compressed payload is empty")
+            throw SessionFailure(code: .invalidPayload, message: L10n.tr("error.invalid_payload"))
         }
 
         let standardBase64 = makeBase64Standard(encoded)
         guard let compressedData = Data(base64Encoded: standardBase64) else {
-            throw SessionFailure(code: .invalidPayload, message: "Compressed payload base64 is invalid")
+            throw SessionFailure(code: .invalidPayload, message: L10n.tr("error.invalid_payload"))
         }
         guard let decompressed = zlibDecompress(compressedData, maxOutputBytes: maxDecompressedBytes),
               let normalized = String(data: decompressed, encoding: .utf8) else {
-            throw SessionFailure(code: .invalidPayload, message: "Failed to decode compressed payload")
+            throw SessionFailure(code: .invalidPayload, message: L10n.tr("error.invalid_payload"))
         }
         return normalized
     }

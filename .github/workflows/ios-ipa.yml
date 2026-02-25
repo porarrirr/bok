@@ -35,6 +35,9 @@ on:
   push:
     tags:
       - "**"
+  release:
+    types:
+      - published
 
 permissions:
   contents: write
@@ -49,9 +52,9 @@ jobs:
       PROJECT_SPEC_PATH_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.project_spec_path || 'mobile-ios/project.yml' }}
       SCHEME_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.scheme || 'P2PAudio' }}
       CONFIGURATION_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.configuration || 'Release' }}
-      PUBLISH_RELEASE: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && 'true' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release || 'false') }}
-      RELEASE_TAG_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || '' }}
-      RELEASE_NAME_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_name || '' }}
+      PUBLISH_RELEASE: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) && 'true' || (github.event_name == 'release') && 'true' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release || 'false') }}
+      RELEASE_TAG_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || (github.event_name == 'release' && github.event.release.tag_name || '') }}
+      RELEASE_NAME_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_name || (github.event_name == 'release' && github.event.release.name || '') }}
 
     steps:
       - name: Checkout

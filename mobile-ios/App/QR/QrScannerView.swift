@@ -50,7 +50,7 @@ struct QrScannerView: UIViewControllerRepresentable {
 
         private func setupCloseButton() {
             let button = UIButton(type: .system)
-            button.setTitle("Close", for: .normal)
+            button.setTitle(L10n.tr("action.close"), for: .normal)
             button.tintColor = .white
             button.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
             button.translatesAutoresizingMaskIntoConstraints = false
