@@ -24,6 +24,7 @@ Workflow: `.github/workflows/ios-ipa.yml`
 Run it from `Actions -> Build iOS IPA -> Run workflow`.
 This workflow builds an unsigned `.ipa` (no code signing secrets required).
 If `project_path` is missing, CI auto-generates the project from `project_spec_path` using `xcodegen`.
+You can also push a Git tag (for example `v0.1.0`) to automatically build and publish `unsigned.ipa` to that tag's GitHub Release.
 
 `workflow_dispatch` inputs:
 
@@ -32,7 +33,7 @@ If `project_path` is missing, CI auto-generates the project from `project_spec_p
 - `scheme`: Scheme name to archive.
 - `configuration`: Usually `Release`.
 - `publish_release`: `true` にすると `unsigned.ipa` を GitHub Releases に配置。
-- `release_tag`: リリースタグ（空なら `ios-unsigned-<run_number>`）。
+- `release_tag`: リリースタグ（手動実行で空なら `ios-unsigned-<run_number>`。タグpush実行ではそのタグ名）。
 - `release_name`: リリース名（空なら自動）。
 
 ## Notes

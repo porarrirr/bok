@@ -32,6 +32,9 @@ on:
         description: "Release name (empty = auto)"
         required: false
         default: ""
+  push:
+    tags:
+      - "**"
 
 permissions:
   contents: write
@@ -42,6 +45,13 @@ jobs:
     env:
       ARCHIVE_PATH: ${{ github.workspace }}/build/P2PAudio.xcarchive
       EXPORT_PATH: ${{ github.workspace }}/build/export
+      PROJECT_PATH_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.project_path || 'mobile-ios/P2PAudio.xcodeproj' }}
+      PROJECT_SPEC_PATH_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.project_spec_path || 'mobile-ios/project.yml' }}
+      SCHEME_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.scheme || 'P2PAudio' }}
+      CONFIGURATION_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.configuration || 'Release' }}
+      PUBLISH_RELEASE: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && 'true' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release || 'false') }}
+      RELEASE_TAG_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || '' }}
+      RELEASE_NAME_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_name || '' }}
 
     steps:
       - name: Checkout
@@ -50,8 +60,8 @@ jobs:
       - name: Resolve project container
         run: |
           set -euo pipefail
-          PROJECT_PATH="${{ inputs.project_path }}"
-          SPEC_PATH="${{ inputs.project_spec_path }}"
+          PROJECT_PATH="$PROJECT_PATH_INPUT"
+          SPEC_PATH="$PROJECT_SPEC_PATH_INPUT"
 
           if [ -e "$PROJECT_PATH" ]; then
             case "$PROJECT_PATH" in
@@ -112,8 +122,8 @@ jobs:
           rm -rf "$ARCHIVE_PATH" "$EXPORT_PATH"
 
           PROJECT_PATH="${RESOLVED_PROJECT_PATH}"
-          SCHEME="${{ inputs.scheme }}"
-          CONFIGURATION="${{ inputs.configuration }}"
+          SCHEME="$SCHEME_INPUT"
+          CONFIGURATION="$CONFIGURATION_INPUT"
 
           if [[ "$PROJECT_PATH" == *.xcworkspace ]]; then
             xcodebuild archive \
@@ -161,29 +171,35 @@ jobs:
           if-no-files-found: error
 
       - name: Resolve release metadata
-        if: ${{ inputs.publish_release }}
+        if: ${{ env.PUBLISH_RELEASE == 'true' }}
         run: |
           set -euo pipefail
-          TAG_INPUT="${{ inputs.release_tag }}"
-          NAME_INPUT="${{ inputs.release_name }}"
+          TAG_INPUT="$RELEASE_TAG_INPUT"
+          NAME_INPUT="$RELEASE_NAME_INPUT"
+
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            DEFAULT_TAG="${GITHUB_REF_NAME}"
+          else
+            DEFAULT_TAG="ios-unsigned-${GITHUB_RUN_NUMBER}"
+          fi
 
           if [ -n "$TAG_INPUT" ]; then
             RELEASE_TAG="$TAG_INPUT"
           else
-            RELEASE_TAG="ios-unsigned-${GITHUB_RUN_NUMBER}"
+            RELEASE_TAG="$DEFAULT_TAG"
           fi
 
           if [ -n "$NAME_INPUT" ]; then
             RELEASE_NAME="$NAME_INPUT"
           else
-            RELEASE_NAME="iOS Unsigned IPA ${GITHUB_RUN_NUMBER}"
+            RELEASE_NAME="iOS Unsigned IPA ${RELEASE_TAG}"
           fi
 
           echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
           echo "RELEASE_NAME=$RELEASE_NAME" >> "$GITHUB_ENV"
 
       - name: Publish to GitHub Releases
-        if: ${{ inputs.publish_release }}
+        if: ${{ env.PUBLISH_RELEASE == 'true' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
