@@ -4,6 +4,7 @@ import WebRTC
 final class WebRTCSessionController: NSObject {
     typealias StateHandler = (AudioStreamState, String?) -> Void
     typealias LogHandler = (AppLogLevel, String, String, [String: String]) -> Void
+    typealias DiagnosticsHandler = (ConnectionDiagnostics) -> Void
     private struct IceWaitCallbacks {
         let onSuccess: () -> Void
         let onTimeout: () -> Void
@@ -21,16 +22,19 @@ final class WebRTCSessionController: NSObject {
     private let stateHandler: StateHandler
     private let pcmFrameHandler: (PcmFrame) -> Void
     private let logHandler: LogHandler?
+    private let diagnosticsHandler: DiagnosticsHandler?
 
     private let syncLock = NSLock()
     private var audioDataChannel: RTCDataChannel?
     private var lastPcmDropReason: PcmDropReason?
     private var lastPcmDropLogAt = Date.distantPast
+    private var connectionDiagnostics = ConnectionDiagnostics()
 
     init(
         stateHandler: @escaping StateHandler,
         pcmFrameHandler: @escaping (PcmFrame) -> Void,
-        logHandler: LogHandler? = nil
+        logHandler: LogHandler? = nil,
+        diagnosticsHandler: DiagnosticsHandler? = nil
     ) {
         RTCInitializeSSL()
         let encoderFactory = RTCDefaultVideoEncoderFactory()
@@ -39,11 +43,14 @@ final class WebRTCSessionController: NSObject {
         self.stateHandler = stateHandler
         self.pcmFrameHandler = pcmFrameHandler
         self.logHandler = logHandler
+        self.diagnosticsHandler = diagnosticsHandler
         super.init()
+        resetDiagnostics()
     }
 
     func createOffer(completion: @escaping (Result<(sdp: String, fingerprint: String), Error>) -> Void) {
         log(.info, "WebRTC", "Create offer requested")
+        resetDiagnostics()
         stateHandler(.connecting, nil)
         cancelIceWait()
         let peer = makePeerConnection()
@@ -103,6 +110,7 @@ final class WebRTCSessionController: NSObject {
         completion: @escaping (Result<(sdp: String, fingerprint: String), Error>) -> Void
     ) {
         log(.info, "WebRTC", "Create answer requested", metadata: ["offerLength": String(offerSdp.count)])
+        resetDiagnostics()
         stateHandler(.connecting, nil)
         cancelIceWait()
         let peer = makePeerConnection()
@@ -221,14 +229,19 @@ final class WebRTCSessionController: NSObject {
         log(.info, "WebRTC", "Closing peer connection")
         cancelIceWait()
         syncLock.lock()
+        let hadDataChannel = audioDataChannel != nil
         audioDataChannel?.delegate = nil
         audioDataChannel?.close()
         audioDataChannel = nil
         syncLock.unlock()
 
+        let hadPeerConnection = peerConnection != nil
         peerConnection?.close()
         peerConnection = nil
-        stateHandler(.ended, nil)
+        resetDiagnostics()
+        if hadDataChannel || hadPeerConnection {
+            stateHandler(.ended, nil)
+        }
     }
 
     private func makePeerConnection() -> RTCPeerConnection {
@@ -364,6 +377,76 @@ final class WebRTCSessionController: NSObject {
             log(.warning, "WebRTC", message, metadata: metadata)
         }
     }
+
+    private func resetDiagnostics() {
+        syncLock.lock()
+        connectionDiagnostics = ConnectionDiagnostics(pathType: NetworkPathClassifier.classifyFromLocalInterfaces())
+        let snapshot = connectionDiagnostics
+        syncLock.unlock()
+        diagnosticsHandler?(snapshot)
+    }
+
+    private func onLocalIceCandidate(_ candidate: RTCIceCandidate) {
+        let type = parseCandidateType(candidate.sdp)
+        guard type == "host" else {
+            return
+        }
+
+        let detectedPath = NetworkPathClassifier.classify(fromCandidateSdp: candidate.sdp)
+        syncLock.lock()
+        let nextPath = chooseMoreSpecificPath(current: connectionDiagnostics.pathType, incoming: detectedPath)
+        connectionDiagnostics = ConnectionDiagnostics(
+            pathType: nextPath,
+            localCandidatesCount: connectionDiagnostics.localCandidatesCount + 1,
+            selectedCandidatePairType: connectionDiagnostics.selectedCandidatePairType,
+            failureHint: connectionDiagnostics.failureHint
+        )
+        let snapshot = connectionDiagnostics
+        syncLock.unlock()
+        diagnosticsHandler?(snapshot)
+        log(.debug, "WebRTC", "Host ICE candidate detected", metadata: [
+            "pathType": snapshot.pathType.rawValue,
+            "localCandidatesCount": String(snapshot.localCandidatesCount)
+        ])
+    }
+
+    private func updateDiagnostics(selectedPairType: String? = nil, failureHint: String? = nil) {
+        syncLock.lock()
+        connectionDiagnostics = ConnectionDiagnostics(
+            pathType: connectionDiagnostics.pathType,
+            localCandidatesCount: connectionDiagnostics.localCandidatesCount,
+            selectedCandidatePairType: selectedPairType ?? connectionDiagnostics.selectedCandidatePairType,
+            failureHint: failureHint ?? connectionDiagnostics.failureHint
+        )
+        let snapshot = connectionDiagnostics
+        syncLock.unlock()
+        diagnosticsHandler?(snapshot)
+    }
+
+    private func chooseMoreSpecificPath(current: NetworkPathType, incoming: NetworkPathType) -> NetworkPathType {
+        if incoming == .unknown {
+            return current
+        }
+        if current == .usbTether {
+            return current
+        }
+        return incoming
+    }
+
+    private func parseCandidateType(_ sdp: String) -> String {
+        let parts = sdp.split(separator: " ")
+        guard let typIndex = parts.firstIndex(of: "typ"), typIndex + 1 < parts.count else {
+            return ""
+        }
+        return String(parts[typIndex + 1])
+    }
+
+    private func currentPathType() -> NetworkPathType {
+        syncLock.lock()
+        let value = connectionDiagnostics.pathType
+        syncLock.unlock()
+        return value
+    }
 }
 
 extension WebRTCSessionController: RTCPeerConnectionDelegate {
@@ -379,10 +462,22 @@ extension WebRTCSessionController: RTCPeerConnectionDelegate {
         log(.info, "WebRTC", "ICE connection state changed", metadata: ["state": String(newState.rawValue)])
         switch newState {
         case .connected, .completed:
+            updateDiagnostics(selectedPairType: "host-host", failureHint: "")
             stateHandler(.streaming, nil)
         case .disconnected:
+            updateDiagnostics(failureHint: "peer_disconnected")
             stateHandler(.interrupted, L10n.tr("status.peer_disconnected"))
         case .failed:
+            let failureHint: String
+            switch currentPathType() {
+            case .usbTether:
+                failureHint = "usb_tether_check"
+            case .wifiLan:
+                failureHint = "wifi_lan_check"
+            case .unknown:
+                failureHint = "network_interface_check"
+            }
+            updateDiagnostics(failureHint: failureHint)
             stateHandler(.failed, L10n.tr("status.ice_connection_failed"))
         default:
             break
@@ -396,7 +491,9 @@ extension WebRTCSessionController: RTCPeerConnectionDelegate {
         }
     }
 
-    func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {}
+    func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
+        onLocalIceCandidate(candidate)
+    }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
 

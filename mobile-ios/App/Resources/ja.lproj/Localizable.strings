@@ -11,6 +11,13 @@
 
 "status.connection_title" = "接続状態";
 "status.session_id" = "セッションID";
+"status.network_path_title" = "接続経路";
+"status.network_path_wifi" = "Wi-Fi / LAN";
+"status.network_path_usb" = "USBテザリング";
+"status.network_path_unknown" = "不明";
+"status.local_candidates_format" = "ローカル host ICE 候補: %d";
+"status.selected_pair_format" = "選択された候補ペア: %@";
+"status.failure_hint_format" = "ヒント: %@";
 "status.ready" = "下の開始アクションを選んでください。";
 "status.receiving_remote_audio" = "相手の音声を受信しています";
 "status.start_broadcast_first" = "先に画面ブロードキャストを開始してから、共有を開始してください。";
@@ -31,7 +38,14 @@
 "status.next_action_show_confirm" = "confirm QRと6桁コードを送信側に見せてください。";
 "status.next_action_verify" = "両端末の6桁コードが一致することを確認してください。";
 "status.next_action_connected" = "接続済みです。共有中はこの画面を開いたままにしてください。";
+"status.next_action_start_broadcast" = "コントロールセンターで画面ブロードキャストを開始してから、「共有を開始」を押してください。";
 "status.next_action_restart" = "Step 1からやり直してください。";
+"status.next_action_usb_enable_tethering" = "USBテザリングを有効にしてケーブルを再接続し、Step 1から再開してください。";
+"status.next_action_usb_replug" = "USBテザリングは検出されましたが到達できません。ケーブル再接続と信頼/テザリング設定を確認してください。";
+"status.next_action_check_interface" = "利用可能なhostネットワークインターフェースがありません。Wi-FiまたはUSBテザリング設定を確認してください。";
+"status.hint_usb_tether_check" = "USBケーブル、信頼ダイアログ、USBテザリング設定を確認してください。";
+"status.hint_wifi_check" = "両端末が同一ローカルネットワークにいることを確認してください。";
+"status.hint_network_interface_check" = "利用可能なhostネットワークインターフェースが見つかりません。";
 
 "stream_state.idle" = "待機中";
 "stream_state.capturing" = "準備中";
@@ -90,3 +104,6 @@
 "error.local_answer_missing" = "ローカルconfirm SDPがありません";
 "error.peer_connection_unavailable" = "接続エンジンが利用できません";
 "error.data_channel_create_failed" = "音声チャネルの作成に失敗しました";
+"error.usb_tether_unavailable" = "USBテザリング経路が利用できません。USBテザリングを有効化して再接続してください。";
+"error.usb_tether_not_reachable" = "USBテザリング経路は検出されましたが接続に失敗しました。再接続と信頼設定を確認してください。";
+"error.network_interface_not_usable" = "host ICE候補に使えるローカルネットワークインターフェースが見つかりません。";

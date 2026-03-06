@@ -106,6 +106,43 @@ struct ContentView: View {
                     .textSelection(.enabled)
             }
 
+            if viewModel.connectionDiagnostics.hasContent {
+                Divider().padding(.top, 2)
+                Text(L10n.tr("status.network_path_title"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(viewModel.connectionDiagnostics.pathType.readableLabel)
+                    .font(.subheadline)
+                Text(
+                    L10n.tr(
+                        "status.local_candidates_format",
+                        viewModel.connectionDiagnostics.localCandidatesCount
+                    )
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                if !viewModel.connectionDiagnostics.selectedCandidatePairType.isEmpty {
+                    Text(
+                        L10n.tr(
+                            "status.selected_pair_format",
+                            viewModel.connectionDiagnostics.selectedCandidatePairType
+                        )
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                if !viewModel.connectionDiagnostics.failureHint.isEmpty {
+                    Text(
+                        L10n.tr(
+                            "status.failure_hint_format",
+                            viewModel.connectionDiagnostics.localizedHint
+                        )
+                    )
+                    .font(.caption)
+                    .foregroundStyle(Color(red: 0.74, green: 0.18, blue: 0.22))
+                }
+            }
+
             Divider().padding(.top, 2)
             Text(L10n.tr("status.next_action_title"))
                 .font(.caption.weight(.semibold))
@@ -232,11 +269,30 @@ struct ContentView: View {
     }
 
     private var recommendedActionText: String {
+        if viewModel.needsBroadcastStartHint {
+            return L10n.tr("status.next_action_start_broadcast")
+        }
         if viewModel.streamState == .streaming {
             return L10n.tr("status.next_action_connected")
         }
         if viewModel.streamState == .failed {
-            return L10n.tr("status.next_action_restart")
+            switch viewModel.connectionDiagnostics.pathType {
+            case .usbTether:
+                if viewModel.connectionDiagnostics.localCandidatesCount == 0 {
+                    return L10n.tr("status.next_action_usb_enable_tethering")
+                }
+                return L10n.tr("status.next_action_usb_replug")
+            case .wifiLan, .unknown:
+                if viewModel.connectionDiagnostics.localCandidatesCount == 0 {
+                    return L10n.tr("status.next_action_check_interface")
+                }
+                return L10n.tr("status.next_action_restart")
+            }
+        }
+        if viewModel.connectionDiagnostics.pathType == .usbTether &&
+            viewModel.streamState == .connecting &&
+            viewModel.connectionDiagnostics.localCandidatesCount == 0 {
+            return L10n.tr("status.next_action_usb_enable_tethering")
         }
         switch viewModel.setupStep {
         case .entry:
@@ -438,6 +494,43 @@ private extension AudioStreamState {
             return Color(red: 0.85, green: 0.47, blue: 0.08)
         default:
             return Color(red: 0.33, green: 0.38, blue: 0.42)
+        }
+    }
+}
+
+private extension ConnectionDiagnostics {
+    var hasContent: Bool {
+        pathType != .unknown ||
+            localCandidatesCount > 0 ||
+            !selectedCandidatePairType.isEmpty ||
+            !failureHint.isEmpty
+    }
+
+    var localizedHint: String {
+        switch failureHint {
+        case "usb_tether_check":
+            return L10n.tr("status.hint_usb_tether_check")
+        case "wifi_lan_check":
+            return L10n.tr("status.hint_wifi_check")
+        case "network_interface_check":
+            return L10n.tr("status.hint_network_interface_check")
+        case "peer_disconnected":
+            return L10n.tr("status.peer_disconnected")
+        default:
+            return failureHint
+        }
+    }
+}
+
+private extension NetworkPathType {
+    var readableLabel: String {
+        switch self {
+        case .wifiLan:
+            return L10n.tr("status.network_path_wifi")
+        case .usbTether:
+            return L10n.tr("status.network_path_usb")
+        case .unknown:
+            return L10n.tr("status.network_path_unknown")
         }
     }
 }

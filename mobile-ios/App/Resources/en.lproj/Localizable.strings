@@ -11,6 +11,13 @@
 
 "status.connection_title" = "Connection Status";
 "status.session_id" = "Session ID";
+"status.network_path_title" = "Network path";
+"status.network_path_wifi" = "Wi-Fi / LAN";
+"status.network_path_usb" = "USB tethering";
+"status.network_path_unknown" = "Unknown";
+"status.local_candidates_format" = "Local host ICE candidates: %d";
+"status.selected_pair_format" = "Selected candidate pair: %@";
+"status.failure_hint_format" = "Hint: %@";
 "status.ready" = "Choose one start action below.";
 "status.receiving_remote_audio" = "Receiving audio from the other device";
 "status.start_broadcast_first" = "Start Screen Broadcast first, then tap Start Sharing.";
@@ -31,7 +38,14 @@
 "status.next_action_show_confirm" = "Show your confirm QR and 6-digit code to the sender.";
 "status.next_action_verify" = "Confirm both devices show the same 6-digit code.";
 "status.next_action_connected" = "You're connected. Keep this screen open while sharing audio.";
+"status.next_action_start_broadcast" = "Start Screen Broadcast from Control Center, then tap Start Sharing.";
 "status.next_action_restart" = "Restart from Step 1.";
+"status.next_action_usb_enable_tethering" = "Enable USB tethering and reconnect the cable, then restart from Step 1.";
+"status.next_action_usb_replug" = "USB tethering was detected but unreachable. Reconnect cable and verify trust/tethering settings.";
+"status.next_action_check_interface" = "No usable host network interface. Check Wi-Fi or USB tethering settings.";
+"status.hint_usb_tether_check" = "Check USB cable, trust dialog, and USB tethering toggle.";
+"status.hint_wifi_check" = "Check that both devices are on the same local network.";
+"status.hint_network_interface_check" = "No usable host network interface was found.";
 
 "stream_state.idle" = "Idle";
 "stream_state.capturing" = "Preparing";
@@ -90,3 +104,6 @@
 "error.local_answer_missing" = "Local confirm SDP is missing";
 "error.peer_connection_unavailable" = "Connection engine unavailable";
 "error.data_channel_create_failed" = "Could not create audio channel";
+"error.usb_tether_unavailable" = "USB tethering path is unavailable. Enable USB tethering and reconnect.";
+"error.usb_tether_not_reachable" = "USB tethering path was detected but connection failed. Reconnect and verify trust settings.";
+"error.network_interface_not_usable" = "No usable local network interface was found for host ICE candidates.";

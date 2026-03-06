@@ -1,0 +1,85 @@
+name: windows-ci
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "desktop-windows/**"
+      - ".github/workflows/windows-ci.yml"
+  pull_request:
+    paths:
+      - "desktop-windows/**"
+      - ".github/workflows/windows-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Setup MSVC developer command prompt
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\vcpkg\installed
+            C:\vcpkg\buildtrees
+            C:\vcpkg\packages
+          key: ${{ runner.os }}-vcpkg-${{ hashFiles('desktop-windows/vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-
+
+      - name: Bootstrap vcpkg
+        shell: powershell
+        run: |
+          if (-not (Test-Path C:\vcpkg)) {
+            git clone https://github.com/microsoft/vcpkg C:\vcpkg
+          }
+          & C:\vcpkg\bootstrap-vcpkg.bat
+
+      - name: Build native bridge
+        shell: powershell
+        run: |
+          cmake -S desktop-windows/src/core-webrtc -B desktop-windows/out/core-webrtc `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DP2PAUDIO_USE_LIBDATACHANNEL=ON `
+            -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
+            -DVCPKG_MANIFEST_MODE=ON `
+            -DVCPKG_MANIFEST_DIR="${{ github.workspace }}/desktop-windows"
+          cmake --build desktop-windows/out/core-webrtc --config Release
+
+      - name: Stage native runtime for app
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path desktop-windows/src/P2PAudio.Windows.App/runtimes/win-x64/native | Out-Null
+          Copy-Item desktop-windows/out/core-webrtc/Release/p2paudio_core_webrtc.dll desktop-windows/src/P2PAudio.Windows.App/runtimes/win-x64/native/p2paudio_core_webrtc.dll -Force
+
+      - name: Verify native runtime staged
+        shell: powershell
+        run: |
+          $dll = "desktop-windows/src/P2PAudio.Windows.App/runtimes/win-x64/native/p2paudio_core_webrtc.dll"
+          if (-not (Test-Path $dll)) {
+            throw "Missing native runtime: $dll"
+          }
+
+      - name: Build Windows Core
+        run: dotnet build desktop-windows/src/P2PAudio.Windows.Core/P2PAudio.Windows.Core.csproj -c Release
+
+      - name: Run Windows Core tests
+        run: dotnet test desktop-windows/tests/P2PAudio.Windows.Core.Tests/P2PAudio.Windows.Core.Tests.csproj -c Release --no-build
+
+      - name: Build Windows App
+        run: dotnet build desktop-windows/src/P2PAudio.Windows.App/P2PAudio.Windows.App.csproj -c Release -r win10-x64 -p:Platform=x64
+
+      - name: Run Windows App tests
+        run: dotnet test desktop-windows/tests/P2PAudio.Windows.App.Tests/P2PAudio.Windows.App.Tests.csproj -c Release

@@ -5,3 +5,4 @@
 3. Android capture availability depends on source app policy (`allowAudioPlaybackCapture`) and OS capture restrictions.
 4. Internet/NAT traversal is intentionally unsupported by design (LAN host ICE only).
 5. ReplayKit extension-to-app bridge currently uses shared App Group file transport; frame drops can increase on heavily loaded devices.
+6. iOS direct app-level USB accessory networking is not part of this design; USB support uses Personal Hotspot (IP path over USB).

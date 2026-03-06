@@ -20,7 +20,7 @@ class AndroidAudioCaptureManager(
     private var mediaProjection: MediaProjection? = null
     private var audioRecord: AudioRecord? = null
 
-    fun isSupported(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+    fun isSupported(): Boolean = isSupportedOnDevice()
 
     fun start(mediaProjectionPermissionResultData: Intent): Result<AudioRecord> {
         AppLogger.i("CaptureManager", "capture_start_attempt", "Audio capture start requested")
@@ -128,6 +128,7 @@ class AndroidAudioCaptureManager(
 
     companion object {
         const val SAMPLE_RATE = 48_000
+        fun isSupportedOnDevice(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
         private val CAPTURE_USAGES = intArrayOf(
             AudioAttributes.USAGE_MEDIA,
             AudioAttributes.USAGE_GAME,

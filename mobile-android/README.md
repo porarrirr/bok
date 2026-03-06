@@ -19,11 +19,13 @@ Open this folder as a Gradle project in Android Studio.
 - DataChannel PCM transport (`audio-pcm`): implemented.
 - Receiver-side PCM media playback (`AudioTrack`): implemented.
 - Foreground service during sender mode: implemented.
+- Connection diagnostics (Wi-Fi/USB path classification + local host ICE counters): implemented.
 
 ## Important limitations
 
 - Audio capture works only for source apps that allow playback capture (`allowAudioPlaybackCapture`).
 - LAN host ICE only (no relay/signaling/NAT traversal).
+- USB tethering is supported as a LAN-equivalent path when paired with a Windows listener/sender.
 - Very large SDP payloads may require QR chunking in future revisions.
 
 ## Debug logging

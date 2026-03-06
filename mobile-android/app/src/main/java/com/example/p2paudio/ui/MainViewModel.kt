@@ -1,25 +1,32 @@
 package com.example.p2paudio.ui
 
+import android.Manifest
 import android.app.Application
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import androidx.annotation.StringRes
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.p2paudio.R
 import com.example.p2paudio.audio.AndroidPcmPlayer
 import com.example.p2paudio.audio.AndroidPcmSender
 import com.example.p2paudio.capture.AndroidAudioCaptureManager
+import com.example.p2paudio.capture.AudioCaptureRuntime
 import com.example.p2paudio.logging.AppLogger
 import com.example.p2paudio.model.AudioStreamState
+import com.example.p2paudio.model.ConnectionDiagnostics
 import com.example.p2paudio.model.FailureCode
+import com.example.p2paudio.model.NetworkPathType
 import com.example.p2paudio.model.PairingConfirmPayload
 import com.example.p2paudio.model.PairingInitPayload
 import com.example.p2paudio.model.SessionFailure
 import com.example.p2paudio.protocol.PairingPayloadValidator
 import com.example.p2paudio.protocol.QrPayloadCodec
 import com.example.p2paudio.protocol.VerificationCode
+import com.example.p2paudio.service.AudioSendService
 import com.example.p2paudio.webrtc.PeerConnectionController
 import com.example.p2paudio.webrtc.WebRtcFactoryProvider
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -33,10 +40,11 @@ import kotlinx.coroutines.launch
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val captureManager = AndroidAudioCaptureManager(application)
+    private val captureRuntime = AudioCaptureRuntime
     private val pcmPlayer = AndroidPcmPlayer()
     private var pcmSender: AndroidPcmSender? = null
     private var playbackMessageShown = false
+    private var waitingForCaptureServiceStart = false
 
     private val _uiState = MutableStateFlow(
         MainUiState(statusMessage = text(R.string.status_ready))
@@ -89,8 +97,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 _uiState.update { it.copy(statusMessage = text(R.string.status_receiving_remote_audio)) }
             }
+        },
+        diagnosticsListener = { diagnostics ->
+            _uiState.update { it.copy(connectionDiagnostics = diagnostics) }
+            AppLogger.d(
+                "MainViewModel",
+                "connection_diagnostics_update",
+                "Connection diagnostics updated",
+                context = mapOf(
+                    "pathType" to diagnostics.pathType.name,
+                    "localCandidatesCount" to diagnostics.localCandidatesCount,
+                    "selectedPairType" to diagnostics.selectedCandidatePairType,
+                    "failureHint" to diagnostics.failureHint
+                )
+            )
         }
     )
+
+    init {
+        viewModelScope.launch {
+            captureRuntime.events.collect { event ->
+                when (event) {
+                    AudioCaptureRuntime.Event.Started -> onCaptureServiceStarted()
+                    is AudioCaptureRuntime.Event.StartFailed -> onCaptureServiceStartFailed(event.error)
+                    AudioCaptureRuntime.Event.Stopped -> Unit
+                }
+            }
+        }
+    }
 
     fun beginListenerFlow() {
         AppLogger.i("MainViewModel", "listener_flow_start", "Listener flow selected")
@@ -110,9 +144,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun requestProjectionPermission() {
-        AppLogger.i("MainViewModel", "request_projection_permission", "Requesting projection permission")
-        if (!captureManager.isSupported()) {
+    fun startSenderFlowRequested() {
+        AppLogger.i("MainViewModel", "sender_flow_start", "Sender flow requested")
+        if (!captureRuntime.isSupported()) {
             recoverToEntry(
                 SessionFailure(
                     FailureCode.AUDIO_CAPTURE_NOT_SUPPORTED,
@@ -136,14 +170,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
 
-        val manager = getApplication<Application>().getSystemService(MediaProjectionManager::class.java)
-        val captureIntent = manager.createScreenCaptureIntent()
-        viewModelScope.launch {
-            _commands.emit(UiCommand.RequestProjectionPermission(captureIntent))
+        if (hasRecordAudioPermission()) {
+            requestProjectionPermission()
+            return
         }
+        AppLogger.i("MainViewModel", "request_record_audio_permission", "Requesting RECORD_AUDIO permission")
+        viewModelScope.launch { _commands.emit(UiCommand.RequestRecordAudioPermission) }
     }
 
-    fun onProjectionPermissionResult(resultData: Intent?): Boolean {
+    fun requestProjectionPermission() {
+        AppLogger.i("MainViewModel", "request_projection_permission", "Requesting projection permission")
+        val manager = getApplication<Application>().getSystemService(MediaProjectionManager::class.java)
+        val captureIntent = manager.createScreenCaptureIntent()
+        viewModelScope.launch { _commands.emit(UiCommand.RequestProjectionPermission(captureIntent)) }
+    }
+
+    fun onRecordAudioPermissionResult(granted: Boolean) {
+        if (granted) {
+            AppLogger.i("MainViewModel", "record_permission_granted", "RECORD_AUDIO permission granted")
+            requestProjectionPermission()
+            return
+        }
+        AppLogger.w("MainViewModel", "record_permission_denied", "RECORD_AUDIO permission denied")
+        recoverToEntry(
+            SessionFailure(
+                FailureCode.PERMISSION_DENIED,
+                text(R.string.error_permission_denied)
+            )
+        )
+    }
+
+    fun onProjectionPermissionResult(resultData: Intent?) {
         if (resultData == null) {
             AppLogger.w("MainViewModel", "projection_permission_denied", "Projection permission denied by user")
             recoverToEntry(
@@ -152,29 +209,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     text(R.string.error_permission_denied)
                 )
             )
-            return false
+            return
         }
 
-        AppLogger.i("MainViewModel", "capture_start_attempt", "Starting audio capture")
-        val captureResult = captureManager.start(resultData)
-        if (captureResult.isFailure) {
-            val cause = captureResult.exceptionOrNull()
-            AppLogger.e(
-                "MainViewModel",
-                "capture_start_failed",
-                "Failed to start audio capture",
-                context = mapOf("reason" to (cause?.message ?: "unknown")),
-                throwable = cause
-            )
-            recoverToEntry(
-                SessionFailure(
-                    FailureCode.AUDIO_CAPTURE_NOT_SUPPORTED,
-                    captureResult.exceptionOrNull()?.message ?: text(R.string.error_capture_start_failed)
-                )
-            )
-            return false
-        }
+        AppLogger.i("MainViewModel", "capture_service_start_requested", "Requesting capture foreground service start")
+        waitingForCaptureServiceStart = true
+        viewModelScope.launch { _commands.emit(UiCommand.StartProjectionService(resultData)) }
+    }
 
+    fun onProjectionServiceStartFailed(error: Throwable?) {
+        val cause = error ?: IllegalStateException("Foreground service start failed")
+        onCaptureServiceStartFailed(cause)
+    }
+
+    private fun onCaptureServiceStarted() {
+        if (!waitingForCaptureServiceStart) {
+            return
+        }
+        waitingForCaptureServiceStart = false
         AppLogger.i("MainViewModel", "capture_started", "Audio capture started")
         _uiState.update {
             it.copy(
@@ -183,7 +235,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         createInitPayload()
-        return true
+    }
+
+    private fun onCaptureServiceStartFailed(error: Throwable) {
+        waitingForCaptureServiceStart = false
+        AppLogger.e(
+            "MainViewModel",
+            "capture_start_failed",
+            "Failed to start audio capture from foreground service",
+            context = mapOf("reason" to (error.message ?: "unknown")),
+            throwable = error
+        )
+        val code = classifyCaptureStartFailure(error)
+        recoverToEntry(
+            SessionFailure(
+                code,
+                error.message ?: text(R.string.error_capture_start_failed)
+            )
+        )
     }
 
     private fun createInitPayload() {
@@ -232,10 +301,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     throwable = it
                 )
                 recoverToEntry(
-                    SessionFailure(
-                        FailureCode.WEBRTC_NEGOTIATION_FAILED,
-                        it.message ?: text(R.string.error_create_offer_failed)
-                    )
+                    negotiationFailure(it, text(R.string.error_create_offer_failed))
                 )
             }
         }
@@ -311,10 +377,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         throwable = it
                     )
                     recoverToEntry(
-                        SessionFailure(
-                            FailureCode.WEBRTC_NEGOTIATION_FAILED,
-                            it.message ?: text(R.string.error_create_answer_failed)
-                        )
+                        negotiationFailure(it, text(R.string.error_create_answer_failed))
                     )
                 }
             }.onFailure {
@@ -446,10 +509,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         throwable = it
                     )
                     recoverToEntry(
-                        SessionFailure(
-                            FailureCode.WEBRTC_NEGOTIATION_FAILED,
-                            it.message ?: text(R.string.error_apply_answer_failed)
-                        )
+                        negotiationFailure(it, text(R.string.error_apply_answer_failed))
                     )
                 }
         }
@@ -470,11 +530,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "Stopping current session",
             context = mapOf("sessionId" to uiState.value.activeSessionId)
         )
+        waitingForCaptureServiceStart = false
         stopPcmSender()
         pcmPlayer.stop()
         playbackMessageShown = false
-        captureManager.stop()
+        captureRuntime.stop()
         peerController.close()
+        stopProjectionServiceDirectly()
+        requestStopProjectionService()
         _uiState.value = MainUiState(statusMessage = text(R.string.status_session_ended))
     }
 
@@ -488,7 +551,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             AppLogger.d("MainViewModel", "sender_already_running", "PCM sender already running")
             return
         }
-        val audioRecord = captureManager.currentAudioRecord() ?: return
+        val audioRecord = captureRuntime.currentAudioRecord() ?: return
         val sender = AndroidPcmSender(
             audioRecord = audioRecord,
             sampleRate = AndroidAudioCaptureManager.SAMPLE_RATE,
@@ -530,15 +593,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun resetToEntry(statusMessage: String, failure: SessionFailure?) {
+        waitingForCaptureServiceStart = false
         stopPcmSender()
         pcmPlayer.stop()
         playbackMessageShown = false
-        captureManager.stop()
+        captureRuntime.stop()
         peerController.close()
+        stopProjectionServiceDirectly()
+        requestStopProjectionService()
         _uiState.value = MainUiState(
             statusMessage = statusMessage,
             failure = failure
         )
+    }
+
+    private fun stopProjectionServiceDirectly() {
+        val app = getApplication<Application>()
+        app.stopService(Intent(app, AudioSendService::class.java))
+    }
+
+    private fun requestStopProjectionService() {
+        viewModelScope.launch { _commands.emit(UiCommand.StopProjectionService) }
     }
 
     private fun localizePeerMessage(message: String): String = when (message) {
@@ -564,6 +639,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             FailureCode.WEBRTC_NEGOTIATION_FAILED -> text(R.string.error_webrtc_negotiation_failed)
             FailureCode.PEER_UNREACHABLE -> text(R.string.error_peer_unreachable)
             FailureCode.NETWORK_CHANGED -> text(R.string.error_network_changed)
+            FailureCode.USB_TETHER_UNAVAILABLE -> text(R.string.error_usb_tether_unavailable)
+            FailureCode.USB_TETHER_DETECTED_BUT_NOT_REACHABLE -> text(R.string.error_usb_tether_not_reachable)
+            FailureCode.NETWORK_INTERFACE_NOT_USABLE -> text(R.string.error_network_interface_not_usable)
             FailureCode.SESSION_EXPIRED -> text(R.string.error_session_expired)
             FailureCode.INVALID_PAYLOAD -> when (payloadRole) {
                 PayloadRole.INIT -> text(R.string.error_invalid_init_payload)
@@ -573,12 +651,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun negotiationFailure(error: Throwable, fallbackMessage: String): SessionFailure {
+        val diagnostics = _uiState.value.connectionDiagnostics
+        val message = error.message ?: fallbackMessage
+        if (diagnostics.pathType == NetworkPathType.USB_TETHER && diagnostics.localCandidatesCount == 0) {
+            return SessionFailure(FailureCode.USB_TETHER_UNAVAILABLE, text(R.string.error_usb_tether_unavailable))
+        }
+        if (diagnostics.pathType == NetworkPathType.USB_TETHER) {
+            return SessionFailure(FailureCode.USB_TETHER_DETECTED_BUT_NOT_REACHABLE, text(R.string.error_usb_tether_not_reachable))
+        }
+        if (diagnostics.localCandidatesCount == 0) {
+            return SessionFailure(FailureCode.NETWORK_INTERFACE_NOT_USABLE, text(R.string.error_network_interface_not_usable))
+        }
+        return SessionFailure(FailureCode.WEBRTC_NEGOTIATION_FAILED, message)
+    }
+
     private fun text(@StringRes resId: Int, vararg args: Any): String {
         return getApplication<Application>().getString(resId, *args)
     }
 
+    private fun hasRecordAudioPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            getApplication(),
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
     sealed interface UiCommand {
+        object RequestRecordAudioPermission : UiCommand
         data class RequestProjectionPermission(val captureIntent: Intent) : UiCommand
+        data class StartProjectionService(val permissionResultData: Intent) : UiCommand
+        object StopProjectionService : UiCommand
     }
 
     private enum class PayloadRole {
@@ -589,4 +692,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private const val PAYLOAD_TTL_MS = 60_000L
     }
+}
+
+internal fun classifyCaptureStartFailure(error: Throwable?): FailureCode = when {
+    isRecordPermissionFailure(error) -> FailureCode.PERMISSION_DENIED
+    isUnsupportedCaptureFailure(error) -> FailureCode.AUDIO_CAPTURE_NOT_SUPPORTED
+    else -> FailureCode.WEBRTC_NEGOTIATION_FAILED
+}
+
+private fun isRecordPermissionFailure(error: Throwable?): Boolean {
+    if (error == null) return false
+    val message = error.message.orEmpty()
+    if (error is SecurityException) return true
+    if (message.contains("RECORD_AUDIO", ignoreCase = true)) return true
+    if (message.contains("Media projections require a foreground service", ignoreCase = true)) return true
+    if (message.contains("FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION", ignoreCase = true)) return true
+    return isRecordPermissionFailure(error.cause)
+}
+
+private fun isUnsupportedCaptureFailure(error: Throwable?): Boolean {
+    if (error == null) return false
+    val message = error.message.orEmpty()
+    if (message.contains("AudioPlaybackCapture requires Android 10+", ignoreCase = true)) return true
+    return isUnsupportedCaptureFailure(error.cause)
 }

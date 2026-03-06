@@ -1,5 +1,11 @@
 mobile-android/.gradle/
 mobile-android/app/build/
 mobile-android/local.properties
+desktop-windows/**/bin/
+desktop-windows/**/obj/
+desktop-windows/.vs/
+desktop-windows/out/
+desktop-windows/src/P2PAudio.Windows.App/runtimes/**/p2paudio_core_webrtc.dll
+search_env/
 *.iml
 .DS_Store

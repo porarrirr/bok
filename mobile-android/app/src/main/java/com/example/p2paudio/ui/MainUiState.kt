@@ -1,6 +1,7 @@
 package com.example.p2paudio.ui
 
 import com.example.p2paudio.model.AudioStreamState
+import com.example.p2paudio.model.ConnectionDiagnostics
 import com.example.p2paudio.model.SessionFailure
 
 data class MainUiState(
@@ -14,7 +15,8 @@ data class MainUiState(
     val verificationCode: String = "",
     val pendingAnswerSdp: String = "",
     val activeSessionId: String = "",
-    val failure: SessionFailure? = null
+    val failure: SessionFailure? = null,
+    val connectionDiagnostics: ConnectionDiagnostics = ConnectionDiagnostics()
 )
 
 enum class SetupMode {

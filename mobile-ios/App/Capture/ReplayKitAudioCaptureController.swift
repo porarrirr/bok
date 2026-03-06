@@ -2,6 +2,12 @@ import Foundation
 import ReplayKit
 
 final class ReplayKitAudioCaptureController: ObservableObject {
+    struct BroadcastStateSnapshot {
+        let isActive: Bool
+        let hasSharedDefaults: Bool
+        let hasSharedContainer: Bool
+    }
+
     @Published var isBroadcastActive = false
 
     private let sharedDefaults = UserDefaults(suiteName: ReplayKitAudioCaptureController.appGroupId)
@@ -12,19 +18,63 @@ final class ReplayKitAudioCaptureController: ObservableObject {
     private var frameHandler: ((PcmFrame) -> Void)?
     private let logHandler: ((AppLogLevel, String, String, [String: String]) -> Void)?
     private var hasLoggedMissingBridgeURL = false
+    private var hasLoggedMissingSharedDefaults = false
+    private var hasLoggedMissingSharedContainer = false
 
     init(logHandler: ((AppLogLevel, String, String, [String: String]) -> Void)? = nil) {
         self.logHandler = logHandler
     }
 
-    func refreshBroadcastState() {
-        isBroadcastActive = sharedDefaults?.bool(forKey: Self.broadcastActiveKey) ?? false
+    @discardableResult
+    func refreshBroadcastState() -> BroadcastStateSnapshot {
+        let hasSharedDefaults = sharedDefaults != nil
+        let hasSharedContainer = sharedContainerURL != nil
+        isBroadcastActive = hasSharedDefaults ? (sharedDefaults?.bool(forKey: Self.broadcastActiveKey) ?? false) : false
+
+        if !hasSharedDefaults {
+            if !hasLoggedMissingSharedDefaults {
+                hasLoggedMissingSharedDefaults = true
+                log(
+                    .warning,
+                    "ReplayKit",
+                    "Shared UserDefaults is unavailable for app group",
+                    metadata: ["appGroupId": Self.appGroupId]
+                )
+            }
+        } else {
+            hasLoggedMissingSharedDefaults = false
+        }
+
+        if !hasSharedContainer {
+            if !hasLoggedMissingSharedContainer {
+                hasLoggedMissingSharedContainer = true
+                log(
+                    .warning,
+                    "ReplayKit",
+                    "Shared container URL is unavailable for app group",
+                    metadata: ["appGroupId": Self.appGroupId]
+                )
+            }
+        } else {
+            hasLoggedMissingSharedContainer = false
+        }
+
+        let snapshot = BroadcastStateSnapshot(
+            isActive: isBroadcastActive,
+            hasSharedDefaults: hasSharedDefaults,
+            hasSharedContainer: hasSharedContainer
+        )
         log(
             .debug,
             "ReplayKit",
             "Broadcast state refreshed",
-            metadata: ["isActive": String(isBroadcastActive)]
+            metadata: [
+                "isActive": String(snapshot.isActive),
+                "hasSharedDefaults": String(snapshot.hasSharedDefaults),
+                "hasSharedContainer": String(snapshot.hasSharedContainer)
+            ]
         )
+        return snapshot
     }
 
     func startConsumingFrames(_ onFrame: @escaping (PcmFrame) -> Void) {
@@ -110,12 +160,16 @@ final class ReplayKitAudioCaptureController: ObservableObject {
     }
 
     private var bridgeFileURL: URL? {
-        guard let container = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: Self.appGroupId
-        ) else {
+        guard let container = sharedContainerURL else {
             return nil
         }
         return container.appendingPathComponent(Self.bridgeFileName)
+    }
+
+    private var sharedContainerURL: URL? {
+        FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: Self.appGroupId
+        )
     }
 
     private static let appGroupId = "group.com.example.p2paudio"

@@ -11,11 +11,20 @@ This folder contains Swift source files for an iOS target using ReplayKit + WebR
 4. Add required capabilities:
    - App Groups (for app + broadcast extension shared state and PCM bridge file).
    - Background Modes -> Audio, AirPlay, and Picture in Picture.
+   - App Group identifier used by this project: `group.com.example.p2paudio`.
 5. Add privacy keys in app `Info.plist`:
    - `NSCameraUsageDescription` (QR scanner).
    - `NSMicrophoneUsageDescription` (if ReplayKit UI path requests it in your target setup).
 6. Wire these source files into app/extension targets.
 7. Optional: use `mobile-ios/project.yml` (`xcodegen`) to generate `P2PAudio.xcodeproj`.
+
+### App Groups configuration in this repo
+
+- `mobile-ios/project.yml` sets `CODE_SIGN_ENTITLEMENTS` for both app and broadcast extension targets.
+- Entitlements files are committed at:
+  - `App/P2PAudio.entitlements`
+  - `AudioBroadcastExtension/AudioBroadcastExtension.entitlements`
+- If ReplayKit sender flow always reports inactive broadcast, verify your Apple Developer team has this App Group enabled for both bundle identifiers.
 
 ## GitHub Actions: IPA build
 
@@ -45,7 +54,9 @@ You can also:
 - There is no relay/signaling server. QR payload exchange is device-to-device.
 - PCM audio is transported over WebRTC DataChannel label `audio-pcm`.
 - QR payload transport supports compressed mode (`p2paudio-z1:` zlib + Base64URL).
+- Connection diagnostics include path classification (`wifi_lan` / `usb_tether` / `unknown`) and local host ICE candidate counters.
 - Unsigned IPA cannot be installed directly on physical iOS devices without re-signing.
+- USB operation with Windows uses Personal Hotspot over USB (IP path). Direct app-level USB accessory transport is not included.
 
 ## In-app logs
 

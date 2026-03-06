@@ -17,9 +17,31 @@
 - iOS receiver PCM playback pipeline (`AVAudioEngine`).
 - iOS QR camera scanner UI integration (AVFoundation).
 - Android + iOS QR payload codec regression tests updated for v2 decode behavior.
+- Android + iOS connection diagnostics (`wifi_lan` / `usb_tether` / `unknown`) and local ICE candidate counters.
+- Android + iOS USB-tether-aware failure mapping and user guidance (`usb_tether_unavailable`, `usb_tether_detected_but_not_reachable`, `network_interface_not_usable`).
+- Windows implementation extended with:
+  - WinUI sender/listener payload flow (QR display, paste, camera scan entrypoints),
+  - native bridge contract (`p2paudio_core_webrtc` C ABI) and managed P/Invoke integration,
+  - WASAPI loopback sender pipeline to `audio-pcm` packet codec,
+  - DataChannel receive polling + PCM playback on Windows listener side,
+  - libdatachannel-backed offer/answer/apply/send/receive wiring in `core-webrtc`,
+  - stream-state and diagnostics UI (`idle/capturing/connecting/streaming/interrupted/failed/ended`),
+  - failure-hint to protocol failure-code normalization for Windows diagnostics,
+  - native-required startup gate with development-only stub override (`ALLOW_STUB_FOR_DEV=1`),
+  - x64 runtime alignment in app build settings and CI runtime staging checks.
+- Windows ViewModel integration tests expanded with full `docs/TEST_MATRIX.md` coverage:
+  - sender full flow (offer → verify → connect → stream),
+  - listener full flow (scan init → generate confirm → receive → stream),
+  - expired/invalid/mismatched payload rejection and restart,
+  - answer failure and apply-answer failure state transitions,
+  - verification reject restart, stop state reset,
+  - stream health monitoring (interrupted/recovered states),
+  - USB tethering and Wi-Fi/LAN diagnostics display verification,
+  - sender-listener verification code consistency check.
 
 ## Pending follow-up
 
 - iOS Xcode project wiring, entitlements, and on-device signing validation.
 - Optional QR payload chunking for edge cases where compressed SDP still exceeds one symbol.
 - Optional migration from DataChannel PCM transport to RTP custom audio device path.
+- End-to-end Android/iOS/Windows interoperability validation matrix execution on physical devices (including USB tethering scenarios).

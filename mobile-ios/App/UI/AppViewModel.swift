@@ -18,6 +18,8 @@ final class AppViewModel: ObservableObject {
     @Published var confirmPayloadRaw: String = ""
     @Published var verificationCode: String = ""
     @Published var activeSessionId: String = ""
+    @Published var needsBroadcastStartHint = false
+    @Published var connectionDiagnostics = ConnectionDiagnostics()
 
     let logStore: LogStore
 
@@ -64,6 +66,22 @@ final class AppViewModel: ObservableObject {
             },
             logHandler: { [weak self] level, category, message, metadata in
                 self?.log(level, category, message, metadata: metadata)
+            },
+            diagnosticsHandler: { [weak self] diagnostics in
+                DispatchQueue.main.async {
+                    self?.connectionDiagnostics = diagnostics
+                    self?.log(
+                        .debug,
+                        "AppViewModel",
+                        "Connection diagnostics updated",
+                        metadata: [
+                            "pathType": diagnostics.pathType.rawValue,
+                            "localCandidatesCount": String(diagnostics.localCandidatesCount),
+                            "selectedPairType": diagnostics.selectedCandidatePairType,
+                            "failureHint": diagnostics.failureHint
+                        ]
+                    )
+                }
             }
         )
     }()
@@ -76,27 +94,74 @@ final class AppViewModel: ObservableObject {
     private var didShowReceivingMessage = false
     private var localSenderFingerprint = ""
     private var pendingAnswerSdp = ""
+    private var senderStartRequestToken = 0
 
     func beginListenerFlow() {
         log(.info, "AppViewModel", "Listener flow selected")
-        setupStep = .listenerScanInit
-        initPayloadRaw = ""
-        confirmPayloadRaw = ""
-        verificationCode = ""
-        activeSessionId = ""
-        pendingAnswerSdp = ""
-        statusMessage = L10n.tr("status.listener_ready_to_scan")
+        prepareListenerScanState()
     }
 
     func startSenderFlow() {
+        invalidatePendingSenderStart()
+        let requestToken = senderStartRequestToken
         log(.info, "AppViewModel", "Start sender flow requested")
-        replayKitController.refreshBroadcastState()
-        guard replayKitController.isBroadcastActive else {
-            streamState = .failed
-            statusMessage = L10n.tr("status.start_broadcast_first")
-            log(.warning, "AppViewModel", "ReplayKit broadcast is not active")
+        attemptStartSenderFlow(requestToken: requestToken, attempt: 0)
+    }
+
+    private func attemptStartSenderFlow(requestToken: Int, attempt: Int) {
+        guard requestToken == senderStartRequestToken else {
             return
         }
+
+        let snapshot = replayKitController.refreshBroadcastState()
+        guard snapshot.isActive else {
+            if attempt < Self.senderStartRetryAttempts {
+                if attempt == 0 {
+                    log(
+                        .info,
+                        "AppViewModel",
+                        "ReplayKit broadcast inactive, retrying",
+                        metadata: ["maxRetryAttempts": String(Self.senderStartRetryAttempts)]
+                    )
+                }
+                DispatchQueue.main.asyncAfter(
+                    deadline: .now() + .milliseconds(Self.senderStartRetryIntervalMs)
+                ) { [weak self] in
+                    self?.attemptStartSenderFlow(requestToken: requestToken, attempt: attempt + 1)
+                }
+                return
+            }
+
+            streamState = .idle
+            setupStep = .entry
+            needsBroadcastStartHint = true
+            statusMessage = L10n.tr("status.start_broadcast_first")
+            log(
+                .warning,
+                "AppViewModel",
+                "ReplayKit broadcast is not active",
+                metadata: [
+                    "attempts": String(attempt + 1),
+                    "hasSharedDefaults": String(snapshot.hasSharedDefaults),
+                    "hasSharedContainer": String(snapshot.hasSharedContainer)
+                ]
+            )
+            return
+        }
+
+        if attempt > 0 {
+            log(
+                .info,
+                "AppViewModel",
+                "ReplayKit broadcast became active after retry",
+                metadata: ["attempts": String(attempt + 1)]
+            )
+        }
+        continueSenderFlowAfterReplayKitCheck()
+    }
+
+    private func continueSenderFlowAfterReplayKitCheck() {
+        needsBroadcastStartHint = false
 
         if !isConsumingReplayKitFrames {
             log(.info, "AppViewModel", "Start consuming ReplayKit frames")
@@ -141,17 +206,15 @@ final class AppViewModel: ObservableObject {
                         self.resetToEntry(status: L10n.tr("error.failed_encode_offer"), asFailure: true)
                     }
                 case .failure(let error):
-                    self.resetToEntry(
-                        status: self.message(from: error, fallbackKey: "error.webrtc_negotiation_failed"),
-                        asFailure: true
-                    )
+                    let failure = self.negotiationFailure(error: error, fallbackKey: "error.webrtc_negotiation_failed")
+                    self.resetToEntry(status: failure.message, asFailure: true)
                 }
             }
         }
     }
 
     func createConfirm(from initRaw: String) {
-        beginListenerFlow()
+        prepareListenerScanState()
         log(
             .info,
             "AppViewModel",
@@ -198,15 +261,45 @@ final class AppViewModel: ObservableObject {
                             self.resetToEntry(status: L10n.tr("error.failed_encode_answer"), asFailure: true)
                         }
                     case .failure(let error):
+                        let failure = self.negotiationFailure(error: error, fallbackKey: "error.webrtc_negotiation_failed")
+                        let status = failure.message
+                        var metadata: [String: String] = [
+                            "reason": status,
+                            "sessionId": payload.sessionId,
+                            "offerLength": String(payload.offerSdp.count)
+                        ]
+                        if let failure = error as? SessionFailure {
+                            metadata["failureCode"] = failure.code.rawValue
+                        }
+                        self.log(
+                            .error,
+                            "AppViewModel",
+                            "Create confirm failed during answer generation",
+                            metadata: metadata
+                        )
                         self.resetToEntry(
-                            status: self.message(from: error, fallbackKey: "error.webrtc_negotiation_failed"),
+                            status: status,
                             asFailure: true
                         )
                     }
                 }
             }
         } catch {
-            resetToEntry(status: message(from: error, fallbackKey: "error.invalid_init_payload"), asFailure: true)
+            let status = message(from: error, fallbackKey: "error.invalid_init_payload")
+            var metadata: [String: String] = [
+                "reason": status,
+                "initLength": String(initRaw.count)
+            ]
+            if let failure = error as? SessionFailure {
+                metadata["failureCode"] = failure.code.rawValue
+            }
+            log(
+                .warning,
+                "AppViewModel",
+                "Create confirm failed before answer generation",
+                metadata: metadata
+            )
+            resetToEntry(status: status, asFailure: true)
         }
     }
 
@@ -257,9 +350,9 @@ final class AppViewModel: ObservableObject {
                     self?.setupStep = .senderShowInit
                     self?.statusMessage = L10n.tr("status.answer_applied")
                 case .failure(let error):
+                    let failure = self?.negotiationFailure(error: error, fallbackKey: "error.apply_answer_failed")
                     self?.resetToEntry(
-                        status: self?.message(from: error, fallbackKey: "error.apply_answer_failed")
-                            ?? L10n.tr("error.apply_answer_failed"),
+                        status: failure?.message ?? L10n.tr("error.apply_answer_failed"),
                         asFailure: true
                     )
                 }
@@ -282,9 +375,11 @@ final class AppViewModel: ObservableObject {
     }
 
     private func resetToEntry(status: String, asFailure: Bool) {
+        invalidatePendingSenderStart()
         sessionController.close()
-        replayKitController.stopConsumingFrames()
-        replayKitController.stopBroadcastFlag()
+        if isConsumingReplayKitFrames {
+            replayKitController.stopBroadcastFlag()
+        }
         pcmPlayer.stop()
 
         isConsumingReplayKitFrames = false
@@ -294,14 +389,34 @@ final class AppViewModel: ObservableObject {
 
         streamState = asFailure ? .failed : .idle
         statusMessage = status
+        needsBroadcastStartHint = false
         setupStep = .entry
         initPayloadRaw = ""
         confirmPayloadRaw = ""
         verificationCode = ""
         activeSessionId = ""
+        connectionDiagnostics = ConnectionDiagnostics()
+    }
+
+    private func invalidatePendingSenderStart() {
+        senderStartRequestToken &+= 1
+    }
+
+    private func prepareListenerScanState() {
+        invalidatePendingSenderStart()
+        needsBroadcastStartHint = false
+        setupStep = .listenerScanInit
+        initPayloadRaw = ""
+        confirmPayloadRaw = ""
+        verificationCode = ""
+        activeSessionId = ""
+        pendingAnswerSdp = ""
+        statusMessage = L10n.tr("status.listener_ready_to_scan")
     }
 
     private static var payloadTTLms: Int64 { 60_000 }
+    private static var senderStartRetryAttempts: Int { 10 }
+    private static var senderStartRetryIntervalMs: Int { 200 }
 
     private static func nowMs() -> Int64 {
         Int64(Date().timeIntervalSince1970 * 1000)
@@ -342,5 +457,22 @@ final class AppViewModel: ObservableObject {
             return failure.message
         }
         return L10n.tr(fallbackKey)
+    }
+
+    private func negotiationFailure(error: Error, fallbackKey: String) -> SessionFailure {
+        if let failure = error as? SessionFailure, failure.code != .webrtcNegotiationFailed {
+            return failure
+        }
+
+        if connectionDiagnostics.pathType == .usbTether && connectionDiagnostics.localCandidatesCount == 0 {
+            return SessionFailure(code: .usbTetherUnavailable, message: L10n.tr("error.usb_tether_unavailable"))
+        }
+        if connectionDiagnostics.pathType == .usbTether {
+            return SessionFailure(code: .usbTetherDetectedButNotReachable, message: L10n.tr("error.usb_tether_not_reachable"))
+        }
+        if connectionDiagnostics.localCandidatesCount == 0 {
+            return SessionFailure(code: .networkInterfaceNotUsable, message: L10n.tr("error.network_interface_not_usable"))
+        }
+        return SessionFailure(code: .webrtcNegotiationFailed, message: message(from: error, fallbackKey: fallbackKey))
     }
 }

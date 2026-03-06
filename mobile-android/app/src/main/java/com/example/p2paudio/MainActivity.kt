@@ -1,5 +1,6 @@
 package com.example.p2paudio
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
@@ -53,7 +54,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.example.p2paudio.logging.AppLogger
 import com.example.p2paudio.model.AudioStreamState
+import com.example.p2paudio.model.ConnectionDiagnostics
 import com.example.p2paudio.model.FailureCode
+import com.example.p2paudio.model.NetworkPathType
 import com.example.p2paudio.qr.QrCodeEncoder
 import com.example.p2paudio.service.AudioSendService
 import com.example.p2paudio.ui.MainUiState
@@ -75,14 +78,22 @@ class MainActivity : ComponentActivity() {
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             AppLogger.i("MainActivity", "projection_permission_granted", "Projection permission granted")
-            val captureStarted = viewModel.onProjectionPermissionResult(result.data)
-            if (captureStarted) {
-                startForegroundSendService()
-            }
+            viewModel.onProjectionPermissionResult(result.data)
         } else {
             AppLogger.w("MainActivity", "projection_permission_denied", "Projection permission denied")
             viewModel.onProjectionPermissionResult(null)
         }
+    }
+
+    private val recordAudioPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            AppLogger.i("MainActivity", "record_permission_granted", "RECORD_AUDIO permission granted")
+        } else {
+            AppLogger.w("MainActivity", "record_permission_denied", "RECORD_AUDIO permission denied")
+        }
+        viewModel.onRecordAudioPermissionResult(granted)
     }
 
     private val qrScanLauncher = registerForActivityResult(ScanContract()) { result ->
@@ -107,8 +118,24 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             viewModel.commands.collect { command ->
                 when (command) {
+                    MainViewModel.UiCommand.RequestRecordAudioPermission -> {
+                        recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+
                     is MainViewModel.UiCommand.RequestProjectionPermission -> {
                         projectionLauncher.launch(command.captureIntent)
+                    }
+
+                    is MainViewModel.UiCommand.StartProjectionService -> {
+                        runCatching {
+                            startForegroundSendService(command.permissionResultData)
+                        }.onFailure { error ->
+                            viewModel.onProjectionServiceStartFailed(error)
+                        }
+                    }
+
+                    MainViewModel.UiCommand.StopProjectionService -> {
+                        stopForegroundSendService()
                     }
                 }
             }
@@ -120,7 +147,7 @@ class MainActivity : ComponentActivity() {
                     val uiState by viewModel.uiState.collectAsState(initial = MainUiState())
                     MainScreen(
                         uiState = uiState,
-                        onStartSender = viewModel::requestProjectionPermission,
+                        onStartSender = viewModel::startSenderFlowRequested,
                         onStartListenerScan = {
                             viewModel.beginListenerFlow()
                             pendingScanTarget = ScanTarget.INIT
@@ -132,10 +159,7 @@ class MainActivity : ComponentActivity() {
                         },
                         onVerificationMatch = viewModel::approveVerificationAndConnect,
                         onVerificationMismatch = viewModel::rejectVerificationAndRestart,
-                        onStop = {
-                            stopService(Intent(this, AudioSendService::class.java))
-                            viewModel.stopSession()
-                        }
+                        onStop = viewModel::stopSession
                     )
                 }
             }
@@ -158,10 +182,18 @@ class MainActivity : ComponentActivity() {
         qrScanLauncher.launch(options)
     }
 
-    private fun startForegroundSendService() {
+    private fun startForegroundSendService(permissionResultData: Intent) {
         AppLogger.i("MainActivity", "start_foreground_service", "Starting AudioSendService")
-        val intent = Intent(this, AudioSendService::class.java)
+        val intent = Intent(this, AudioSendService::class.java).apply {
+            action = AudioSendService.ACTION_START_CAPTURE
+            putExtra(AudioSendService.EXTRA_PROJECTION_DATA, permissionResultData)
+        }
         startForegroundService(intent)
+    }
+
+    private fun stopForegroundSendService() {
+        AppLogger.i("MainActivity", "stop_foreground_service", "Stopping AudioSendService")
+        stopService(Intent(this, AudioSendService::class.java))
     }
 
     private enum class ScanTarget {
@@ -412,6 +444,48 @@ private fun SessionStatusCard(uiState: MainUiState) {
                 }
             }
 
+            if (uiState.connectionDiagnostics.hasContent()) {
+                HorizontalDivider()
+                Text(
+                    text = stringResource(R.string.status_network_path_title),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = stringResource(uiState.connectionDiagnostics.pathType.labelResId()),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    text = stringResource(
+                        R.string.status_local_candidates_format,
+                        uiState.connectionDiagnostics.localCandidatesCount
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (uiState.connectionDiagnostics.selectedCandidatePairType.isNotBlank()) {
+                    Text(
+                        text = stringResource(
+                            R.string.status_selected_pair_format,
+                            uiState.connectionDiagnostics.selectedCandidatePairType
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (uiState.connectionDiagnostics.failureHint.isNotBlank()) {
+                    val hintText = uiState.connectionDiagnostics.localizedHintText()
+                    Text(
+                        text = stringResource(
+                            R.string.status_failure_hint_format,
+                            hintText
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+
             uiState.failure?.let { failure ->
                 HorizontalDivider()
                 Text(
@@ -633,8 +707,15 @@ private fun recommendedActionRes(uiState: MainUiState): Int {
     if (uiState.streamState == AudioStreamState.STREAMING) {
         return R.string.status_next_action_connected
     }
-    if (uiState.failure != null) {
-        return R.string.status_next_action_restart
+    uiState.failure?.let { failure ->
+        return when (failure.code) {
+            FailureCode.PERMISSION_DENIED -> R.string.status_next_action_permission
+            FailureCode.AUDIO_CAPTURE_NOT_SUPPORTED -> R.string.status_next_action_capture_not_supported
+            FailureCode.USB_TETHER_UNAVAILABLE -> R.string.status_next_action_usb_enable_tethering
+            FailureCode.USB_TETHER_DETECTED_BUT_NOT_REACHABLE -> R.string.status_next_action_usb_replug
+            FailureCode.NETWORK_INTERFACE_NOT_USABLE -> R.string.status_next_action_check_interface
+            else -> R.string.status_next_action_restart
+        }
     }
     return when (uiState.setupStep) {
         SetupStep.ENTRY -> R.string.status_next_action_entry
@@ -661,6 +742,31 @@ private fun FailureCode.labelResId(): Int = when (this) {
     FailureCode.WEBRTC_NEGOTIATION_FAILED -> R.string.failure_code_webrtc_negotiation_failed
     FailureCode.PEER_UNREACHABLE -> R.string.failure_code_peer_unreachable
     FailureCode.NETWORK_CHANGED -> R.string.failure_code_network_changed
+    FailureCode.USB_TETHER_UNAVAILABLE -> R.string.failure_code_usb_tether_unavailable
+    FailureCode.USB_TETHER_DETECTED_BUT_NOT_REACHABLE -> R.string.failure_code_usb_tether_not_reachable
+    FailureCode.NETWORK_INTERFACE_NOT_USABLE -> R.string.failure_code_network_interface_not_usable
     FailureCode.SESSION_EXPIRED -> R.string.failure_code_session_expired
     FailureCode.INVALID_PAYLOAD -> R.string.failure_code_invalid_payload
+}
+
+private fun ConnectionDiagnostics.hasContent(): Boolean {
+    return pathType != NetworkPathType.UNKNOWN ||
+        localCandidatesCount > 0 ||
+        selectedCandidatePairType.isNotBlank() ||
+        failureHint.isNotBlank()
+}
+
+@Composable
+private fun ConnectionDiagnostics.localizedHintText(): String = when (failureHint) {
+    "usb_tether_check" -> stringResource(R.string.status_hint_usb_tether_check)
+    "wifi_lan_check" -> stringResource(R.string.status_hint_wifi_check)
+    "network_interface_check" -> stringResource(R.string.status_hint_network_interface_check)
+    "peer_disconnected" -> stringResource(R.string.status_peer_disconnected)
+    else -> failureHint
+}
+
+private fun NetworkPathType.labelResId(): Int = when (this) {
+    NetworkPathType.WIFI_LAN -> R.string.status_network_path_wifi
+    NetworkPathType.USB_TETHER -> R.string.status_network_path_usb
+    NetworkPathType.UNKNOWN -> R.string.status_network_path_unknown
 }

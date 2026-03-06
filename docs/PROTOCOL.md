@@ -77,5 +77,13 @@ Binary packet format (little-endian):
 - Payload expires after 60 seconds.
 - `sessionId` must match between init and confirm payloads.
 - Reject invalid version, phase, and expired payload.
-- Use host ICE candidates only (LAN scope).
+- Use host ICE candidates only (LAN scope, including USB tethering IP links).
 - Audio transport uses DataChannel only; no relay/signaling server.
+
+## USB Tethering Path (Windows <-> Mobile)
+
+- USB is treated as an IP network path, not as direct accessory communication.
+- Supported path examples:
+  - Android USB tethering to Windows.
+  - iPhone Personal Hotspot over USB to Windows.
+- Protocol payloads and verification rules are unchanged on USB.

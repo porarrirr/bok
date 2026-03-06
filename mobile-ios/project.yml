@@ -46,6 +46,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.p2paudio
         PRODUCT_NAME: P2PAudio
+        CODE_SIGN_ENTITLEMENTS: App/P2PAudio.entitlements
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: true
     scheme:
       gatherCoverageData: false
@@ -69,6 +70,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.p2paudio.AudioBroadcastExtension
         PRODUCT_NAME: AudioBroadcastExtension
+        CODE_SIGN_ENTITLEMENTS: AudioBroadcastExtension/AudioBroadcastExtension.entitlements
 
   P2PAudioTests:
     type: bundle.unit-test

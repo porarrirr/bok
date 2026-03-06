@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "p2paudio-windows",
+  "version-string": "0.1.0",
+  "builtin-baseline": "65ecf191cbf4f85f7c4f1e213e5725f7f9e87a69",
+  "dependencies": [
+    "libdatachannel",
+    "openssl",
+    "libsrtp",
+    "usrsctp",
+    "zlib"
+  ]
+}

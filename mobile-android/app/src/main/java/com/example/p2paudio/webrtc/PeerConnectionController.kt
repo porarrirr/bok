@@ -4,6 +4,8 @@ import com.example.p2paudio.audio.PcmFrame
 import com.example.p2paudio.audio.PcmPacketCodec
 import com.example.p2paudio.logging.AppLogger
 import com.example.p2paudio.model.AudioStreamState
+import com.example.p2paudio.model.ConnectionDiagnostics
+import com.example.p2paudio.model.NetworkPathType
 import java.nio.ByteBuffer
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
@@ -18,11 +20,13 @@ import org.webrtc.RtpReceiver
 import org.webrtc.RtpTransceiver
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
+import org.webrtc.IceCandidate
 
 class PeerConnectionController(
     private val factory: PeerConnectionFactory,
     private val stateListener: (AudioStreamState, String?) -> Unit,
-    private val pcmFrameListener: (PcmFrame) -> Unit
+    private val pcmFrameListener: (PcmFrame) -> Unit,
+    private val diagnosticsListener: (ConnectionDiagnostics) -> Unit = {}
 ) {
 
     private val lock = Any()
@@ -30,9 +34,11 @@ class PeerConnectionController(
     private var audioDataChannel: DataChannel? = null
     private var currentSessionId: String? = null
     private var lastSendDropLogAtMs = 0L
+    private var connectionDiagnostics = ConnectionDiagnostics()
 
     suspend fun createOfferSession(): Result<LocalOfferResult> = withContext(Dispatchers.IO) {
         AppLogger.i("PeerConnection", "create_offer_start", "Creating local offer session")
+        resetDiagnostics()
         stateListener(AudioStreamState.CONNECTING, null)
         runCatching {
             val peer = createPeerConnection()
@@ -84,6 +90,7 @@ class PeerConnectionController(
             "Creating local answer for remote offer",
             context = mapOf("offerLength" to offerSdp.length)
         )
+        resetDiagnostics()
         stateListener(AudioStreamState.CONNECTING, null)
         runCatching {
             val peer = createPeerConnection()
@@ -188,6 +195,7 @@ class PeerConnectionController(
         peerConnection?.close()
         peerConnection = null
         currentSessionId = null
+        resetDiagnostics()
         stateListener(AudioStreamState.ENDED, null)
     }
 
@@ -260,14 +268,26 @@ class PeerConnectionController(
                         when (state) {
                             PeerConnection.IceConnectionState.CONNECTED,
                             PeerConnection.IceConnectionState.COMPLETED -> {
+                                updateDiagnostics(
+                                    selectedCandidatePairType = "host-host",
+                                    failureHint = ""
+                                )
                                 stateListener(AudioStreamState.STREAMING, null)
                             }
 
                             PeerConnection.IceConnectionState.DISCONNECTED -> {
+                                updateDiagnostics(failureHint = "peer_disconnected")
                                 stateListener(AudioStreamState.INTERRUPTED, "Peer disconnected")
                             }
 
                             PeerConnection.IceConnectionState.FAILED -> {
+                                updateDiagnostics(
+                                    failureHint = when (connectionDiagnostics.pathType) {
+                                        NetworkPathType.USB_TETHER -> "usb_tether_check"
+                                        NetworkPathType.WIFI_LAN -> "wifi_lan_check"
+                                        NetworkPathType.UNKNOWN -> "network_interface_check"
+                                    }
+                                )
                                 stateListener(AudioStreamState.FAILED, "ICE connection failed")
                             }
 
@@ -284,7 +304,9 @@ class PeerConnectionController(
                             context = mapOf("state" to (state?.name ?: "null"))
                         )
                     }
-                    override fun onIceCandidate(candidate: org.webrtc.IceCandidate?) = Unit
+                    override fun onIceCandidate(candidate: IceCandidate?) {
+                        onLocalIceCandidate(candidate)
+                    }
                     override fun onIceCandidatesRemoved(candidates: Array<out org.webrtc.IceCandidate>?) = Unit
                     override fun onAddStream(mediaStream: org.webrtc.MediaStream?) = Unit
                     override fun onRemoveStream(mediaStream: org.webrtc.MediaStream?) = Unit
@@ -447,6 +469,69 @@ class PeerConnectionController(
             ?.removePrefix("a=fingerprint:")
             ?.trim()
             ?: "unknown"
+    }
+
+    private fun resetDiagnostics() {
+        connectionDiagnostics = ConnectionDiagnostics(
+            pathType = NetworkPathClassifier.classifyFromLocalInterfaces()
+        )
+        diagnosticsListener(connectionDiagnostics)
+    }
+
+    private fun onLocalIceCandidate(candidate: IceCandidate?) {
+        if (candidate == null) {
+            return
+        }
+        val candidateType = candidate.sdp
+            .split(' ')
+            .zipWithNext()
+            .firstOrNull { it.first == "typ" }
+            ?.second
+            .orEmpty()
+        if (candidateType != "host") {
+            return
+        }
+
+        val detectedPath = NetworkPathClassifier.classifyFromCandidateSdp(candidate.sdp)
+        val nextPath = chooseMoreSpecificPath(connectionDiagnostics.pathType, detectedPath)
+        updateDiagnostics(
+            localCandidatesCount = connectionDiagnostics.localCandidatesCount + 1,
+            pathType = nextPath
+        )
+        AppLogger.d(
+            "PeerConnection",
+            "ice_candidate_host_detected",
+            "Detected host ICE candidate",
+            context = mapOf(
+                "pathType" to nextPath.name,
+                "localCandidatesCount" to connectionDiagnostics.localCandidatesCount
+            )
+        )
+    }
+
+    private fun chooseMoreSpecificPath(current: NetworkPathType, incoming: NetworkPathType): NetworkPathType {
+        if (incoming == NetworkPathType.UNKNOWN) {
+            return current
+        }
+        if (current == NetworkPathType.USB_TETHER) {
+            return current
+        }
+        return incoming
+    }
+
+    private fun updateDiagnostics(
+        pathType: NetworkPathType? = null,
+        localCandidatesCount: Int? = null,
+        selectedCandidatePairType: String? = null,
+        failureHint: String? = null
+    ) {
+        connectionDiagnostics = connectionDiagnostics.copy(
+            pathType = pathType ?: connectionDiagnostics.pathType,
+            localCandidatesCount = localCandidatesCount ?: connectionDiagnostics.localCandidatesCount,
+            selectedCandidatePairType = selectedCandidatePairType ?: connectionDiagnostics.selectedCandidatePairType,
+            failureHint = failureHint ?: connectionDiagnostics.failureHint
+        )
+        diagnosticsListener(connectionDiagnostics)
     }
 
     data class LocalOfferResult(

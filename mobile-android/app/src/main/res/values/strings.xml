@@ -11,6 +11,13 @@
 
     <string name="status_connection_title">Connection Status</string>
     <string name="status_session_id">Session ID</string>
+    <string name="status_network_path_title">Network path</string>
+    <string name="status_network_path_wifi">Wi-Fi / LAN</string>
+    <string name="status_network_path_usb">USB tethering</string>
+    <string name="status_network_path_unknown">Unknown</string>
+    <string name="status_local_candidates_format">Local host ICE candidates: %1$d</string>
+    <string name="status_selected_pair_format">Selected candidate pair: %1$s</string>
+    <string name="status_failure_hint_format">Hint: %1$s</string>
     <string name="status_failure_format">Issue: %1$s</string>
     <string name="status_next_action_title">Next step</string>
     <string name="status_ready">Choose one start action below.</string>
@@ -36,6 +43,12 @@
     <string name="status_next_action_restart">Restart from Step 1.</string>
     <string name="status_next_action_permission">Allow screen/audio capture, then tap Start Sharing again.</string>
     <string name="status_next_action_capture_not_supported">This device cannot share internal audio. Use a supported Android 10+ device.</string>
+    <string name="status_next_action_usb_enable_tethering">Enable USB tethering and reconnect the cable, then restart from Step 1.</string>
+    <string name="status_next_action_usb_replug">USB tethering was detected but unreachable. Reconnect cable and verify trust/tethering settings.</string>
+    <string name="status_next_action_check_interface">No usable host network interface. Check Wi-Fi or USB tethering settings.</string>
+    <string name="status_hint_usb_tether_check">Check USB cable, trust dialog, and USB tethering toggle.</string>
+    <string name="status_hint_wifi_check">Check that both devices are on the same local network.</string>
+    <string name="status_hint_network_interface_check">No usable host network interface was found.</string>
 
     <string name="state_idle">Idle</string>
     <string name="state_capturing">Preparing</string>
@@ -90,6 +103,9 @@
     <string name="error_webrtc_negotiation_failed">Could not establish a direct connection.</string>
     <string name="error_peer_unreachable">The other device could not be reached.</string>
     <string name="error_network_changed">Network changed during setup.</string>
+    <string name="error_usb_tether_unavailable">USB tethering path is unavailable. Enable USB tethering and reconnect.</string>
+    <string name="error_usb_tether_not_reachable">USB tethering path was detected but connection failed. Reconnect and verify trust settings.</string>
+    <string name="error_network_interface_not_usable">No usable local network interface was found for host ICE candidates.</string>
     <string name="error_session_expired">The QR payload expired.</string>
     <string name="error_invalid_payload">The QR payload is invalid.</string>
 
@@ -98,6 +114,9 @@
     <string name="failure_code_webrtc_negotiation_failed">Connection setup failed</string>
     <string name="failure_code_peer_unreachable">Other device not reachable</string>
     <string name="failure_code_network_changed">Network changed</string>
+    <string name="failure_code_usb_tether_unavailable">USB tethering unavailable</string>
+    <string name="failure_code_usb_tether_not_reachable">USB tethering not reachable</string>
+    <string name="failure_code_network_interface_not_usable">No usable network interface</string>
     <string name="failure_code_session_expired">QR payload expired</string>
     <string name="failure_code_invalid_payload">Invalid QR payload</string>
 </resources>

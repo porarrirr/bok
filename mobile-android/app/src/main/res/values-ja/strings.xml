@@ -11,6 +11,13 @@
 
     <string name="status_connection_title">接続状態</string>
     <string name="status_session_id">セッションID</string>
+    <string name="status_network_path_title">接続経路</string>
+    <string name="status_network_path_wifi">Wi-Fi / LAN</string>
+    <string name="status_network_path_usb">USBテザリング</string>
+    <string name="status_network_path_unknown">不明</string>
+    <string name="status_local_candidates_format">ローカル host ICE 候補: %1$d</string>
+    <string name="status_selected_pair_format">選択された候補ペア: %1$s</string>
+    <string name="status_failure_hint_format">ヒント: %1$s</string>
     <string name="status_failure_format">問題: %1$s</string>
     <string name="status_next_action_title">次にやること</string>
     <string name="status_ready">下の開始アクションを選んでください。</string>
@@ -36,6 +43,12 @@
     <string name="status_next_action_restart">Step 1からやり直してください。</string>
     <string name="status_next_action_permission">画面/音声権限を許可してから、もう一度共有を開始してください。</string>
     <string name="status_next_action_capture_not_supported">この端末は内部音声共有に対応していません。Android 10+対応端末をご利用ください。</string>
+    <string name="status_next_action_usb_enable_tethering">USBテザリングを有効にしてケーブルを再接続し、Step 1から再開してください。</string>
+    <string name="status_next_action_usb_replug">USBテザリングは検出されましたが到達できません。ケーブル再接続と信頼/テザリング設定を確認してください。</string>
+    <string name="status_next_action_check_interface">利用可能なhostネットワークインターフェースがありません。Wi-FiまたはUSBテザリング設定を確認してください。</string>
+    <string name="status_hint_usb_tether_check">USBケーブル、信頼ダイアログ、USBテザリング設定を確認してください。</string>
+    <string name="status_hint_wifi_check">両端末が同一ローカルネットワークにいることを確認してください。</string>
+    <string name="status_hint_network_interface_check">利用可能なhostネットワークインターフェースが見つかりません。</string>
 
     <string name="state_idle">待機中</string>
     <string name="state_capturing">準備中</string>
@@ -90,6 +103,9 @@
     <string name="error_webrtc_negotiation_failed">直接接続を確立できませんでした。</string>
     <string name="error_peer_unreachable">相手端末に接続できませんでした。</string>
     <string name="error_network_changed">接続中にネットワークが変更されました。</string>
+    <string name="error_usb_tether_unavailable">USBテザリング経路が利用できません。USBテザリングを有効化して再接続してください。</string>
+    <string name="error_usb_tether_not_reachable">USBテザリング経路は検出されましたが接続に失敗しました。再接続と信頼設定を確認してください。</string>
+    <string name="error_network_interface_not_usable">host ICE候補に使えるローカルネットワークインターフェースが見つかりません。</string>
     <string name="error_session_expired">QRペイロードの有効期限が切れています。</string>
     <string name="error_invalid_payload">QRペイロードが不正です。</string>
 
@@ -98,6 +114,9 @@
     <string name="failure_code_webrtc_negotiation_failed">接続準備に失敗しました</string>
     <string name="failure_code_peer_unreachable">相手端末に到達できません</string>
     <string name="failure_code_network_changed">ネットワークが変更されました</string>
+    <string name="failure_code_usb_tether_unavailable">USBテザリングが利用不可</string>
+    <string name="failure_code_usb_tether_not_reachable">USBテザリングに到達不可</string>
+    <string name="failure_code_network_interface_not_usable">利用可能なネットワークインターフェースなし</string>
     <string name="failure_code_session_expired">QRペイロード期限切れ</string>
     <string name="failure_code_invalid_payload">QRペイロードが不正です</string>
 </resources>
