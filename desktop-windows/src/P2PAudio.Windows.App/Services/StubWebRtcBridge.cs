@@ -80,7 +80,7 @@ public sealed class StubWebRtcBridge : IWebRtcBridge
             new WebRtcOperationResult(
                 Success: false,
                 ErrorMessage: "ネイティブ接続モジュールを利用できません。",
-                StatusMessage: "応答QRの適用に失敗しました。",
+                StatusMessage: "応答データの適用に失敗しました。",
                 Diagnostics: CreateDiagnostics()
             )
         );

@@ -73,9 +73,6 @@ dependencies {
 
     implementation("io.github.webrtc-sdk:android:137.7151.05")
 
-    implementation("com.google.zxing:core:3.5.3")
-    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
-
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 

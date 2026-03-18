@@ -89,7 +89,7 @@ public sealed class NativeWebRtcBridge : IWebRtcBridge, IDisposable
                 new WebRtcOperationResult(
                     Success: native.success != 0,
                     ErrorMessage: PtrToString(native.error_message),
-                    StatusMessage: native.success != 0 ? "応答QRを適用しました。" : "応答QRの適用に失敗しました。",
+                    StatusMessage: native.success != 0 ? "応答データを適用しました。" : "応答データの適用に失敗しました。",
                     Diagnostics: diagnostics
                 )
             );

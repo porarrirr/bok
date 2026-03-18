@@ -13,7 +13,7 @@ Open this folder as a Gradle project in Android Studio.
 ## Current implementation status
 
 - Session model + payload validation: implemented.
-- QR payload generation and scan flow: implemented.
+- Text payload share/copy/paste flow: implemented.
 - WebRTC host-only connection and SDP exchange: implemented.
 - `AudioPlaybackCapture` permission + capture startup: implemented.
 - DataChannel PCM transport (`audio-pcm`): implemented.
@@ -26,7 +26,7 @@ Open this folder as a Gradle project in Android Studio.
 - Audio capture works only for source apps that allow playback capture (`allowAudioPlaybackCapture`).
 - LAN host ICE only (no relay/signaling/NAT traversal).
 - USB tethering is supported as a LAN-equivalent path when paired with a Windows listener/sender.
-- Very large SDP payloads may require QR chunking in future revisions.
+- Very large SDP payloads may benefit from additional transfer carriers in future revisions.
 
 ## Debug logging
 

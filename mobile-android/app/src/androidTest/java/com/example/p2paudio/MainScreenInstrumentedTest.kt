@@ -3,6 +3,8 @@ package com.example.p2paudio
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
 import org.junit.Test
@@ -18,7 +20,7 @@ class MainScreenInstrumentedTest {
     fun initialScreenShowsEntryActions() {
         composeRule.onAllNodesWithTag("entry_actions_card").assertCountEquals(1)
         composeRule.onAllNodesWithTag("entry_start_sender_button").assertCountEquals(1)
-        composeRule.onAllNodesWithTag("entry_scan_init_button").assertCountEquals(1)
+        composeRule.onAllNodesWithTag("entry_start_listener_button").assertCountEquals(1)
     }
 
     @Test
@@ -28,10 +30,10 @@ class MainScreenInstrumentedTest {
     }
 
     @Test
-    fun manualInputUiIsRemoved() {
-        composeRule.onAllNodesWithTag("sharer_manual_toggle").assertCountEquals(0)
-        composeRule.onAllNodesWithTag("listener_manual_toggle").assertCountEquals(0)
-        composeRule.onAllNodesWithTag("sharer_manual_input").assertCountEquals(0)
-        composeRule.onAllNodesWithTag("listener_manual_input").assertCountEquals(0)
+    fun listenerFlowShowsPayloadInput() {
+        composeRule.onNodeWithTag("entry_start_listener_button").performClick()
+
+        composeRule.onAllNodesWithTag("listener_scan_step_card").assertCountEquals(1)
+        composeRule.onAllNodesWithTag("listener_payload_input").assertCountEquals(1)
     }
 }

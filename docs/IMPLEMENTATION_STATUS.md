@@ -5,8 +5,8 @@
 - Android project scaffold with Gradle wrapper and buildable debug APK.
 - iOS app source scaffold with ReplayKit + WebRTC integration.
 - Cross-platform v2 pairing payload models (`init` / `confirm`) and validation.
-- Cross-platform QR payload transport compression (`p2paudio-z1:` zlib + Base64URL).
-- QR-only wizard flow on Android and iOS (manual code entry removed).
+- Cross-platform payload transport compression (`p2paudio-z1:` zlib + Base64URL).
+- Windows + Android text-payload exchange flow (copy/share/paste).
 - 6-digit verification code gate before sender applies remote confirm payload.
 - Failure handling reset to Step 1 for payload mismatch/expiry/verification mismatch.
 - WebRTC peer controller on Android and iOS using host ICE and full SDP exchange.
@@ -16,11 +16,11 @@
 - iOS ReplayKit extension PCM bridge into app process via App Group shared file.
 - iOS receiver PCM playback pipeline (`AVAudioEngine`).
 - iOS QR camera scanner UI integration (AVFoundation).
-- Android + iOS QR payload codec regression tests updated for v2 decode behavior.
+- Android + iOS payload codec regression tests updated for v2 decode behavior.
 - Android + iOS connection diagnostics (`wifi_lan` / `usb_tether` / `unknown`) and local ICE candidate counters.
 - Android + iOS USB-tether-aware failure mapping and user guidance (`usb_tether_unavailable`, `usb_tether_detected_but_not_reachable`, `network_interface_not_usable`).
 - Windows implementation extended with:
-  - WinUI sender/listener payload flow (QR display, paste, camera scan entrypoints),
+  - WinUI sender/listener payload flow (text display, copy, paste, manual entry),
   - native bridge contract (`p2paudio_core_webrtc` C ABI) and managed P/Invoke integration,
   - WASAPI loopback sender pipeline to `audio-pcm` packet codec,
   - DataChannel receive polling + PCM playback on Windows listener side,
@@ -31,7 +31,7 @@
   - x64 runtime alignment in app build settings and CI runtime staging checks.
 - Windows ViewModel integration tests expanded with full `docs/TEST_MATRIX.md` coverage:
   - sender full flow (offer → verify → connect → stream),
-  - listener full flow (scan init → generate confirm → receive → stream),
+  - listener full flow (import init → generate confirm → receive → stream),
   - expired/invalid/mismatched payload rejection and restart,
   - answer failure and apply-answer failure state transitions,
   - verification reject restart, stop state reset,
@@ -42,6 +42,6 @@
 ## Pending follow-up
 
 - iOS Xcode project wiring, entitlements, and on-device signing validation.
-- Optional QR payload chunking for edge cases where compressed SDP still exceeds one symbol.
+- Optional alternative carriers for very large payloads (for example file transfer or QR on clients that keep it).
 - Optional migration from DataChannel PCM transport to RTP custom audio device path.
 - End-to-end Android/iOS/Windows interoperability validation matrix execution on physical devices (including USB tethering scenarios).

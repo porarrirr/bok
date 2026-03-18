@@ -8,13 +8,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,6 +30,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -42,19 +41,18 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.example.p2paudio.logging.AppLogger
@@ -62,23 +60,17 @@ import com.example.p2paudio.model.AudioStreamState
 import com.example.p2paudio.model.ConnectionDiagnostics
 import com.example.p2paudio.model.FailureCode
 import com.example.p2paudio.model.NetworkPathType
-import com.example.p2paudio.qr.QrCodeEncoder
-import com.example.p2paudio.qr.QrDisplaySizing
 import com.example.p2paudio.service.AudioSendService
 import com.example.p2paudio.ui.MainUiState
 import com.example.p2paudio.ui.MainViewModel
 import com.example.p2paudio.ui.SetupMode
 import com.example.p2paudio.ui.SetupStep
-import com.journeyapps.barcodescanner.ScanContract
-import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
     private val viewModel by viewModels<MainViewModel>()
-
-    private var pendingScanTarget: ScanTarget = ScanTarget.NONE
 
     private val projectionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -101,22 +93,6 @@ class MainActivity : ComponentActivity() {
             AppLogger.w("MainActivity", "record_permission_denied", "RECORD_AUDIO permission denied")
         }
         viewModel.onRecordAudioPermissionResult(granted)
-    }
-
-    private val qrScanLauncher = registerForActivityResult(ScanContract()) { result ->
-        val contents = result.contents ?: return@registerForActivityResult
-        AppLogger.d(
-            "MainActivity",
-            "qr_scan_result",
-            "QR payload received",
-            context = mapOf("target" to pendingScanTarget.name, "length" to contents.length)
-        )
-        when (pendingScanTarget) {
-            ScanTarget.INIT -> viewModel.createConfirmFromInit(contents)
-            ScanTarget.CONFIRM -> viewModel.applyConfirm(contents)
-            ScanTarget.NONE -> Unit
-        }
-        pendingScanTarget = ScanTarget.NONE
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -157,14 +133,9 @@ class MainActivity : ComponentActivity() {
                         onChooseSender = viewModel::beginSenderFlow,
                         onContinueSender = viewModel::startSenderFlowRequested,
                         onChooseListener = viewModel::beginListenerFlow,
-                        onScanInit = {
-                            pendingScanTarget = ScanTarget.INIT
-                            launchQrScanner()
-                        },
-                        onScanConfirm = {
-                            pendingScanTarget = ScanTarget.CONFIRM
-                            launchQrScanner()
-                        },
+                        onProcessInitPayload = viewModel::createConfirmFromInit,
+                        onProcessConfirmPayload = viewModel::applyConfirm,
+                        onSharePayload = ::sharePayload,
                         onVerificationMatch = viewModel::approveVerificationAndConnect,
                         onVerificationMismatch = viewModel::rejectVerificationAndRestart,
                         onStop = viewModel::stopSession
@@ -174,20 +145,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun launchQrScanner() {
+    private fun sharePayload(payload: String) {
+        if (payload.isBlank()) {
+            return
+        }
         AppLogger.i(
             "MainActivity",
-            "qr_scanner_launch",
-            "Launching QR scanner",
-            context = mapOf("target" to pendingScanTarget.name)
+            "payload_share_launch",
+            "Launching payload share sheet",
+            context = mapOf("length" to payload.length)
         )
-        val options = ScanOptions()
-            .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-            .setPrompt(getString(R.string.scanner_prompt))
-            .setBeepEnabled(false)
-            .setCameraId(0)
-            .setOrientationLocked(false)
-        qrScanLauncher.launch(options)
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, payload)
+        }
+        startActivity(Intent.createChooser(sendIntent, getString(R.string.flow_share_payload)))
     }
 
     private fun startForegroundSendService(permissionResultData: Intent) {
@@ -203,12 +175,6 @@ class MainActivity : ComponentActivity() {
         AppLogger.i("MainActivity", "stop_foreground_service", "Stopping AudioSendService")
         stopService(Intent(this, AudioSendService::class.java))
     }
-
-    private enum class ScanTarget {
-        NONE,
-        INIT,
-        CONFIRM
-    }
 }
 
 @Composable
@@ -217,8 +183,9 @@ private fun MainScreen(
     onChooseSender: () -> Unit,
     onContinueSender: () -> Unit,
     onChooseListener: () -> Unit,
-    onScanInit: () -> Unit,
-    onScanConfirm: () -> Unit,
+    onProcessInitPayload: (String) -> Unit,
+    onProcessConfirmPayload: (String) -> Unit,
+    onSharePayload: (String) -> Unit,
     onVerificationMatch: () -> Unit,
     onVerificationMismatch: () -> Unit,
     onStop: () -> Unit
@@ -236,23 +203,6 @@ private fun MainScreen(
         AudioStreamState.ENDED
     )
     val expirySeconds = rememberExpirySeconds(uiState.payloadExpiresAtUnixMs)
-
-    val initQr = remember(uiState.initPayload) {
-        uiState.initPayload.takeIf { it.isNotBlank() }?.let {
-            QrCodeEncoder.generate(it, QrDisplaySizing.recommendedBitmapSizePx(it.length))
-        }
-    }
-    val initQrSize = remember(uiState.initPayload) {
-        QrDisplaySizing.recommendedDisplaySizeDp(uiState.initPayload.length).dp
-    }
-    val confirmQr = remember(uiState.confirmPayload) {
-        uiState.confirmPayload.takeIf { it.isNotBlank() }?.let {
-            QrCodeEncoder.generate(it, QrDisplaySizing.recommendedBitmapSizePx(it.length))
-        }
-    }
-    val confirmQrSize = remember(uiState.confirmPayload) {
-        QrDisplaySizing.recommendedDisplaySizeDp(uiState.confirmPayload.length).dp
-    }
 
     LaunchedEffect(transientMessage) {
         if (transientMessage.isNotBlank()) {
@@ -321,14 +271,13 @@ private fun MainScreen(
 
                     SetupStep.SENDER_SHOW_INIT -> SenderShowInitCard(
                         uiState = uiState,
-                        payloadQr = initQr,
-                        qrSize = initQrSize,
                         expirySeconds = expirySeconds,
                         onCopyPayload = {
                             clipboardManager.setText(AnnotatedString(uiState.initPayload))
                             transientMessage = initCopiedText
                         },
-                        onScanConfirm = onScanConfirm
+                        onSharePayload = { onSharePayload(uiState.initPayload) },
+                        onProcessConfirmPayload = onProcessConfirmPayload
                     )
 
                     SetupStep.SENDER_VERIFY_CODE -> VerificationCard(
@@ -338,19 +287,18 @@ private fun MainScreen(
                     )
 
                     SetupStep.LISTENER_SCAN_INIT -> ListenerScanCard(
-                        onScanInit = onScanInit,
+                        onProcessInitPayload = onProcessInitPayload,
                         onStop = onStop
                     )
 
                     SetupStep.LISTENER_SHOW_CONFIRM -> ListenerShowConfirmCard(
                         uiState = uiState,
-                        payloadQr = confirmQr,
-                        qrSize = confirmQrSize,
                         expirySeconds = expirySeconds,
                         onCopyPayload = {
                             clipboardManager.setText(AnnotatedString(uiState.confirmPayload))
                             transientMessage = confirmCopiedText
-                        }
+                        },
+                        onSharePayload = { onSharePayload(uiState.confirmPayload) }
                     )
                 }
             } else if (uiState.streamState != AudioStreamState.FAILED) {
@@ -681,11 +629,10 @@ private fun DiagnosingCard() {
 @Composable
 private fun SenderShowInitCard(
     uiState: MainUiState,
-    payloadQr: android.graphics.Bitmap?,
-    qrSize: Dp,
     expirySeconds: Int,
     onCopyPayload: () -> Unit,
-    onScanConfirm: () -> Unit
+    onSharePayload: () -> Unit,
+    onProcessConfirmPayload: (String) -> Unit
 ) {
     StepCard(
         modifier = Modifier
@@ -702,13 +649,6 @@ private fun SenderShowInitCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
-            payloadQr?.let { qr ->
-                QrBlock(
-                    qr = qr,
-                    description = stringResource(R.string.flow_sender_qr_description),
-                    preferredSize = qrSize
-                )
-            }
             if (expirySeconds > 0) {
                 Text(
                     text = stringResource(R.string.status_qr_expiry_remaining, expirySeconds),
@@ -717,19 +657,17 @@ private fun SenderShowInitCard(
                     fontWeight = FontWeight.SemiBold
                 )
             }
-            Button(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .testTag("scan_confirm_button"),
-                enabled = uiState.initPayload.isNotBlank(),
-                onClick = onScanConfirm
-            ) {
-                Text(stringResource(R.string.flow_sender_scan_button))
-            }
             PayloadDetailsSection(
                 payloadValue = uiState.initPayload,
-                onCopyPayload = onCopyPayload
+                onCopyPayload = onCopyPayload,
+                onSharePayload = onSharePayload
+            )
+            PayloadInputSection(
+                title = stringResource(R.string.flow_sender_received_payload_title),
+                placeholder = stringResource(R.string.flow_sender_received_payload_placeholder),
+                submitLabel = stringResource(R.string.flow_sender_apply_received_payload),
+                textFieldTag = "sender_payload_input",
+                onSubmit = onProcessConfirmPayload
             )
         }
     }
@@ -737,7 +675,7 @@ private fun SenderShowInitCard(
 
 @Composable
 private fun ListenerScanCard(
-    onScanInit: () -> Unit,
+    onProcessInitPayload: (String) -> Unit,
     onStop: () -> Unit
 ) {
     StepCard(
@@ -753,15 +691,13 @@ private fun ListenerScanCard(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Button(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .testTag("entry_scan_init_button"),
-            onClick = onScanInit
-        ) {
-            Text(stringResource(R.string.flow_receiver_scan_button))
-        }
+        PayloadInputSection(
+            title = stringResource(R.string.flow_receiver_payload_entry_title),
+            placeholder = stringResource(R.string.flow_receiver_payload_entry_placeholder),
+            submitLabel = stringResource(R.string.flow_receiver_apply_init_payload),
+            textFieldTag = "listener_payload_input",
+            onSubmit = onProcessInitPayload
+        )
         Text(
             text = stringResource(R.string.flow_receiver_scan_tip),
             style = MaterialTheme.typography.bodySmall,
@@ -779,10 +715,9 @@ private fun ListenerScanCard(
 @Composable
 private fun ListenerShowConfirmCard(
     uiState: MainUiState,
-    payloadQr: android.graphics.Bitmap?,
-    qrSize: Dp,
     expirySeconds: Int,
-    onCopyPayload: () -> Unit
+    onCopyPayload: () -> Unit,
+    onSharePayload: () -> Unit
 ) {
     StepCard(
         modifier = Modifier
@@ -792,13 +727,6 @@ private fun ListenerShowConfirmCard(
         title = stringResource(R.string.flow_receiver_confirm_title),
         description = stringResource(R.string.flow_receiver_confirm_description)
     ) {
-        payloadQr?.let { qr ->
-            QrBlock(
-                qr = qr,
-                description = stringResource(R.string.flow_receiver_qr_description),
-                preferredSize = qrSize
-            )
-        }
         if (expirySeconds > 0) {
             Text(
                 text = stringResource(R.string.status_qr_expiry_remaining, expirySeconds),
@@ -810,7 +738,8 @@ private fun ListenerShowConfirmCard(
         VerificationCodeBlock(code = uiState.verificationCode)
         PayloadDetailsSection(
             payloadValue = uiState.confirmPayload,
-            onCopyPayload = onCopyPayload
+            onCopyPayload = onCopyPayload,
+            onSharePayload = onSharePayload
         )
     }
 }
@@ -1107,7 +1036,8 @@ private fun StepCard(
 @Composable
 private fun PayloadDetailsSection(
     payloadValue: String,
-    onCopyPayload: () -> Unit
+    onCopyPayload: () -> Unit,
+    onSharePayload: (() -> Unit)? = null
 ) {
     if (payloadValue.isBlank()) {
         return
@@ -1129,8 +1059,15 @@ private fun PayloadDetailsSection(
                 )
             }
             Spacer(modifier = Modifier.weight(1f))
-            TextButton(onClick = onCopyPayload) {
-                Text(stringResource(R.string.flow_copy_payload))
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (onSharePayload != null) {
+                    TextButton(onClick = onSharePayload) {
+                        Text(stringResource(R.string.flow_share_payload))
+                    }
+                }
+                TextButton(onClick = onCopyPayload) {
+                    Text(stringResource(R.string.flow_copy_payload))
+                }
             }
         }
         Text(
@@ -1151,21 +1088,49 @@ private fun PayloadDetailsSection(
 }
 
 @Composable
-private fun QrBlock(
-    qr: android.graphics.Bitmap,
-    description: String,
-    preferredSize: Dp
+private fun PayloadInputSection(
+    title: String,
+    placeholder: String,
+    submitLabel: String,
+    textFieldTag: String,
+    onSubmit: (String) -> Unit
 ) {
-    BoxWithConstraints(
-        modifier = Modifier.fillMaxWidth(),
-        contentAlignment = Alignment.Center
-    ) {
-        val qrSize = minOf(maxWidth, preferredSize)
-        Image(
-            bitmap = qr.asImageBitmap(),
-            contentDescription = description,
-            modifier = Modifier.size(qrSize)
+    val clipboardManager = LocalClipboardManager.current
+    var payloadInput by rememberSaveable(title) { mutableStateOf("") }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
         )
+        OutlinedButton(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                payloadInput = clipboardManager.getText()?.text?.toString().orEmpty()
+            }
+        ) {
+            Text(stringResource(R.string.flow_paste_from_clipboard))
+        }
+        OutlinedTextField(
+            value = payloadInput,
+            onValueChange = { payloadInput = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(textFieldTag),
+            placeholder = { Text(placeholder) },
+            minLines = 4,
+            maxLines = 8
+        )
+        Button(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp),
+            enabled = payloadInput.isNotBlank(),
+            onClick = { onSubmit(payloadInput.trim()) }
+        ) {
+            Text(submitLabel)
+        }
     }
 }
 

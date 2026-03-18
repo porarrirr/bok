@@ -7,12 +7,12 @@ This module contains the Windows implementation for the shared v2 pairing/audio 
 - `src/P2PAudio.Windows.Core/`
   - v2 payload models (`init` / `confirm`)
   - payload validation + failure-code mapping
-  - QR transport codec (`p2paudio-z1:` zlib + Base64URL)
+  - payload transport codec (`p2paudio-z1:` zlib + Base64URL)
   - verification code generation
   - PCM packet codec (`audio-pcm`)
   - USB tethering interface classifier
 - `src/P2PAudio.Windows.App/`
-  - WinUI shell with sender/listener QR flow (show, paste, camera scan)
+  - WinUI shell with sender/listener payload text flow (copy, paste, manual entry)
   - native bridge loading (`p2paudio_core_webrtc.dll`) with native-required default
   - WASAPI loopback sender to `audio-pcm` packet pipeline
   - DataChannel receive polling + PCM playback (NAudio)

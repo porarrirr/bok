@@ -251,7 +251,7 @@
                 </Border>
 
                 <!-- ══════════════════════════════════════════
-                     Step 2a — Sender: show init QR
+                     Step 2a — Sender: share init payload
                      ══════════════════════════════════════════ -->
                 <Border
                     x:Name="SenderShowInitCard"
@@ -267,43 +267,28 @@
                                 <TextBlock Text="送信側" FontSize="11" FontWeight="Bold" Foreground="#1A56DB" />
                             </Border>
                             <TextBlock
-                                Text="開始QRを相手に見せる"
+                                Text="開始データを共有する"
                                 FontSize="16"
                                 FontWeight="SemiBold"
                                 VerticalAlignment="Center" />
                         </StackPanel>
                         <TextBlock
-                            Text="受信側にこのQRを読み取ってもらい、その後、相手の応答QRをこのPCで読み取ります。"
+                            Text="開始データをコピーして Android 側へ渡してください。相手から応答データを受け取ったら、この画面に貼り付けます。"
                             FontSize="13"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             TextWrapping="Wrap" />
                         <TextBlock
-                            Text="⏱ 1分以内を目安に読み取ってください"
+                            Text="⏱ 1分以内を目安に共有してください"
                             FontSize="12"
                             Foreground="{ThemeResource SystemFillColorAttentionBrush}" />
-
-                        <Image
-                            Source="{x:Bind ViewModel.PayloadQrImage, Mode=OneWay}"
-                            Width="{x:Bind ViewModel.PayloadQrDisplaySize, Mode=OneWay}"
-                            Height="{x:Bind ViewModel.PayloadQrDisplaySize, Mode=OneWay}"
-                            Stretch="Uniform"
-                            HorizontalAlignment="Center"
-                            Margin="0,4" />
-
-                        <Button
-                            Content="📷 相手の応答QRを読み取る"
-                            Click="OnScanFromCameraClick"
-                            Style="{StaticResource AccentButtonStyle}"
-                            Padding="20,10"
-                            HorizontalAlignment="Center" />
 
                         <Expander Header="手動で操作する" Padding="0">
                             <StackPanel Spacing="10" Margin="0,10,0,0">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Button Content="開始QRの内容をコピー" Click="OnCopyPayloadClick" Padding="12,6" />
-                                    <Button Content="クリップボードの応答QRを使う" Click="OnPastePayloadClick" Padding="12,6" />
+                                    <Button Content="開始データをコピー" Click="OnCopyPayloadClick" Padding="12,6" />
+                                    <Button Content="クリップボードの応答データを使う" Click="OnPastePayloadClick" Padding="12,6" />
                                 </StackPanel>
-                                <TextBlock Text="開始QRの内容" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontWeight="SemiBold" />
+                                <TextBlock Text="開始データ" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontWeight="SemiBold" />
                                 <Border
                                     Background="{ThemeResource LayerFillColorDefaultBrush}"
                                     CornerRadius="8"
@@ -320,6 +305,15 @@
                                             IsTextSelectionEnabled="True" />
                                     </ScrollViewer>
                                 </Border>
+                                <TextBlock Text="受け取った応答データ" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontWeight="SemiBold" />
+                                <TextBox
+                                    x:Name="SenderConfirmPayloadInput"
+                                    PlaceholderText="Android 側から受け取った応答データを貼り付ける"
+                                    AcceptsReturn="True"
+                                    Height="80"
+                                    FontSize="11"
+                                    FontFamily="Consolas" />
+                                <Button Content="この応答データで進める" Click="OnProcessSenderConfirmPayloadClick" Padding="12,6" />
                             </StackPanel>
                         </Expander>
                     </StackPanel>
@@ -393,7 +387,7 @@
                 </Border>
 
                 <!-- ══════════════════════════════════════════
-                     Step 2b — Listener: scan init QR
+                     Step 2b — Listener: receive init payload
                      ══════════════════════════════════════════ -->
                 <Border
                     x:Name="ListenerScanInitCard"
@@ -409,42 +403,36 @@
                                 <TextBlock Text="受信側" FontSize="11" FontWeight="Bold" Foreground="#B45309" />
                             </Border>
                             <TextBlock
-                                Text="送信側の開始QRを読み取る"
+                                Text="開始データを貼り付ける"
                                 FontSize="16"
                                 FontWeight="SemiBold"
                                 VerticalAlignment="Center" />
                         </StackPanel>
                         <TextBlock
-                            Text="送信側の画面に表示されているQRを、このPCのカメラで読み取ってください。"
+                            Text="Windows または Android から受け取った開始データを、このPCに貼り付けてください。"
                             FontSize="13"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             TextWrapping="Wrap" />
 
-                        <Button
-                            Content="📷 カメラで読み取る"
-                            Click="OnScanFromCameraClick"
-                            Style="{StaticResource AccentButtonStyle}"
-                            Padding="20,10" />
-
-                        <Expander Header="読み取りできないとき" Padding="0">
+                        <Expander Header="手動で操作する" Padding="0">
                             <StackPanel Spacing="10" Margin="0,10,0,0">
-                                <Button Content="クリップボードのQR内容を使う" Click="OnPastePayloadClick" Padding="12,6" />
+                                <Button Content="クリップボードの開始データを使う" Click="OnPastePayloadClick" Padding="12,6" />
                                 <TextBlock Text="手動入力" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontWeight="SemiBold" />
                                 <TextBox
-                                    x:Name="ManualPayloadInput"
-                                    PlaceholderText="開始QRの内容を貼り付ける"
+                                    x:Name="ListenerInitPayloadInput"
+                                    PlaceholderText="開始データを貼り付ける"
                                     AcceptsReturn="True"
                                     Height="80"
                                     FontSize="11"
                                     FontFamily="Consolas" />
-                                <Button Content="この内容で進める" Click="OnProcessManualPayloadClick" Padding="12,6" />
+                                <Button Content="この開始データで進める" Click="OnProcessListenerInitPayloadClick" Padding="12,6" />
                             </StackPanel>
                         </Expander>
                     </StackPanel>
                 </Border>
 
                 <!-- ══════════════════════════════════════════
-                     Step 3b — Listener: show confirm QR
+                     Step 3b — Listener: share confirm payload
                      ══════════════════════════════════════════ -->
                 <Border
                     x:Name="ListenerShowConfirmCard"
@@ -460,28 +448,22 @@
                                 <TextBlock Text="受信側" FontSize="11" FontWeight="Bold" Foreground="#B45309" />
                             </Border>
                             <TextBlock
-                                Text="応答QRを送信側に見せる"
+                                Text="応答データを送信側へ共有する"
                                 FontSize="16"
                                 FontWeight="SemiBold"
                                 VerticalAlignment="Center" />
                         </StackPanel>
                         <TextBlock
-                            Text="送信側にこのQRと6桁コードを見せると、接続が完了します。"
+                            Text="応答データをコピーして送信側へ渡してください。6桁コードが一致すると接続が完了します。"
                             FontSize="13"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             TextWrapping="Wrap" />
                         <TextBlock
-                            Text="⏱ 1分以内を目安に読み取ってください"
+                            Text="⏱ 1分以内を目安に共有してください"
                             FontSize="12"
                             Foreground="{ThemeResource SystemFillColorAttentionBrush}" />
 
                         <StackPanel Margin="0,4" Spacing="12">
-                            <Image
-                                Source="{x:Bind ViewModel.PayloadQrImage, Mode=OneWay}"
-                                Width="{x:Bind ViewModel.PayloadQrDisplaySize, Mode=OneWay}"
-                                Height="{x:Bind ViewModel.PayloadQrDisplaySize, Mode=OneWay}"
-                                Stretch="Uniform"
-                                HorizontalAlignment="Center" />
                             <Border
                                 Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
                                 CornerRadius="12"
@@ -513,8 +495,8 @@
 
                         <Expander Header="手動で操作する" Padding="0">
                             <StackPanel Spacing="10" Margin="0,10,0,0">
-                                <Button Content="応答QRの内容をコピー" Click="OnCopyPayloadClick" Padding="12,6" />
-                                <TextBlock Text="応答QRの内容" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontWeight="SemiBold" />
+                                <Button Content="応答データをコピー" Click="OnCopyPayloadClick" Padding="12,6" />
+                                <TextBlock Text="応答データ" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontWeight="SemiBold" />
                                 <Border
                                     Background="{ThemeResource LayerFillColorDefaultBrush}"
                                     CornerRadius="8"

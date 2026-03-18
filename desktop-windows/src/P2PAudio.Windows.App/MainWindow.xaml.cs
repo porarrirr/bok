@@ -142,14 +142,18 @@ public sealed partial class MainWindow : Window
         await ViewModel.PasteFromClipboardAsync();
     }
 
-    private async void OnScanFromCameraClick(object sender, RoutedEventArgs e)
+    private async void OnProcessSenderConfirmPayloadClick(object sender, RoutedEventArgs e)
     {
-        await ViewModel.ScanFromCameraAsync();
+        var text = SenderConfirmPayloadInput.Text;
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            await ViewModel.ProcessInputPayloadAsync(text);
+        }
     }
 
-    private async void OnProcessManualPayloadClick(object sender, RoutedEventArgs e)
+    private async void OnProcessListenerInitPayloadClick(object sender, RoutedEventArgs e)
     {
-        var text = ManualPayloadInput.Text;
+        var text = ListenerInitPayloadInput.Text;
         if (!string.IsNullOrWhiteSpace(text))
         {
             await ViewModel.ProcessInputPayloadAsync(text);
@@ -180,7 +184,7 @@ public sealed partial class MainWindow : Window
         dataPackage.SetText(ViewModel.CurrentPayload);
         Clipboard.SetContent(dataPackage);
 
-        ShowTransientMessage("QRの内容をクリップボードへコピーしました。");
+        ShowTransientMessage("接続データをクリップボードへコピーしました。");
     }
 
     private void ShowTransientMessage(string message)

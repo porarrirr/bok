@@ -333,7 +333,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         AppLogger.i(
             "MainViewModel",
             "confirm_generation_start",
-            "Creating confirm payload from init QR",
+            "Creating confirm payload from init transport string",
             context = mapOf("initLength" to initRaw.length)
         )
         beginListenerFlow()

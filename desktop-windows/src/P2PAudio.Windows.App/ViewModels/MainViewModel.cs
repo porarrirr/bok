@@ -1,6 +1,5 @@
 using System.Runtime.ExceptionServices;
 using CommunityToolkit.Mvvm.ComponentModel;
-using Microsoft.UI.Xaml.Media.Imaging;
 using P2PAudio.Windows.App.Services;
 using P2PAudio.Windows.Core.Models;
 using P2PAudio.Windows.Core.Networking;
@@ -15,7 +14,6 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly LoopbackPcmSender _loopbackSender;
     private readonly PcmPlaybackService _playbackService;
     private readonly CancellationTokenSource _receiveLoopCts = new();
-    private readonly IQrImageService _qrImageService;
     private readonly SynchronizationContext? _uiContext = SynchronizationContext.Current;
     private BridgeBackendHealth _backendHealth;
     private Task? _startupTask;
@@ -33,26 +31,19 @@ public sealed partial class MainViewModel : ObservableObject
     public MainViewModel(bool initializeImmediately)
         : this(
             initialBridge: initializeImmediately ? CreateBridge() : CreateStartupPlaceholderBridge(),
-            qrImageService: new QrImageService(),
             startupBridgeFactory: initializeImmediately ? null : CreateBridge,
             initializeImmediately: initializeImmediately
         )
     {
     }
 
-    public MainViewModel(IWebRtcBridge bridge) : this(bridge, new QrImageService(), initializeImmediately: true)
+    public MainViewModel(IWebRtcBridge bridge) : this(bridge, initializeImmediately: true)
     {
     }
 
-    public MainViewModel(IWebRtcBridge bridge, IQrImageService qrImageService)
-        : this(bridge, qrImageService, initializeImmediately: true)
-    {
-    }
-
-    public MainViewModel(IWebRtcBridge bridge, IQrImageService qrImageService, bool initializeImmediately)
+    public MainViewModel(IWebRtcBridge bridge, bool initializeImmediately)
         : this(
             initialBridge: initializeImmediately ? bridge : CreateStartupPlaceholderBridge(),
-            qrImageService: qrImageService,
             startupBridgeFactory: initializeImmediately ? null : () => bridge,
             initializeImmediately: initializeImmediately
         )
@@ -61,13 +52,11 @@ public sealed partial class MainViewModel : ObservableObject
 
     private MainViewModel(
         IWebRtcBridge initialBridge,
-        IQrImageService qrImageService,
         Func<IWebRtcBridge>? startupBridgeFactory,
         bool initializeImmediately)
     {
         _bridge = initialBridge;
         _startupBridgeFactory = startupBridgeFactory;
-        _qrImageService = qrImageService;
         _loopbackSender = new LoopbackPcmSender(packet => _bridge.SendPcmPacket(packet));
         _playbackService = new PcmPlaybackService();
         _backendHealth = CreatePendingBackendHealth();
@@ -87,12 +76,6 @@ public sealed partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     private string currentPayload = string.Empty;
-
-    [ObservableProperty]
-    private BitmapImage? payloadQrImage;
-
-    [ObservableProperty]
-    private double payloadQrDisplaySize = QrDisplaySizing.DefaultDisplaySize;
 
     [ObservableProperty]
     private string networkPathLabel = "接続経路: 判定前";
@@ -164,17 +147,12 @@ public sealed partial class MainViewModel : ObservableObject
     {
         SetupStep.Entry => "\u2460 \u5F79\u5272\u3092\u9078\u3076",
         SetupStep.PathDiagnosing => "\u2460 \u6E96\u5099\u4E2D",
-        SetupStep.SenderShowInit => "\u2461 QR\u3092\u4EA4\u63DB",
-        SetupStep.ListenerScanInit => "\u2461 QR\u3092\u4EA4\u63DB",
+        SetupStep.SenderShowInit => "\u2461 \u30C7\u30FC\u30BF\u3092\u5171\u6709",
+        SetupStep.ListenerScanInit => "\u2461 \u30C7\u30FC\u30BF\u3092\u5165\u529B",
         SetupStep.SenderVerifyCode => "\u2462 \u30B3\u30FC\u30C9\u78BA\u8A8D",
         SetupStep.ListenerShowConfirm => "\u2462 \u30B3\u30FC\u30C9\u78BA\u8A8D",
         _ => string.Empty
     };
-
-    partial void OnCurrentPayloadChanged(string value)
-    {
-        PayloadQrDisplaySize = QrDisplaySizing.GetDisplaySize(value.Length);
-    }
 
     public bool CanStartSender => _backendHealth.IsReady &&
         (CurrentSetupStep == SetupStep.Entry || CurrentStreamState == StreamState.Failed) &&
@@ -203,7 +181,7 @@ public sealed partial class MainViewModel : ObservableObject
         StopLoopbackIfRunning();
         SetStreamState(StreamState.Capturing);
         SetFailureCode(null, clearWhenNull: true);
-        StatusMessage = "ローカル接続を確認し、送信側の開始QRを準備しています。";
+        StatusMessage = "ローカル接続を確認し、送信側の開始データを準備しています。";
         FlowStateLabel = "案内: 接続準備";
         VerificationCode = string.Empty;
         IsVerificationPending = false;
@@ -215,7 +193,7 @@ public sealed partial class MainViewModel : ObservableObject
         if (!localOffer.Success)
         {
             SetFailureState(
-                $"開始QRの作成に失敗しました: {localOffer.ErrorMessage}",
+                $"開始データの作成に失敗しました: {localOffer.ErrorMessage}",
                 localOffer.Diagnostics.NormalizedFailureCode ?? FailureCode.WebRtcNegotiationFailed
             );
             return;
@@ -231,10 +209,9 @@ public sealed partial class MainViewModel : ObservableObject
             expiresAtUnixMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60_000
         );
         CurrentPayload = QrPayloadCodec.EncodeInit(payload);
-        PayloadQrImage = await _qrImageService.CreateAsync(CurrentPayload);
         CurrentSetupStep = SetupStep.SenderShowInit;
-        StatusMessage = "開始QRを表示しました。受信側に読み取ってもらってください。";
-        FlowStateLabel = "案内: 開始QRを表示";
+        StatusMessage = "開始データを作成しました。コピーして受信側へ共有してください。";
+        FlowStateLabel = "案内: 開始データを共有";
     }
 
     public void StartListener()
@@ -250,7 +227,6 @@ public sealed partial class MainViewModel : ObservableObject
         _pendingAnswerSdp = string.Empty;
         _localSenderFingerprint = string.Empty;
         CurrentPayload = string.Empty;
-        PayloadQrImage = null;
         VerificationCode = string.Empty;
         ActiveSessionId = string.Empty;
         IsVerificationPending = false;
@@ -262,8 +238,8 @@ public sealed partial class MainViewModel : ObservableObject
         UpdateDiagnostics(new ConnectionDiagnostics(PathType: UsbTetheringDetector.ClassifyPrimaryPath()));
         RefreshDiagnosticsFromBridge();
         CurrentSetupStep = SetupStep.ListenerScanInit;
-        FlowStateLabel = "案内: 開始QRを読み取る";
-        StatusMessage = "送信側の開始QRを読み取る準備ができました。";
+        FlowStateLabel = "案内: 開始データを入力";
+        StatusMessage = "送信側から受け取った開始データを貼り付けてください。";
     }
 
     public async Task ProcessInputPayloadAsync(string rawPayload)
@@ -275,7 +251,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         if (string.IsNullOrWhiteSpace(rawPayload))
         {
-            StatusMessage = "QRの内容が空です。";
+            StatusMessage = "接続データが空です。";
             return;
         }
 
@@ -287,12 +263,12 @@ public sealed partial class MainViewModel : ObservableObject
 
         if (CurrentSetupStep == SetupStep.ListenerShowConfirm)
         {
-            StatusMessage = "応答QRはすでに作成済みです。相手に見せるか、停止してやり直してください。";
+            StatusMessage = "応答データはすでに作成済みです。相手に共有するか、停止してやり直してください。";
             return;
         }
 
         CurrentSetupStep = SetupStep.ListenerScanInit;
-        FlowStateLabel = "案内: 開始QRを読み取る";
+        FlowStateLabel = "案内: 開始データを入力";
         await CreateConfirmFromInitAsync(rawPayload);
     }
 
@@ -313,22 +289,6 @@ public sealed partial class MainViewModel : ObservableObject
         await ProcessInputPayloadAsync(text);
     }
 
-    public async Task ScanFromCameraAsync()
-    {
-        if (!EnsureBackendReady())
-        {
-            return;
-        }
-
-        var payload = await QrCameraScannerService.ScanAsync();
-        if (string.IsNullOrWhiteSpace(payload))
-        {
-            StatusMessage = "QRを読み取れませんでした。";
-            return;
-        }
-        await ProcessInputPayloadAsync(payload);
-    }
-
     public async Task ApproveVerificationAndConnectAsync()
     {
         if (!EnsureBackendReady())
@@ -338,7 +298,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         if (string.IsNullOrWhiteSpace(_pendingAnswerSdp))
         {
-            StatusMessage = "適用できる応答QRがありません。";
+            StatusMessage = "適用できる応答データがありません。";
             return;
         }
 
@@ -348,7 +308,7 @@ public sealed partial class MainViewModel : ObservableObject
         if (!applyResult.Success)
         {
             SetFailureState(
-                $"応答QRの適用に失敗しました: {applyResult.ErrorMessage}",
+                $"応答データの適用に失敗しました: {applyResult.ErrorMessage}",
                 applyResult.Diagnostics.NormalizedFailureCode ?? FailureCode.WebRtcNegotiationFailed
             );
             return;
@@ -384,7 +344,6 @@ public sealed partial class MainViewModel : ObservableObject
         _pendingAnswerSdp = string.Empty;
         _localSenderFingerprint = string.Empty;
         CurrentPayload = string.Empty;
-        PayloadQrImage = null;
         VerificationCode = string.Empty;
         ActiveSessionId = string.Empty;
         IsVerificationPending = false;
@@ -502,7 +461,7 @@ public sealed partial class MainViewModel : ObservableObject
             if (!answer.Success)
             {
                 SetFailureState(
-                    $"応答QRの作成に失敗しました: {answer.ErrorMessage}",
+                    $"応答データの作成に失敗しました: {answer.ErrorMessage}",
                     answer.Diagnostics.NormalizedFailureCode ?? FailureCode.WebRtcNegotiationFailed
                 );
                 return;
@@ -516,7 +475,6 @@ public sealed partial class MainViewModel : ObservableObject
                 expiresAtUnixMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60_000
             );
             CurrentPayload = QrPayloadCodec.EncodeConfirm(confirmPayload);
-            PayloadQrImage = await _qrImageService.CreateAsync(CurrentPayload);
             VerificationCode = P2PAudio.Windows.Core.Protocol.VerificationCode.FromSessionAndFingerprints(
                 sessionId: initPayload.SessionId,
                 senderFingerprint: initPayload.SenderPubKeyFingerprint,
@@ -524,8 +482,8 @@ public sealed partial class MainViewModel : ObservableObject
             );
             ActiveSessionId = initPayload.SessionId;
             CurrentSetupStep = SetupStep.ListenerShowConfirm;
-            FlowStateLabel = "案内: 応答QRを表示";
-            StatusMessage = "応答QRを作成しました。送信側に見せて接続を待ってください。";
+            FlowStateLabel = "案内: 応答データを共有";
+            StatusMessage = "応答データを作成しました。コピーして送信側へ共有し、接続を待ってください。";
             SetFailureCode(null, clearWhenNull: true);
             RefreshDiagnosticsFromBridge();
         }
@@ -535,7 +493,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            RestartSetup($"開始QRを処理できませんでした: {ex.Message}", FailureCode.InvalidPayload);
+            RestartSetup($"開始データを処理できませんでした: {ex.Message}", FailureCode.InvalidPayload);
         }
     }
 
@@ -580,7 +538,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            RestartSetup($"応答QRを処理できませんでした: {ex.Message}", FailureCode.InvalidPayload);
+            RestartSetup($"応答データを処理できませんでした: {ex.Message}", FailureCode.InvalidPayload);
         }
         return Task.CompletedTask;
     }
@@ -607,7 +565,6 @@ public sealed partial class MainViewModel : ObservableObject
         _pendingAnswerSdp = string.Empty;
         _localSenderFingerprint = string.Empty;
         CurrentPayload = string.Empty;
-        PayloadQrImage = null;
         VerificationCode = string.Empty;
         ActiveSessionId = string.Empty;
         IsVerificationPending = false;
@@ -981,10 +938,10 @@ public sealed partial class MainViewModel : ObservableObject
         {
             SetupStep.Entry => "送信側か受信側を選ぶと、画面の案内に沿って進められます。",
             SetupStep.PathDiagnosing => "同じネットワーク上で直接つなぐための準備をしています。",
-            SetupStep.SenderShowInit => "この大きい開始QRを受信側に見せてください。読み取り後は相手の応答QRを読み取ります。",
+            SetupStep.SenderShowInit => "開始データをコピーして受信側へ共有してください。受け取った応答データを貼り付けると照合へ進みます。",
             SetupStep.SenderVerifyCode => "両端末の6桁コードが同じなら接続してください。",
-            SetupStep.ListenerScanInit => "送信側に表示されている開始QRを読み取ってください。",
-            SetupStep.ListenerShowConfirm => "この応答QRと6桁コードを送信側に見せて接続を待ってください。",
+            SetupStep.ListenerScanInit => "送信側から受け取った開始データを貼り付けてください。",
+            SetupStep.ListenerShowConfirm => "応答データと6桁コードを送信側へ共有して接続を待ってください。",
             _ => string.Empty
         };
     }

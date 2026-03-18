@@ -1,4 +1,3 @@
-using Microsoft.UI.Xaml.Media.Imaging;
 using P2PAudio.Windows.App.Services;
 using P2PAudio.Windows.App.ViewModels;
 using P2PAudio.Windows.Core.Audio;
@@ -42,7 +41,7 @@ public sealed class MainViewModelTests
         ));
 
     private static MainViewModel CreateViewModel(FakeWebRtcBridge? bridge = null) =>
-        new(bridge ?? new FakeWebRtcBridge(), new NullQrImageService());
+        new(bridge ?? new FakeWebRtcBridge());
 
     // --- Backend readiness ---
 
@@ -93,7 +92,7 @@ public sealed class MainViewModelTests
     public async Task InitializeAsync_WhenDeferred_EnablesStartupActions()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge, new NullQrImageService(), initializeImmediately: false);
+        var viewModel = new MainViewModel(bridge, initializeImmediately: false);
 
         Assert.Equal("内部処理を初期化しています...", viewModel.BackendLabel);
         Assert.False(viewModel.CanStartSender);
@@ -116,7 +115,7 @@ public sealed class MainViewModelTests
         {
             BackendHealthException = new InvalidOperationException("probe_failed")
         };
-        var viewModel = new MainViewModel(bridge, new NullQrImageService(), initializeImmediately: false);
+        var viewModel = new MainViewModel(bridge, initializeImmediately: false);
 
         await viewModel.InitializeAsync();
 
@@ -127,23 +126,6 @@ public sealed class MainViewModelTests
         Assert.Contains("必要なランタイム", viewModel.RecommendedAction);
         Assert.False(viewModel.CanStartSender);
         Assert.False(viewModel.CanStartListener);
-        viewModel.Shutdown();
-    }
-
-    [Fact]
-    public void CurrentPayload_UpdatesRecommendedQrDisplaySize()
-    {
-        var viewModel = CreateViewModel();
-
-        viewModel.CurrentPayload = "short";
-        Assert.Equal(QrDisplaySizing.DefaultDisplaySize, viewModel.PayloadQrDisplaySize);
-
-        viewModel.CurrentPayload = new string('a', 700);
-        Assert.Equal(380d, viewModel.PayloadQrDisplaySize);
-
-        viewModel.CurrentPayload = new string('a', 950);
-        Assert.Equal(420d, viewModel.PayloadQrDisplaySize);
-
         viewModel.Shutdown();
     }
 
@@ -202,7 +184,7 @@ public sealed class MainViewModelTests
         var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
-        Assert.Equal("案内: 開始QRを表示", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 開始データを共有", viewModel.FlowStateLabel);
 
         var expired = MakeConfirmPayload(expiresAtUnixMs: PastExpiry);
         await viewModel.ProcessInputPayloadAsync(expired);
@@ -222,7 +204,7 @@ public sealed class MainViewModelTests
         var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
-        Assert.Equal("案内: 開始QRを表示", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 開始データを共有", viewModel.FlowStateLabel);
 
         var mismatch = MakeConfirmPayload(sessionId: "different-session");
         await viewModel.ProcessInputPayloadAsync(mismatch);
@@ -257,7 +239,7 @@ public sealed class MainViewModelTests
         await viewModel.StartSenderAsync();
 
         Assert.Equal(StreamState.Failed, viewModel.CurrentStreamState);
-        Assert.Contains("開始QRの作成に失敗しました", viewModel.StatusMessage);
+        Assert.Contains("開始データの作成に失敗しました", viewModel.StatusMessage);
         Assert.Contains("webrtc_negotiation_failed", viewModel.FailureCodeLabel);
         viewModel.Shutdown();
     }
@@ -284,7 +266,7 @@ public sealed class MainViewModelTests
         await viewModel.ProcessInputPayloadAsync(MakeInitPayload());
 
         Assert.Equal(StreamState.Failed, viewModel.CurrentStreamState);
-        Assert.Contains("応答QRの作成に失敗しました", viewModel.StatusMessage);
+        Assert.Contains("応答データの作成に失敗しました", viewModel.StatusMessage);
         Assert.Contains("webrtc_negotiation_failed", viewModel.FailureCodeLabel);
         viewModel.Shutdown();
     }
@@ -313,7 +295,7 @@ public sealed class MainViewModelTests
         await viewModel.ApproveVerificationAndConnectAsync();
 
         Assert.Equal(StreamState.Failed, viewModel.CurrentStreamState);
-        Assert.Contains("応答QRの適用に失敗しました", viewModel.StatusMessage);
+        Assert.Contains("応答データの適用に失敗しました", viewModel.StatusMessage);
         viewModel.Shutdown();
     }
 
@@ -348,7 +330,7 @@ public sealed class MainViewModelTests
         var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
-        Assert.Equal("案内: 開始QRを表示", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 開始データを共有", viewModel.FlowStateLabel);
         Assert.NotEmpty(viewModel.CurrentPayload);
 
         viewModel.Stop();
@@ -374,11 +356,11 @@ public sealed class MainViewModelTests
 
         viewModel.StartListener();
         await viewModel.ProcessInputPayloadAsync(initRaw);
-        Assert.Equal("案内: 応答QRを表示", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 応答データを共有", viewModel.FlowStateLabel);
 
         await viewModel.ProcessInputPayloadAsync(initRaw);
 
-        Assert.Equal("案内: 応答QRを表示", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 応答データを共有", viewModel.FlowStateLabel);
         Assert.Contains("すでに作成済み", viewModel.StatusMessage);
         viewModel.Shutdown();
     }
@@ -410,7 +392,7 @@ public sealed class MainViewModelTests
         viewModel.StartListener();
         await viewModel.ProcessInputPayloadAsync(MakeInitPayload());
 
-        Assert.Equal("案内: 応答QRを表示", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 応答データを共有", viewModel.FlowStateLabel);
         Assert.Equal(StreamState.Connecting, viewModel.CurrentStreamState);
         Assert.NotEmpty(viewModel.VerificationCode);
         Assert.Equal(6, viewModel.VerificationCode.Length);
@@ -428,7 +410,7 @@ public sealed class MainViewModelTests
         var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
-        Assert.Equal("案内: 開始QRを表示", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 開始データを共有", viewModel.FlowStateLabel);
         Assert.Equal(StreamState.Capturing, viewModel.CurrentStreamState);
         Assert.NotEmpty(viewModel.CurrentPayload);
         Assert.Equal("session-1", viewModel.ActiveSessionId);
@@ -590,7 +572,7 @@ public sealed class MainViewModelTests
 
         await viewModel.ApproveVerificationAndConnectAsync();
 
-        Assert.Contains("適用できる応答QRがありません", viewModel.StatusMessage);
+        Assert.Contains("適用できる応答データがありません", viewModel.StatusMessage);
         viewModel.Shutdown();
     }
 
@@ -738,15 +720,6 @@ public sealed class MainViewModelTests
         }
 
         Assert.True(predicate());
-    }
-
-    private sealed class NullQrImageService : IQrImageService
-    {
-        public Task<BitmapImage?> CreateAsync(string payload)
-        {
-            _ = payload;
-            return Task.FromResult<BitmapImage?>(null);
-        }
     }
 
     private sealed class FakeWebRtcBridge : IWebRtcBridge

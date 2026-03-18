@@ -1,18 +1,20 @@
 # Protocol
 
-## Pairing Flow (QR-only, no manual input)
+## Pairing Flow (out-of-band payload exchange)
 
 1. Sender starts capture and gathers host ICE candidates, then creates an SDP offer.
-2. Sender shows `PairingInitPayload` as a QR code.
-3. Listener scans and validates init payload, then creates an SDP answer.
-4. Listener shows `PairingConfirmPayload` as a QR code.
-5. Sender scans and validates confirm payload.
+2. Sender encodes `PairingInitPayload` as a transport string and shares it out-of-band.
+3. Listener imports and validates init payload, then creates an SDP answer.
+4. Listener encodes `PairingConfirmPayload` as a transport string and shares it back out-of-band.
+5. Sender imports and validates confirm payload.
 6. Both devices compute and display the same 6-digit verification code from:
    - `sessionId`
    - sender fingerprint
    - listener fingerprint
 7. User confirms the 6-digit match on sender side.
 8. Sender applies remote answer; WebRTC DataChannel `audio-pcm` carries PCM audio.
+
+Windows and Android exchange these transport strings as text (copy/share/paste). Other clients may render the same transport string as QR if their UI still supports it.
 
 ## Init Payload (`PairingInitPayload`)
 
@@ -42,7 +44,7 @@
 }
 ```
 
-## QR Transport Encoding
+## Transport String Encoding
 
 - Canonical payload is JSON (`PairingInitPayload` / `PairingConfirmPayload`).
 - Implementations may emit a compressed transport string:

@@ -11,10 +11,10 @@
 - Android -> Windows: media/game audio playback on receiver.
 - iOS -> Windows: ReplayKit captured app audio playback on receiver.
 - Windows -> Windows: system audio playback on receiver.
-- QR-only flow on both platforms:
-  - sender init QR generation
-  - listener confirm QR generation
-  - sender confirm QR scan
+- Payload exchange flow on both platforms:
+  - sender init payload generation
+  - listener confirm payload generation
+  - sender confirm payload import
   - 6-digit code verification
 - USB tethering path:
   - Android USB tethering <-> Windows

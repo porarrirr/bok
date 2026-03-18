@@ -21,8 +21,6 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.250205002" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
     <PackageReference Include="NAudio" Version="2.2.1" />
-    <PackageReference Include="QRCoder" Version="1.6.0" />
-    <PackageReference Include="ZXing.Net.Bindings.Windows.Compatibility" Version="0.16.10" />
   </ItemGroup>
 
   <ItemGroup>
