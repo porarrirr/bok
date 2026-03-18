@@ -34,11 +34,13 @@ This module contains the Windows implementation for the shared v2 pairing/audio 
 ## Build (x64 release path)
 
 1. Bootstrap `vcpkg`.
+   - `vcpkg install --x-manifest-root=. --triplet x64-windows`
 2. Build native bridge:
-   - `cmake -S src/core-webrtc -B out/core-webrtc -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake -DP2PAUDIO_USE_LIBDATACHANNEL=ON`
-   - `cmake --build out/core-webrtc --config Release`
+   - `cmake -S src/core-webrtc -B out/core-webrtc -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake -DVCPKG_MANIFEST_MODE=ON -DVCPKG_MANIFEST_DIR=. -DVCPKG_INSTALLED_DIR=.\vcpkg_installed -DVCPKG_TARGET_TRIPLET=x64-windows -DP2PAUDIO_USE_LIBDATACHANNEL=ON`
+   - `cmake --build out/core-webrtc`
 3. Copy native bridge runtime:
-   - copy `out/core-webrtc/Release/p2paudio_core_webrtc.dll` to `src/P2PAudio.Windows.App/runtimes/win-x64/native/`
+   - copy `out/core-webrtc/p2paudio_core_webrtc.dll` to `src/P2PAudio.Windows.App/runtimes/win-x64/native/`
+   - copy `vcpkg_installed/x64-windows/bin/*.dll` to `src/P2PAudio.Windows.App/runtimes/win-x64/native/`
 4. Build managed app:
    - `dotnet build src/P2PAudio.Windows.App/P2PAudio.Windows.App.csproj -c Release -r win10-x64 -p:Platform=x64`
 

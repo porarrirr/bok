@@ -57,6 +57,7 @@ CORE_WEBRTC_EXPORT int core_webrtc_pop_pcm_frame(
     std::size_t* out_size
 );
 CORE_WEBRTC_EXPORT core_webrtc_diagnostics core_webrtc_get_diagnostics(core_webrtc_handle* handle);
+CORE_WEBRTC_EXPORT int core_webrtc_has_libdatachannel();
 CORE_WEBRTC_EXPORT void core_webrtc_close(core_webrtc_handle* handle);
 
 CORE_WEBRTC_EXPORT void core_webrtc_free_string(const char* value);

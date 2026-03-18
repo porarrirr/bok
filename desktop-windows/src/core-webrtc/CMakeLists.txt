@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(P2PAUDIO_USE_LIBDATACHANNEL "Enable libdatachannel backend" ON)
 
 if(P2PAUDIO_USE_LIBDATACHANNEL)
-    find_package(datachannel CONFIG QUIET)
+    find_package(LibDataChannel CONFIG QUIET)
 endif()
 
 add_library(p2paudio_core_webrtc SHARED
@@ -19,9 +19,9 @@ target_include_directories(p2paudio_core_webrtc PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-if(P2PAUDIO_USE_LIBDATACHANNEL AND TARGET LibDataChannel::datachannel)
+if(P2PAUDIO_USE_LIBDATACHANNEL AND TARGET LibDataChannel::LibDataChannel)
     target_compile_definitions(p2paudio_core_webrtc PRIVATE P2PAUDIO_HAS_LIBDATACHANNEL=1)
-    target_link_libraries(p2paudio_core_webrtc PRIVATE LibDataChannel::datachannel)
+    target_link_libraries(p2paudio_core_webrtc PRIVATE LibDataChannel::LibDataChannel)
 else()
     target_compile_definitions(p2paudio_core_webrtc PRIVATE P2PAUDIO_HAS_LIBDATACHANNEL=0)
 endif()

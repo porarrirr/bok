@@ -31,7 +31,9 @@ public sealed class NativeWebRtcBridge : IWebRtcBridge, IDisposable
         {
             var diagnostics = ToDiagnostics(native.diagnostics);
             var offerSdp = PtrToString(native.offer_sdp);
-            var success = native.success != 0 && !string.IsNullOrWhiteSpace(offerSdp);
+            var success = native.success != 0 &&
+                          !string.IsNullOrWhiteSpace(offerSdp) &&
+                          diagnostics.NormalizedFailureCode is null;
             return Task.FromResult(
                 new WebRtcOfferResult(
                     Success: success,
@@ -57,7 +59,9 @@ public sealed class NativeWebRtcBridge : IWebRtcBridge, IDisposable
         {
             var diagnostics = ToDiagnostics(native.diagnostics);
             var answerSdp = PtrToString(native.answer_sdp);
-            var success = native.success != 0 && !string.IsNullOrWhiteSpace(answerSdp);
+            var success = native.success != 0 &&
+                          !string.IsNullOrWhiteSpace(answerSdp) &&
+                          diagnostics.NormalizedFailureCode is null;
             return Task.FromResult(
                 new WebRtcAnswerResult(
                     Success: success,
@@ -145,6 +149,23 @@ public sealed class NativeWebRtcBridge : IWebRtcBridge, IDisposable
 
     public BridgeBackendHealth GetBackendHealth()
     {
+        try
+        {
+            if (NativeMethods.core_webrtc_has_libdatachannel() == 0)
+            {
+                return new BridgeBackendHealth(
+                    IsReady: false,
+                    IsDevelopmentStub: false,
+                    Message: "Native bridge loaded, but libdatachannel support is disabled in p2paudio_core_webrtc.dll.",
+                    BlockingFailureCode: FailureCode.WebRtcNegotiationFailed
+                );
+            }
+        }
+        catch (EntryPointNotFoundException)
+        {
+            // Older native DLLs may not export backend capability yet.
+        }
+
         return new BridgeBackendHealth(
             IsReady: true,
             IsDevelopmentStub: false,
@@ -302,6 +323,9 @@ internal static class NativeMethods
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     internal static extern core_webrtc_diagnostics core_webrtc_get_diagnostics(nint handle);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int core_webrtc_has_libdatachannel();
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     internal static extern void core_webrtc_close(nint handle);

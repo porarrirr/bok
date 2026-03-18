@@ -1,3 +1,4 @@
+using Microsoft.UI.Xaml.Media.Imaging;
 using P2PAudio.Windows.App.Services;
 using P2PAudio.Windows.App.ViewModels;
 using P2PAudio.Windows.Core.Audio;
@@ -40,6 +41,9 @@ public sealed class MainViewModelTests
             PcmBytes: Enumerable.Repeat((byte)0x2A, 3840).ToArray()
         ));
 
+    private static MainViewModel CreateViewModel(FakeWebRtcBridge? bridge = null) =>
+        new(bridge ?? new FakeWebRtcBridge(), new NullQrImageService());
+
     // --- Backend readiness ---
 
     [Fact]
@@ -54,7 +58,7 @@ public sealed class MainViewModelTests
                 BlockingFailureCode: FailureCode.WebRtcNegotiationFailed
             )
         };
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
 
@@ -76,7 +80,7 @@ public sealed class MainViewModelTests
                 BlockingFailureCode: FailureCode.WebRtcNegotiationFailed
             )
         };
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         viewModel.StartListener();
 
@@ -91,7 +95,7 @@ public sealed class MainViewModelTests
     public async Task ProcessInputPayload_InvalidPayload_RestartsToEntry()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         await viewModel.ProcessInputPayloadAsync("p2paudio-z1:invalid");
 
@@ -105,7 +109,7 @@ public sealed class MainViewModelTests
     public async Task ProcessInputPayload_EmptyString_NoStateChange()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         await viewModel.ProcessInputPayloadAsync("");
 
@@ -121,7 +125,7 @@ public sealed class MainViewModelTests
     public async Task ProcessInputPayload_ExpiredInitPayload_RestartsToEntry()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
         viewModel.StartListener();
 
         var expired = MakeInitPayload(expiresAtUnixMs: PastExpiry);
@@ -137,7 +141,7 @@ public sealed class MainViewModelTests
     public async Task ProcessInputPayload_ExpiredConfirmPayload_RestartsToEntry()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
         Assert.Equal("Step: Sender show init", viewModel.FlowStateLabel);
@@ -157,7 +161,7 @@ public sealed class MainViewModelTests
     public async Task ProcessInputPayload_SessionIdMismatch_RestartsToEntry()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
         Assert.Equal("Step: Sender show init", viewModel.FlowStateLabel);
@@ -190,7 +194,7 @@ public sealed class MainViewModelTests
                 )
             )
         };
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
 
@@ -216,7 +220,7 @@ public sealed class MainViewModelTests
                 )
             )
         };
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
         viewModel.StartListener();
 
         await viewModel.ProcessInputPayloadAsync(MakeInitPayload());
@@ -242,7 +246,7 @@ public sealed class MainViewModelTests
                 )
             )
         };
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
         await viewModel.ProcessInputPayloadAsync(MakeConfirmPayload());
@@ -261,7 +265,7 @@ public sealed class MainViewModelTests
     public async Task RejectVerification_RestartsToEntry()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
         await viewModel.ProcessInputPayloadAsync(MakeConfirmPayload());
@@ -283,7 +287,7 @@ public sealed class MainViewModelTests
     public async Task Stop_ResetsAllState()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
         Assert.Equal("Step: Sender show init", viewModel.FlowStateLabel);
@@ -307,7 +311,7 @@ public sealed class MainViewModelTests
     public async Task ProcessInputPayload_WhenListenerAlreadyHasConfirm_KeepsListenerState()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
         var initRaw = MakeInitPayload();
 
         viewModel.StartListener();
@@ -325,7 +329,7 @@ public sealed class MainViewModelTests
     public async Task ListenerReceiveLoop_FirstPacketTransitionsConnectingToStreaming()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         viewModel.StartListener();
         await viewModel.ProcessInputPayloadAsync(MakeInitPayload());
@@ -343,7 +347,7 @@ public sealed class MainViewModelTests
     public async Task ListenerFullFlow_GeneratesVerificationCode()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         viewModel.StartListener();
         await viewModel.ProcessInputPayloadAsync(MakeInitPayload());
@@ -363,7 +367,7 @@ public sealed class MainViewModelTests
     public async Task SenderFullFlow_OfferThroughVerifyToConnect()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
         Assert.Equal("Step: Sender show init", viewModel.FlowStateLabel);
@@ -391,8 +395,8 @@ public sealed class MainViewModelTests
         var senderBridge = new FakeWebRtcBridge();
         var listenerBridge = new FakeWebRtcBridge();
 
-        var sender = new MainViewModel(senderBridge);
-        var listener = new MainViewModel(listenerBridge);
+        var sender = CreateViewModel(senderBridge);
+        var listener = CreateViewModel(listenerBridge);
 
         await sender.StartSenderAsync();
         listener.StartListener();
@@ -413,7 +417,7 @@ public sealed class MainViewModelTests
     public async Task StreamHealth_NetworkChanged_TransitionsToInterrupted()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         viewModel.StartListener();
         await viewModel.ProcessInputPayloadAsync(MakeInitPayload());
@@ -436,7 +440,7 @@ public sealed class MainViewModelTests
     public async Task StreamHealth_InterruptedRecovery_TransitionsBackToStreaming()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         viewModel.StartListener();
         await viewModel.ProcessInputPayloadAsync(MakeInitPayload());
@@ -471,7 +475,7 @@ public sealed class MainViewModelTests
                 SelectedCandidatePairType: "host"
             )
         };
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
 
@@ -491,7 +495,7 @@ public sealed class MainViewModelTests
                 SelectedCandidatePairType: "host"
             )
         };
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
 
@@ -510,7 +514,7 @@ public sealed class MainViewModelTests
                 FailureHint: "usb_tether_detected_but_not_reachable"
             )
         };
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
 
@@ -524,7 +528,7 @@ public sealed class MainViewModelTests
     public async Task ApproveVerification_NoPendingAnswer_NoOp()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         await viewModel.ApproveVerificationAndConnectAsync();
 
@@ -538,7 +542,7 @@ public sealed class MainViewModelTests
     public void Initial_CanStartSenderAndListener_AreTrue()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         Assert.True(viewModel.CanStartSender);
         Assert.True(viewModel.CanStartListener);
@@ -552,7 +556,7 @@ public sealed class MainViewModelTests
     public async Task AfterStartSender_CannotStartAgain_CanProcessPayload()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
 
@@ -567,7 +571,7 @@ public sealed class MainViewModelTests
     public void AfterStartListener_CanProcessPayload()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         viewModel.StartListener();
 
@@ -582,7 +586,7 @@ public sealed class MainViewModelTests
     public async Task SenderVerifyCode_CanApproveAndReject()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
         await viewModel.ProcessInputPayloadAsync(MakeConfirmPayload());
@@ -596,7 +600,7 @@ public sealed class MainViewModelTests
     public void Initial_RecommendedAction_PromptToChooseRole()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         Assert.Contains("Choose", viewModel.RecommendedAction);
         viewModel.Shutdown();
@@ -606,7 +610,7 @@ public sealed class MainViewModelTests
     public async Task Streaming_RecommendedAction_SaysStreaming()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
         await viewModel.ProcessInputPayloadAsync(MakeConfirmPayload());
@@ -620,7 +624,7 @@ public sealed class MainViewModelTests
     public async Task SetupStep_IsPublicAndTracksFlow()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         Assert.Equal(SetupStep.Entry, viewModel.CurrentSetupStep);
 
@@ -639,7 +643,7 @@ public sealed class MainViewModelTests
     public void ListenerSetupStep_TracksFlow()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         viewModel.StartListener();
         Assert.Equal(SetupStep.ListenerScanInit, viewModel.CurrentSetupStep);
@@ -650,7 +654,7 @@ public sealed class MainViewModelTests
     public async Task AfterStop_CanStartAgain()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge);
+        var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
         viewModel.Stop();
@@ -676,6 +680,15 @@ public sealed class MainViewModelTests
         }
 
         Assert.True(predicate());
+    }
+
+    private sealed class NullQrImageService : IQrImageService
+    {
+        public Task<BitmapImage?> CreateAsync(string payload)
+        {
+            _ = payload;
+            return Task.FromResult<BitmapImage?>(null);
+        }
     }
 
     private sealed class FakeWebRtcBridge : IWebRtcBridge
@@ -770,3 +783,4 @@ public sealed class MainViewModelTests
         }
     }
 }
+

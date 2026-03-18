@@ -105,26 +105,24 @@ public sealed class LoopbackPcmSender : IDisposable
 
     private void AppendAsPcm16(byte[] input, int bytesRecorded, WaveFormat format)
     {
+        PcmNormalizationResult? normalized = null;
+
         if (format.Encoding == WaveFormatEncoding.IeeeFloat && format.BitsPerSample == 32)
         {
-            for (var i = 0; i + 3 < bytesRecorded; i += 4)
-            {
-                var sample = BitConverter.ToSingle(input, i);
-                sample = Math.Clamp(sample, -1.0f, 1.0f);
-                var int16 = (short)(sample * short.MaxValue);
-                _pendingPcm16.Add((byte)(int16 & 0xFF));
-                _pendingPcm16.Add((byte)((int16 >> 8) & 0xFF));
-            }
+            normalized = PcmCaptureNormalizer.NormalizeFloat32(input.AsSpan(0, bytesRecorded), format.Channels);
+        }
+        else if (format.Encoding == WaveFormatEncoding.Pcm && format.BitsPerSample == 16)
+        {
+            normalized = PcmCaptureNormalizer.NormalizePcm16(input.AsSpan(0, bytesRecorded), format.Channels);
+        }
+
+        if (normalized is null || normalized.PcmBytes.Length == 0)
+        {
             return;
         }
 
-        if (format.Encoding == WaveFormatEncoding.Pcm && format.BitsPerSample == 16)
-        {
-            for (var i = 0; i < bytesRecorded; i++)
-            {
-                _pendingPcm16.Add(input[i]);
-            }
-        }
+        _channels = normalized.Channels;
+        _pendingPcm16.AddRange(normalized.PcmBytes);
     }
 
     private void FlushFrames()

@@ -5,9 +5,14 @@ using Windows.Storage.Streams;
 
 namespace P2PAudio.Windows.App.Services;
 
-public static class QrImageService
+public interface IQrImageService
 {
-    public static async Task<BitmapImage?> CreateAsync(string payload)
+    Task<BitmapImage?> CreateAsync(string payload);
+}
+
+public sealed class QrImageService : IQrImageService
+{
+    public async Task<BitmapImage?> CreateAsync(string payload)
     {
         if (string.IsNullOrWhiteSpace(payload))
         {

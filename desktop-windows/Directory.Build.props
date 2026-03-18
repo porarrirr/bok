@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup Condition="'$(AppxMSBuildToolsPath)' == ''">
+    <_Vs17CommunityAppxPackageDir Condition="Exists('C:\Program Files\Microsoft Visual Studio\2022\Community\Msbuild\Microsoft\VisualStudio\v17.0\AppxPackage\Microsoft.Build.Packaging.Pri.Tasks.dll')">C:\Program Files\Microsoft Visual Studio\2022\Community\Msbuild\Microsoft\VisualStudio\v17.0\AppxPackage\</_Vs17CommunityAppxPackageDir>
+    <_Vs17ProfessionalAppxPackageDir Condition="Exists('C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Microsoft\VisualStudio\v17.0\AppxPackage\Microsoft.Build.Packaging.Pri.Tasks.dll')">C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Microsoft\VisualStudio\v17.0\AppxPackage\</_Vs17ProfessionalAppxPackageDir>
+    <_Vs17EnterpriseAppxPackageDir Condition="Exists('C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VisualStudio\v17.0\AppxPackage\Microsoft.Build.Packaging.Pri.Tasks.dll')">C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VisualStudio\v17.0\AppxPackage\</_Vs17EnterpriseAppxPackageDir>
+    <_Vs17BuildToolsAppxPackageDir Condition="Exists('C:\Program Files\Microsoft Visual Studio\2022\BuildTools\MSBuild\Microsoft\VisualStudio\v17.0\AppxPackage\Microsoft.Build.Packaging.Pri.Tasks.dll')">C:\Program Files\Microsoft Visual Studio\2022\BuildTools\MSBuild\Microsoft\VisualStudio\v17.0\AppxPackage\</_Vs17BuildToolsAppxPackageDir>
+    <_Vs18CommunityAppxPackageDir Condition="Exists('C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VisualStudio\v18.0\AppxPackage\Microsoft.Build.Packaging.Pri.Tasks.dll')">C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VisualStudio\v18.0\AppxPackage\</_Vs18CommunityAppxPackageDir>
+
+    <AppxMSBuildToolsPath Condition="'$(_Vs17CommunityAppxPackageDir)' != ''">$(_Vs17CommunityAppxPackageDir)</AppxMSBuildToolsPath>
+    <AppxMSBuildToolsPath Condition="'$(AppxMSBuildToolsPath)' == '' and '$(_Vs17ProfessionalAppxPackageDir)' != ''">$(_Vs17ProfessionalAppxPackageDir)</AppxMSBuildToolsPath>
+    <AppxMSBuildToolsPath Condition="'$(AppxMSBuildToolsPath)' == '' and '$(_Vs17EnterpriseAppxPackageDir)' != ''">$(_Vs17EnterpriseAppxPackageDir)</AppxMSBuildToolsPath>
+    <AppxMSBuildToolsPath Condition="'$(AppxMSBuildToolsPath)' == '' and '$(_Vs17BuildToolsAppxPackageDir)' != ''">$(_Vs17BuildToolsAppxPackageDir)</AppxMSBuildToolsPath>
+    <AppxMSBuildToolsPath Condition="'$(AppxMSBuildToolsPath)' == '' and '$(_Vs18CommunityAppxPackageDir)' != ''">$(_Vs18CommunityAppxPackageDir)</AppxMSBuildToolsPath>
+  </PropertyGroup>
+</Project>

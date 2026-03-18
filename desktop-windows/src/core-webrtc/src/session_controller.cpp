@@ -231,10 +231,7 @@ offer_result session_controller::create_offer() {
         throw std::runtime_error(format_error("create_peer_connection_failed", peer_connection_id_));
     }
 
-    if (rtcSetUserPointer(peer_connection_id_, this) < 0) {
-        close_locked();
-        throw std::runtime_error("set_user_pointer_failed");
-    }
+    rtcSetUserPointer(peer_connection_id_, this);
     if (rtcSetLocalDescriptionCallback(peer_connection_id_, on_local_description_cb) < 0 ||
         rtcSetLocalCandidateCallback(peer_connection_id_, on_local_candidate_cb) < 0 ||
         rtcSetStateChangeCallback(peer_connection_id_, on_state_change_cb) < 0 ||
@@ -345,10 +342,7 @@ answer_result session_controller::create_answer(const std::string& offer_sdp) {
         throw std::runtime_error(format_error("create_peer_connection_failed", peer_connection_id_));
     }
 
-    if (rtcSetUserPointer(peer_connection_id_, this) < 0) {
-        close_locked();
-        throw std::runtime_error("set_user_pointer_failed");
-    }
+    rtcSetUserPointer(peer_connection_id_, this);
     if (rtcSetLocalDescriptionCallback(peer_connection_id_, on_local_description_cb) < 0 ||
         rtcSetLocalCandidateCallback(peer_connection_id_, on_local_candidate_cb) < 0 ||
         rtcSetStateChangeCallback(peer_connection_id_, on_state_change_cb) < 0 ||

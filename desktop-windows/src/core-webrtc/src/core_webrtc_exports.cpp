@@ -187,6 +187,14 @@ core_webrtc_diagnostics core_webrtc_get_diagnostics(core_webrtc_handle* handle) 
     return to_export(handle->controller.get_diagnostics());
 }
 
+int core_webrtc_has_libdatachannel() {
+#if P2PAUDIO_HAS_LIBDATACHANNEL
+    return 1;
+#else
+    return 0;
+#endif
+}
+
 void core_webrtc_close(core_webrtc_handle* handle) {
     if (handle == nullptr) {
         return;

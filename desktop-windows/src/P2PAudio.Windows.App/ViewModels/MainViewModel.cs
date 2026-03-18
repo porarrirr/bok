@@ -15,19 +15,25 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly PcmPlaybackService _playbackService;
     private readonly CancellationTokenSource _receiveLoopCts = new();
     private readonly BridgeBackendHealth _backendHealth;
+    private readonly IQrImageService _qrImageService;
     private readonly SynchronizationContext? _uiContext = SynchronizationContext.Current;
 
     private string _localSenderFingerprint = string.Empty;
     private string _pendingAnswerSdp = string.Empty;
     private int _receiveIdleTicks;
 
-    public MainViewModel() : this(CreateBridge())
+    public MainViewModel() : this(CreateBridge(), new QrImageService())
     {
     }
 
-    public MainViewModel(IWebRtcBridge bridge)
+    public MainViewModel(IWebRtcBridge bridge) : this(bridge, new QrImageService())
+    {
+    }
+
+    public MainViewModel(IWebRtcBridge bridge, IQrImageService qrImageService)
     {
         _bridge = bridge;
+        _qrImageService = qrImageService;
         _loopbackSender = new LoopbackPcmSender(packet => _bridge.SendPcmPacket(packet));
         _playbackService = new PcmPlaybackService();
         _backendHealth = _bridge.GetBackendHealth();
@@ -142,7 +148,7 @@ public sealed partial class MainViewModel : ObservableObject
         UpdateDiagnostics(new ConnectionDiagnostics(PathType: UsbTetheringDetector.ClassifyPrimaryPath()));
 
         var localOffer = await _bridge.CreateOfferAsync();
-        UpdateDiagnostics(localOffer.Diagnostics);
+        UpdateDiagnosticsFromBridgeOr(localOffer.Diagnostics);
         if (!localOffer.Success)
         {
             SetFailureState(
@@ -162,7 +168,7 @@ public sealed partial class MainViewModel : ObservableObject
             expiresAtUnixMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60_000
         );
         CurrentPayload = QrPayloadCodec.EncodeInit(payload);
-        PayloadQrImage = await QrImageService.CreateAsync(CurrentPayload);
+        PayloadQrImage = await _qrImageService.CreateAsync(CurrentPayload);
         CurrentSetupStep = SetupStep.SenderShowInit;
         StatusMessage = "Init payload generated. Share this QR with listener.";
         FlowStateLabel = "Step: Sender show init";
@@ -275,7 +281,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         SetStreamState(StreamState.Connecting);
         var applyResult = await _bridge.ApplyAnswerAsync(_pendingAnswerSdp);
-        UpdateDiagnostics(applyResult.Diagnostics);
+        UpdateDiagnosticsFromBridgeOr(applyResult.Diagnostics);
         if (!applyResult.Success)
         {
             SetFailureState(
@@ -350,7 +356,7 @@ public sealed partial class MainViewModel : ObservableObject
 
             SetStreamState(StreamState.Connecting);
             var answer = await _bridge.CreateAnswerAsync(initPayload.OfferSdp);
-            UpdateDiagnostics(answer.Diagnostics);
+            UpdateDiagnosticsFromBridgeOr(answer.Diagnostics);
             if (!answer.Success)
             {
                 SetFailureState(
@@ -368,7 +374,7 @@ public sealed partial class MainViewModel : ObservableObject
                 expiresAtUnixMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60_000
             );
             CurrentPayload = QrPayloadCodec.EncodeConfirm(confirmPayload);
-            PayloadQrImage = await QrImageService.CreateAsync(CurrentPayload);
+            PayloadQrImage = await _qrImageService.CreateAsync(CurrentPayload);
             VerificationCode = P2PAudio.Windows.Core.Protocol.VerificationCode.FromSessionAndFingerprints(
                 sessionId: initPayload.SessionId,
                 senderFingerprint: initPayload.SenderPubKeyFingerprint,
@@ -601,10 +607,7 @@ public sealed partial class MainViewModel : ObservableObject
         try
         {
             var diagnostics = _bridge.GetDiagnostics();
-            if (diagnostics.PathType != NetworkPathType.Unknown ||
-                diagnostics.LocalCandidatesCount > 0 ||
-                !string.IsNullOrWhiteSpace(diagnostics.SelectedCandidatePairType) ||
-                !string.IsNullOrWhiteSpace(diagnostics.FailureHint))
+            if (HasMeaningfulDiagnostics(diagnostics))
             {
                 UpdateDiagnostics(diagnostics);
                 return;
@@ -615,6 +618,24 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         UpdateDiagnostics(new ConnectionDiagnostics(PathType: UsbTetheringDetector.ClassifyPrimaryPath()));
+    }
+
+    private void UpdateDiagnosticsFromBridgeOr(ConnectionDiagnostics fallbackDiagnostics)
+    {
+        try
+        {
+            var bridgeDiagnostics = _bridge.GetDiagnostics();
+            if (HasMeaningfulDiagnostics(bridgeDiagnostics))
+            {
+                UpdateDiagnostics(bridgeDiagnostics);
+                return;
+            }
+        }
+        catch
+        {
+        }
+
+        UpdateDiagnostics(fallbackDiagnostics);
     }
 
     private void UpdateDiagnostics(ConnectionDiagnostics diagnostics)
@@ -638,6 +659,15 @@ public sealed partial class MainViewModel : ObservableObject
         {
             SetFailureCode(mappedCode.Value);
         }
+    }
+
+    private static bool HasMeaningfulDiagnostics(ConnectionDiagnostics diagnostics)
+    {
+        return diagnostics.PathType != NetworkPathType.Unknown ||
+               diagnostics.LocalCandidatesCount > 0 ||
+               !string.IsNullOrWhiteSpace(diagnostics.SelectedCandidatePairType) ||
+               !string.IsNullOrWhiteSpace(diagnostics.FailureHint) ||
+               diagnostics.NormalizedFailureCode is not null;
     }
 
     private void RunOnUiThread(Action action)
