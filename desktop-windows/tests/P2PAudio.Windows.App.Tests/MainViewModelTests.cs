@@ -63,7 +63,7 @@ public sealed class MainViewModelTests
         await viewModel.StartSenderAsync();
 
         Assert.Equal(StreamState.Failed, viewModel.CurrentStreamState);
-        Assert.Contains("Native backend is required", viewModel.StatusMessage);
+        Assert.Contains("接続モジュールが利用できません", viewModel.StatusMessage);
         Assert.Contains("webrtc_negotiation_failed", viewModel.FailureCodeLabel);
         viewModel.Shutdown();
     }
@@ -85,7 +85,48 @@ public sealed class MainViewModelTests
         viewModel.StartListener();
 
         Assert.Equal(StreamState.Failed, viewModel.CurrentStreamState);
-        Assert.Contains("Native backend is required", viewModel.StatusMessage);
+        Assert.Contains("接続モジュールが利用できません", viewModel.StatusMessage);
+        viewModel.Shutdown();
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WhenDeferred_EnablesStartupActions()
+    {
+        var bridge = new FakeWebRtcBridge();
+        var viewModel = new MainViewModel(bridge, new NullQrImageService(), initializeImmediately: false);
+
+        Assert.Equal("内部処理を初期化しています...", viewModel.BackendLabel);
+        Assert.False(viewModel.CanStartSender);
+        Assert.False(viewModel.CanStartListener);
+
+        await viewModel.InitializeAsync();
+
+        Assert.Equal("内部処理: ネイティブ接続モジュール", viewModel.BackendLabel);
+        Assert.Equal("ネイティブ接続モジュールを利用できます。", viewModel.StatusMessage);
+        Assert.Equal(StreamState.Idle, viewModel.CurrentStreamState);
+        Assert.True(viewModel.CanStartSender);
+        Assert.True(viewModel.CanStartListener);
+        viewModel.Shutdown();
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WhenBackendProbeThrows_LeavesStartupBlockedState()
+    {
+        var bridge = new FakeWebRtcBridge
+        {
+            BackendHealthException = new InvalidOperationException("probe_failed")
+        };
+        var viewModel = new MainViewModel(bridge, new NullQrImageService(), initializeImmediately: false);
+
+        await viewModel.InitializeAsync();
+
+        Assert.Equal(StreamState.Idle, viewModel.CurrentStreamState);
+        Assert.Contains("接続モジュールが利用できません", viewModel.StatusMessage);
+        Assert.Contains("probe_failed", viewModel.StatusMessage);
+        Assert.Contains("webrtc_negotiation_failed", viewModel.FailureCodeLabel);
+        Assert.Contains("必要なランタイム", viewModel.RecommendedAction);
+        Assert.False(viewModel.CanStartSender);
+        Assert.False(viewModel.CanStartListener);
         viewModel.Shutdown();
     }
 
@@ -99,7 +140,7 @@ public sealed class MainViewModelTests
 
         await viewModel.ProcessInputPayloadAsync("p2paudio-z1:invalid");
 
-        Assert.Equal("Step: Entry", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 最初からやり直し", viewModel.FlowStateLabel);
         Assert.Equal(StreamState.Idle, viewModel.CurrentStreamState);
         Assert.Contains("invalid_payload", viewModel.FailureCodeLabel);
         viewModel.Shutdown();
@@ -113,9 +154,9 @@ public sealed class MainViewModelTests
 
         await viewModel.ProcessInputPayloadAsync("");
 
-        Assert.Equal("Step: Entry", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 最初の選択", viewModel.FlowStateLabel);
         Assert.Equal(StreamState.Idle, viewModel.CurrentStreamState);
-        Assert.Contains("empty", viewModel.StatusMessage);
+        Assert.Contains("空です", viewModel.StatusMessage);
         viewModel.Shutdown();
     }
 
@@ -131,7 +172,7 @@ public sealed class MainViewModelTests
         var expired = MakeInitPayload(expiresAtUnixMs: PastExpiry);
         await viewModel.ProcessInputPayloadAsync(expired);
 
-        Assert.Equal("Step: Entry", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 最初からやり直し", viewModel.FlowStateLabel);
         Assert.Equal(StreamState.Idle, viewModel.CurrentStreamState);
         Assert.Contains("session_expired", viewModel.FailureCodeLabel);
         viewModel.Shutdown();
@@ -144,12 +185,12 @@ public sealed class MainViewModelTests
         var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
-        Assert.Equal("Step: Sender show init", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 開始QRを表示", viewModel.FlowStateLabel);
 
         var expired = MakeConfirmPayload(expiresAtUnixMs: PastExpiry);
         await viewModel.ProcessInputPayloadAsync(expired);
 
-        Assert.Equal("Step: Entry", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 最初からやり直し", viewModel.FlowStateLabel);
         Assert.Equal(StreamState.Idle, viewModel.CurrentStreamState);
         Assert.Contains("session_expired", viewModel.FailureCodeLabel);
         viewModel.Shutdown();
@@ -164,12 +205,12 @@ public sealed class MainViewModelTests
         var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
-        Assert.Equal("Step: Sender show init", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 開始QRを表示", viewModel.FlowStateLabel);
 
         var mismatch = MakeConfirmPayload(sessionId: "different-session");
         await viewModel.ProcessInputPayloadAsync(mismatch);
 
-        Assert.Equal("Step: Entry", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 最初からやり直し", viewModel.FlowStateLabel);
         Assert.Equal(StreamState.Idle, viewModel.CurrentStreamState);
         Assert.Contains("invalid_payload", viewModel.FailureCodeLabel);
         viewModel.Shutdown();
@@ -199,7 +240,7 @@ public sealed class MainViewModelTests
         await viewModel.StartSenderAsync();
 
         Assert.Equal(StreamState.Failed, viewModel.CurrentStreamState);
-        Assert.Contains("Create offer failed", viewModel.StatusMessage);
+        Assert.Contains("開始QRの作成に失敗しました", viewModel.StatusMessage);
         Assert.Contains("webrtc_negotiation_failed", viewModel.FailureCodeLabel);
         viewModel.Shutdown();
     }
@@ -226,7 +267,7 @@ public sealed class MainViewModelTests
         await viewModel.ProcessInputPayloadAsync(MakeInitPayload());
 
         Assert.Equal(StreamState.Failed, viewModel.CurrentStreamState);
-        Assert.Contains("Create answer failed", viewModel.StatusMessage);
+        Assert.Contains("応答QRの作成に失敗しました", viewModel.StatusMessage);
         Assert.Contains("webrtc_negotiation_failed", viewModel.FailureCodeLabel);
         viewModel.Shutdown();
     }
@@ -255,7 +296,7 @@ public sealed class MainViewModelTests
         await viewModel.ApproveVerificationAndConnectAsync();
 
         Assert.Equal(StreamState.Failed, viewModel.CurrentStreamState);
-        Assert.Contains("Apply answer failed", viewModel.StatusMessage);
+        Assert.Contains("応答QRの適用に失敗しました", viewModel.StatusMessage);
         viewModel.Shutdown();
     }
 
@@ -270,11 +311,11 @@ public sealed class MainViewModelTests
         await viewModel.StartSenderAsync();
         await viewModel.ProcessInputPayloadAsync(MakeConfirmPayload());
         Assert.True(viewModel.IsVerificationPending);
-        Assert.Equal("Step: Sender verify code", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 6桁コードを確認", viewModel.FlowStateLabel);
 
         viewModel.RejectVerificationAndRestart();
 
-        Assert.Equal("Step: Entry", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 最初からやり直し", viewModel.FlowStateLabel);
         Assert.Equal(StreamState.Idle, viewModel.CurrentStreamState);
         Assert.False(viewModel.IsVerificationPending);
         Assert.Contains("invalid_payload", viewModel.FailureCodeLabel);
@@ -290,18 +331,18 @@ public sealed class MainViewModelTests
         var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
-        Assert.Equal("Step: Sender show init", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 開始QRを表示", viewModel.FlowStateLabel);
         Assert.NotEmpty(viewModel.CurrentPayload);
 
         viewModel.Stop();
 
-        Assert.Equal("Step: Entry", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 最初の選択", viewModel.FlowStateLabel);
         Assert.Equal(StreamState.Ended, viewModel.CurrentStreamState);
         Assert.Empty(viewModel.CurrentPayload);
         Assert.Empty(viewModel.VerificationCode);
         Assert.Empty(viewModel.ActiveSessionId);
         Assert.False(viewModel.IsVerificationPending);
-        Assert.Equal("Stopped", viewModel.StatusMessage);
+        Assert.Equal("接続を終了しました。", viewModel.StatusMessage);
         viewModel.Shutdown();
     }
 
@@ -316,12 +357,12 @@ public sealed class MainViewModelTests
 
         viewModel.StartListener();
         await viewModel.ProcessInputPayloadAsync(initRaw);
-        Assert.Equal("Step: Listener show confirm", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 応答QRを表示", viewModel.FlowStateLabel);
 
         await viewModel.ProcessInputPayloadAsync(initRaw);
 
-        Assert.Equal("Step: Listener show confirm", viewModel.FlowStateLabel);
-        Assert.Contains("already generated", viewModel.StatusMessage);
+        Assert.Equal("案内: 応答QRを表示", viewModel.FlowStateLabel);
+        Assert.Contains("すでに作成済み", viewModel.StatusMessage);
         viewModel.Shutdown();
     }
 
@@ -338,8 +379,8 @@ public sealed class MainViewModelTests
         bridge.EnqueueIncomingPacket(MakeValidPcmPacket());
         await WaitUntilAsync(() => viewModel.CurrentStreamState == StreamState.Streaming, TimeSpan.FromSeconds(2));
 
-        Assert.Equal("Step: Streaming", viewModel.FlowStateLabel);
-        Assert.Contains("Streaming remote audio", viewModel.StatusMessage);
+        Assert.Equal("案内: 接続済み", viewModel.FlowStateLabel);
+        Assert.Contains("相手の音声を受信しています", viewModel.StatusMessage);
         viewModel.Shutdown();
     }
 
@@ -352,7 +393,7 @@ public sealed class MainViewModelTests
         viewModel.StartListener();
         await viewModel.ProcessInputPayloadAsync(MakeInitPayload());
 
-        Assert.Equal("Step: Listener show confirm", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 応答QRを表示", viewModel.FlowStateLabel);
         Assert.Equal(StreamState.Connecting, viewModel.CurrentStreamState);
         Assert.NotEmpty(viewModel.VerificationCode);
         Assert.Equal(6, viewModel.VerificationCode.Length);
@@ -370,20 +411,20 @@ public sealed class MainViewModelTests
         var viewModel = CreateViewModel(bridge);
 
         await viewModel.StartSenderAsync();
-        Assert.Equal("Step: Sender show init", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 開始QRを表示", viewModel.FlowStateLabel);
         Assert.Equal(StreamState.Capturing, viewModel.CurrentStreamState);
         Assert.NotEmpty(viewModel.CurrentPayload);
         Assert.Equal("session-1", viewModel.ActiveSessionId);
 
         await viewModel.ProcessInputPayloadAsync(MakeConfirmPayload());
-        Assert.Equal("Step: Sender verify code", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 6桁コードを確認", viewModel.FlowStateLabel);
         Assert.Equal(StreamState.Connecting, viewModel.CurrentStreamState);
         Assert.True(viewModel.IsVerificationPending);
         Assert.NotEmpty(viewModel.VerificationCode);
         Assert.Equal(6, viewModel.VerificationCode.Length);
 
         await viewModel.ApproveVerificationAndConnectAsync();
-        Assert.Equal("Step: Streaming", viewModel.FlowStateLabel);
+        Assert.Equal("案内: 接続中", viewModel.FlowStateLabel);
         Assert.Equal(StreamState.Streaming, viewModel.CurrentStreamState);
         Assert.False(viewModel.IsVerificationPending);
         viewModel.Shutdown();
@@ -458,7 +499,7 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() => viewModel.CurrentStreamState == StreamState.Streaming, TimeSpan.FromSeconds(2));
 
         Assert.Equal(StreamState.Streaming, viewModel.CurrentStreamState);
-        Assert.Contains("recovered", viewModel.StatusMessage);
+        Assert.Contains("復旧", viewModel.StatusMessage);
         viewModel.Shutdown();
     }
 
@@ -479,7 +520,7 @@ public sealed class MainViewModelTests
 
         await viewModel.StartSenderAsync();
 
-        Assert.Contains("USB tethering", viewModel.NetworkPathLabel);
+        Assert.Contains("USBテザリング", viewModel.NetworkPathLabel);
         Assert.Contains("2", viewModel.CandidateCountLabel);
         viewModel.Shutdown();
     }
@@ -499,7 +540,7 @@ public sealed class MainViewModelTests
 
         await viewModel.StartSenderAsync();
 
-        Assert.Contains("Wi-Fi / LAN", viewModel.NetworkPathLabel);
+        Assert.Contains("Wi-Fi / ローカルネットワーク", viewModel.NetworkPathLabel);
         Assert.Contains("3", viewModel.CandidateCountLabel);
         Assert.Contains("host", viewModel.SelectedCandidatePairLabel);
         viewModel.Shutdown();
@@ -532,7 +573,7 @@ public sealed class MainViewModelTests
 
         await viewModel.ApproveVerificationAndConnectAsync();
 
-        Assert.Contains("No pending answer", viewModel.StatusMessage);
+        Assert.Contains("適用できる応答QRがありません", viewModel.StatusMessage);
         viewModel.Shutdown();
     }
 
@@ -602,7 +643,7 @@ public sealed class MainViewModelTests
         var bridge = new FakeWebRtcBridge();
         var viewModel = CreateViewModel(bridge);
 
-        Assert.Contains("Choose", viewModel.RecommendedAction);
+        Assert.Contains("送信側か受信側", viewModel.RecommendedAction);
         viewModel.Shutdown();
     }
 
@@ -616,7 +657,7 @@ public sealed class MainViewModelTests
         await viewModel.ProcessInputPayloadAsync(MakeConfirmPayload());
         await viewModel.ApproveVerificationAndConnectAsync();
 
-        Assert.Contains("streaming", viewModel.RecommendedAction, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("音声共有中", viewModel.RecommendedAction);
         viewModel.Shutdown();
     }
 
@@ -723,9 +764,11 @@ public sealed class MainViewModelTests
         public BridgeBackendHealth BackendHealth { get; set; } = new(
             IsReady: true,
             IsDevelopmentStub: false,
-            Message: "Native backend ready.",
+            Message: "ネイティブ接続モジュールを利用できます。",
             BlockingFailureCode: null
         );
+
+        public Exception? BackendHealthException { get; set; }
 
         public ConnectionDiagnostics Diagnostics { get; set; } = new();
 
@@ -768,7 +811,15 @@ public sealed class MainViewModelTests
 
         public ConnectionDiagnostics GetDiagnostics() => Diagnostics;
 
-        public BridgeBackendHealth GetBackendHealth() => BackendHealth;
+        public BridgeBackendHealth GetBackendHealth()
+        {
+            if (BackendHealthException is not null)
+            {
+                throw BackendHealthException;
+            }
+
+            return BackendHealth;
+        }
 
         public void Close()
         {

@@ -89,7 +89,7 @@ public sealed class NativeWebRtcBridge : IWebRtcBridge, IDisposable
                 new WebRtcOperationResult(
                     Success: native.success != 0,
                     ErrorMessage: PtrToString(native.error_message),
-                    StatusMessage: native.success != 0 ? "Answer applied" : "Apply answer failed",
+                    StatusMessage: native.success != 0 ? "応答QRを適用しました。" : "応答QRの適用に失敗しました。",
                     Diagnostics: diagnostics
                 )
             );
@@ -156,7 +156,7 @@ public sealed class NativeWebRtcBridge : IWebRtcBridge, IDisposable
                 return new BridgeBackendHealth(
                     IsReady: false,
                     IsDevelopmentStub: false,
-                    Message: "Native bridge loaded, but libdatachannel support is disabled in p2paudio_core_webrtc.dll.",
+                    Message: "ネイティブ接続モジュールは読み込めましたが、p2paudio_core_webrtc.dll の libdatachannel サポートが無効です。",
                     BlockingFailureCode: FailureCode.WebRtcNegotiationFailed
                 );
             }
@@ -169,7 +169,7 @@ public sealed class NativeWebRtcBridge : IWebRtcBridge, IDisposable
         return new BridgeBackendHealth(
             IsReady: true,
             IsDevelopmentStub: false,
-            Message: "Native backend ready.",
+            Message: "ネイティブ接続モジュールを利用できます。",
             BlockingFailureCode: null
         );
     }

@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -27,7 +29,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -61,6 +65,7 @@ import com.example.p2paudio.qr.QrCodeEncoder
 import com.example.p2paudio.service.AudioSendService
 import com.example.p2paudio.ui.MainUiState
 import com.example.p2paudio.ui.MainViewModel
+import com.example.p2paudio.ui.SetupMode
 import com.example.p2paudio.ui.SetupStep
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
@@ -147,9 +152,10 @@ class MainActivity : ComponentActivity() {
                     val uiState by viewModel.uiState.collectAsState(initial = MainUiState())
                     MainScreen(
                         uiState = uiState,
-                        onStartSender = viewModel::startSenderFlowRequested,
-                        onStartListenerScan = {
-                            viewModel.beginListenerFlow()
+                        onChooseSender = viewModel::beginSenderFlow,
+                        onContinueSender = viewModel::startSenderFlowRequested,
+                        onChooseListener = viewModel::beginListenerFlow,
+                        onScanInit = {
                             pendingScanTarget = ScanTarget.INIT
                             launchQrScanner()
                         },
@@ -206,8 +212,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun MainScreen(
     uiState: MainUiState,
-    onStartSender: () -> Unit,
-    onStartListenerScan: () -> Unit,
+    onChooseSender: () -> Unit,
+    onContinueSender: () -> Unit,
+    onChooseListener: () -> Unit,
+    onScanInit: () -> Unit,
     onScanConfirm: () -> Unit,
     onVerificationMatch: () -> Unit,
     onVerificationMismatch: () -> Unit,
@@ -219,13 +227,13 @@ private fun MainScreen(
     val confirmCopiedText = stringResource(R.string.flow_receiver_payload_copied)
     val canStartNewFlow = uiState.setupStep == SetupStep.ENTRY && uiState.streamState == AudioStreamState.IDLE
     val canStopSession = !canStartNewFlow
-    val showSetupCards = when (uiState.streamState) {
+    val hideSetupCards = uiState.streamState in setOf(
         AudioStreamState.STREAMING,
         AudioStreamState.INTERRUPTED,
         AudioStreamState.FAILED,
-        AudioStreamState.ENDED -> false
-        else -> true
-    }
+        AudioStreamState.ENDED
+    )
+    val expirySeconds = rememberExpirySeconds(uiState.payloadExpiresAtUnixMs)
 
     val initQr = remember(uiState.initPayload) {
         uiState.initPayload.takeIf { it.isNotBlank() }?.let { QrCodeEncoder.generate(it) }
@@ -248,7 +256,7 @@ private fun MainScreen(
                 Brush.verticalGradient(
                     colors = listOf(
                         Color(0xFFF4F8FF),
-                        Color(0xFFFFF5EC)
+                        Color(0xFFFFF6EC)
                     )
                 )
             )
@@ -260,15 +268,17 @@ private fun MainScreen(
                 .padding(horizontal = 16.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            HeaderCard()
-            SessionStatusCard(uiState = uiState)
-
-            EntryActionsCard(
-                onStartSender = onStartSender,
-                onStartListenerScan = onStartListenerScan,
+            HeroCard(
+                canStopSession = canStopSession,
                 onStop = onStop,
-                canStartNewFlow = canStartNewFlow,
-                canStopSession = canStopSession
+                setupMode = uiState.setupMode
+            )
+
+            JourneyCard(uiState = uiState)
+
+            ConnectionOverviewCard(
+                uiState = uiState,
+                expirySeconds = expirySeconds
             )
 
             if (transientMessage.isNotBlank()) {
@@ -282,164 +292,203 @@ private fun MainScreen(
                 )
             }
 
-            if (showSetupCards) {
+            if (!hideSetupCards) {
                 when (uiState.setupStep) {
-                    SetupStep.ENTRY -> Unit
-                    SetupStep.PATH_DIAGNOSING -> StepCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("path_diagnosing_step_card"),
-                        number = 2,
-                        title = stringResource(R.string.flow_diagnosing_title),
-                        description = stringResource(R.string.flow_diagnosing_description)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.status_path_diagnosing),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    SetupStep.ENTRY -> EntryActionsCard(
+                        onChooseSender = onChooseSender,
+                        onChooseListener = onChooseListener,
+                        canStartNewFlow = canStartNewFlow
+                    )
 
-                    SetupStep.SENDER_SHOW_INIT -> StepCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("sender_init_step_card"),
-                        number = 2,
-                        title = stringResource(R.string.flow_sender_step_title),
-                        description = stringResource(R.string.flow_sender_step_description)
-                    ) {
-                        if (uiState.initPayload.isBlank()) {
-                            Text(
-                                text = stringResource(R.string.flow_sender_waiting_code),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            ConnectionCodeBlock(
-                                payloadTitle = stringResource(R.string.flow_sender_payload_title),
-                                payloadValue = uiState.initPayload,
-                                payloadQr = initQr,
-                                payloadQrDescription = stringResource(R.string.flow_sender_qr_description),
-                                onCopyPayload = {
-                                    clipboardManager.setText(AnnotatedString(uiState.initPayload))
-                                    transientMessage = initCopiedText
-                                }
-                            )
+                    SetupStep.SENDER_PREPARE -> SenderPrepareCard(
+                        onContinueSender = onContinueSender,
+                        onStop = onStop
+                    )
+
+                    SetupStep.PATH_DIAGNOSING -> DiagnosingCard()
+
+                    SetupStep.SENDER_SHOW_INIT -> SenderShowInitCard(
+                        uiState = uiState,
+                        payloadQr = initQr,
+                        expirySeconds = expirySeconds,
+                        onCopyPayload = {
+                            clipboardManager.setText(AnnotatedString(uiState.initPayload))
+                            transientMessage = initCopiedText
+                        },
+                        onScanConfirm = onScanConfirm
+                    )
+
+                    SetupStep.SENDER_VERIFY_CODE -> VerificationCard(
+                        code = uiState.verificationCode,
+                        onVerificationMatch = onVerificationMatch,
+                        onVerificationMismatch = onVerificationMismatch
+                    )
+
+                    SetupStep.LISTENER_SCAN_INIT -> ListenerScanCard(
+                        onScanInit = onScanInit,
+                        onStop = onStop
+                    )
+
+                    SetupStep.LISTENER_SHOW_CONFIRM -> ListenerShowConfirmCard(
+                        uiState = uiState,
+                        payloadQr = confirmQr,
+                        expirySeconds = expirySeconds,
+                        onCopyPayload = {
+                            clipboardManager.setText(AnnotatedString(uiState.confirmPayload))
+                            transientMessage = confirmCopiedText
                         }
-                        FilledTonalButton(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 46.dp)
-                                .testTag("scan_confirm_button"),
-                            enabled = uiState.initPayload.isNotBlank(),
-                            onClick = onScanConfirm
-                        ) {
-                            Text(stringResource(R.string.flow_sender_scan_button))
-                        }
-                    }
+                    )
+                }
+            } else if (uiState.streamState != AudioStreamState.FAILED) {
+                ConnectedTipsCard(uiState = uiState)
+            }
 
-                    SetupStep.SENDER_VERIFY_CODE -> StepCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("sender_verify_card"),
-                        number = 3,
-                        title = stringResource(R.string.flow_verification_title),
-                        description = stringResource(R.string.flow_verification_description)
-                    ) {
-                        VerificationCodeBlock(code = uiState.verificationCode)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Button(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .heightIn(min = 46.dp)
-                                    .testTag("verification_match_button"),
-                                onClick = onVerificationMatch
-                            ) {
-                                Text(stringResource(R.string.flow_verification_match))
-                            }
-                            FilledTonalButton(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .heightIn(min = 46.dp)
-                                    .testTag("verification_mismatch_button"),
-                                onClick = onVerificationMismatch
-                            ) {
-                                Text(stringResource(R.string.flow_verification_mismatch))
-                            }
-                        }
-                    }
+            TroubleshootingDetailsCard(uiState = uiState)
+        }
+    }
+}
 
-                    SetupStep.LISTENER_SCAN_INIT -> StepCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("listener_scan_step_card"),
-                        number = 2,
-                        title = stringResource(R.string.flow_receiver_step_title),
-                        description = stringResource(R.string.flow_receiver_step_description)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.flow_receiver_waiting_code),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+@Composable
+private fun HeroCard(
+    canStopSession: Boolean,
+    onStop: () -> Unit,
+    setupMode: SetupMode
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.main_title),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = stringResource(R.string.main_subtitle),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
 
-                    SetupStep.LISTENER_SHOW_CONFIRM -> StepCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("listener_confirm_step_card"),
-                        number = 3,
-                        title = stringResource(R.string.flow_receiver_confirm_title),
-                        description = stringResource(R.string.flow_receiver_confirm_description)
-                    ) {
-                        ConnectionCodeBlock(
-                            payloadTitle = stringResource(R.string.flow_receiver_payload_title),
-                            payloadValue = uiState.confirmPayload,
-                            payloadQr = confirmQr,
-                            payloadQrDescription = stringResource(R.string.flow_receiver_qr_description),
-                            onCopyPayload = {
-                                clipboardManager.setText(AnnotatedString(uiState.confirmPayload))
-                                transientMessage = confirmCopiedText
-                            }
-                        )
-                        VerificationCodeBlock(code = uiState.verificationCode)
+                if (canStopSession) {
+                    FilledTonalButton(onClick = onStop) {
+                        Text(stringResource(R.string.action_stop_session))
                     }
                 }
+            }
+
+            Text(
+                text = currentRoleLabel(setupMode),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
+private fun JourneyCard(uiState: MainUiState) {
+    val steps = remember(uiState.setupMode) { journeyLabels(uiState.setupMode) }
+    val activeStepIndex = journeyActiveIndex(uiState)
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.flow_tips_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            steps.forEachIndexed { index, label ->
+                JourneyStepRow(
+                    number = index + 1,
+                    label = stringResource(label),
+                    isActive = index == activeStepIndex,
+                    isCompleted = index < activeStepIndex
+                )
             }
         }
     }
 }
 
 @Composable
-private fun HeaderCard() {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+private fun JourneyStepRow(
+    number: Int,
+    label: String,
+    isActive: Boolean,
+    isCompleted: Boolean
+) {
+    val containerColor = when {
+        isActive -> MaterialTheme.colorScheme.primaryContainer
+        isCompleted -> Color(0xFFE6F7EA)
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val contentColor = when {
+        isActive -> MaterialTheme.colorScheme.onPrimaryContainer
+        isCompleted -> Color(0xFF176C2E)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .background(
+                    color = containerColor,
+                    shape = MaterialTheme.shapes.small
+                ),
+            contentAlignment = Alignment.Center
         ) {
             Text(
-                text = stringResource(R.string.main_title),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
+                text = number.toString(),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = contentColor
             )
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                text = stringResource(R.string.main_subtitle),
+                text = label,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (isActive) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (isActive) {
+                Text(
+                    text = stringResource(R.string.status_next_action_title),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun SessionStatusCard(uiState: MainUiState) {
+private fun ConnectionOverviewCard(
+    uiState: MainUiState,
+    expirySeconds: Int
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
                 text = stringResource(R.string.status_connection_title),
@@ -448,13 +497,42 @@ private fun SessionStatusCard(uiState: MainUiState) {
             )
             Text(
                 text = stringResource(uiState.streamState.labelResId()),
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
                 color = statusColor(uiState.streamState)
             )
             Text(
                 text = uiState.statusMessage,
                 style = MaterialTheme.typography.bodyMedium
             )
+
+            if (uiState.failure != null) {
+                Text(
+                    text = stringResource(
+                        R.string.status_failure_format,
+                        stringResource(uiState.failure.code.labelResId())
+                    ),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            if (uiState.payloadExpiresAtUnixMs > 0L) {
+                val expiryTextRes = if (expirySeconds > 0) {
+                    R.string.status_qr_expiry_remaining
+                } else {
+                    R.string.status_qr_expiry_expired
+                }
+                Text(
+                    text = if (expirySeconds > 0) {
+                        stringResource(expiryTextRes, expirySeconds)
+                    } else {
+                        stringResource(expiryTextRes)
+                    },
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (expirySeconds > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                )
+            }
 
             if (uiState.activeSessionId.isNotBlank()) {
                 Text(
@@ -470,60 +548,6 @@ private fun SessionStatusCard(uiState: MainUiState) {
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-            }
-
-            if (uiState.connectionDiagnostics.hasContent()) {
-                HorizontalDivider()
-                Text(
-                    text = stringResource(R.string.status_network_path_title),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = stringResource(uiState.connectionDiagnostics.pathType.labelResId()),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    text = stringResource(
-                        R.string.status_local_candidates_format,
-                        uiState.connectionDiagnostics.localCandidatesCount
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (uiState.connectionDiagnostics.selectedCandidatePairType.isNotBlank()) {
-                    Text(
-                        text = stringResource(
-                            R.string.status_selected_pair_format,
-                            uiState.connectionDiagnostics.selectedCandidatePairType
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (uiState.connectionDiagnostics.failureHint.isNotBlank()) {
-                    val hintText = uiState.connectionDiagnostics.localizedHintText()
-                    Text(
-                        text = stringResource(
-                            R.string.status_failure_hint_format,
-                            hintText
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-
-            uiState.failure?.let { failure ->
-                HorizontalDivider()
-                Text(
-                    text = stringResource(
-                        R.string.status_failure_format,
-                        stringResource(failure.code.labelResId())
-                    ),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.error
-                )
             }
 
             HorizontalDivider()
@@ -542,11 +566,9 @@ private fun SessionStatusCard(uiState: MainUiState) {
 
 @Composable
 private fun EntryActionsCard(
-    onStartSender: () -> Unit,
-    onStartListenerScan: () -> Unit,
-    onStop: () -> Unit,
-    canStartNewFlow: Boolean,
-    canStopSession: Boolean
+    onChooseSender: () -> Unit,
+    onChooseListener: () -> Unit,
+    canStartNewFlow: Boolean
 ) {
     StepCard(
         modifier = Modifier
@@ -556,6 +578,242 @@ private fun EntryActionsCard(
         title = stringResource(R.string.flow_entry_title),
         description = stringResource(R.string.flow_entry_description)
     ) {
+        ChecklistBlock(
+            items = listOf(
+                stringResource(R.string.flow_checklist_item_network),
+                stringResource(R.string.flow_checklist_item_nearby)
+            )
+        )
+
+        RoleActionCard(
+            title = stringResource(R.string.action_start_sender),
+            description = stringResource(R.string.flow_entry_sender_description),
+            enabled = canStartNewFlow,
+            onClick = onChooseSender,
+            testTag = "entry_start_sender_button"
+        )
+
+        RoleActionCard(
+            title = stringResource(R.string.action_start_listener_scan),
+            description = stringResource(R.string.flow_entry_listener_description),
+            enabled = canStartNewFlow,
+            onClick = onChooseListener,
+            testTag = "entry_start_listener_button"
+        )
+    }
+}
+
+@Composable
+private fun SenderPrepareCard(
+    onContinueSender: () -> Unit,
+    onStop: () -> Unit
+) {
+    StepCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("sender_prepare_card"),
+        number = 1,
+        title = stringResource(R.string.flow_sender_prepare_title),
+        description = stringResource(R.string.flow_sender_prepare_description)
+    ) {
+        ChecklistBlock(
+            items = listOf(
+                stringResource(R.string.flow_checklist_item_network),
+                stringResource(R.string.flow_checklist_item_permission),
+                stringResource(R.string.flow_checklist_item_android)
+            )
+        )
+        Text(
+            text = stringResource(R.string.flow_sender_prepare_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Button(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp),
+            onClick = onContinueSender
+        ) {
+            Text(stringResource(R.string.flow_sender_prepare_primary))
+        }
+        OutlinedButton(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onStop
+        ) {
+            Text(stringResource(R.string.action_stop_session))
+        }
+    }
+}
+
+@Composable
+private fun DiagnosingCard() {
+    StepCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("path_diagnosing_step_card"),
+        number = 2,
+        title = stringResource(R.string.flow_diagnosing_title),
+        description = stringResource(R.string.flow_diagnosing_description)
+    ) {
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        Text(
+            text = stringResource(R.string.status_path_diagnosing),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun SenderShowInitCard(
+    uiState: MainUiState,
+    payloadQr: android.graphics.Bitmap?,
+    expirySeconds: Int,
+    onCopyPayload: () -> Unit,
+    onScanConfirm: () -> Unit
+) {
+    StepCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("sender_init_step_card"),
+        number = 2,
+        title = stringResource(R.string.flow_sender_step_title),
+        description = stringResource(R.string.flow_sender_step_description)
+    ) {
+        if (uiState.initPayload.isBlank()) {
+            Text(
+                text = stringResource(R.string.flow_sender_waiting_code),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            payloadQr?.let { qr ->
+                QrBlock(
+                    qr = qr,
+                    description = stringResource(R.string.flow_sender_qr_description),
+                    size = 240.dp
+                )
+            }
+            if (expirySeconds > 0) {
+                Text(
+                    text = stringResource(R.string.status_qr_expiry_remaining, expirySeconds),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Button(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .testTag("scan_confirm_button"),
+                enabled = uiState.initPayload.isNotBlank(),
+                onClick = onScanConfirm
+            ) {
+                Text(stringResource(R.string.flow_sender_scan_button))
+            }
+            PayloadDetailsSection(
+                payloadValue = uiState.initPayload,
+                onCopyPayload = onCopyPayload
+            )
+        }
+    }
+}
+
+@Composable
+private fun ListenerScanCard(
+    onScanInit: () -> Unit,
+    onStop: () -> Unit
+) {
+    StepCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("listener_scan_step_card"),
+        number = 2,
+        title = stringResource(R.string.flow_receiver_step_title),
+        description = stringResource(R.string.flow_receiver_step_description)
+    ) {
+        Text(
+            text = stringResource(R.string.flow_receiver_waiting_code),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Button(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .testTag("entry_scan_init_button"),
+            onClick = onScanInit
+        ) {
+            Text(stringResource(R.string.flow_receiver_scan_button))
+        }
+        Text(
+            text = stringResource(R.string.flow_receiver_scan_tip),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedButton(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onStop
+        ) {
+            Text(stringResource(R.string.action_stop_session))
+        }
+    }
+}
+
+@Composable
+private fun ListenerShowConfirmCard(
+    uiState: MainUiState,
+    payloadQr: android.graphics.Bitmap?,
+    expirySeconds: Int,
+    onCopyPayload: () -> Unit
+) {
+    StepCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("listener_confirm_step_card"),
+        number = 3,
+        title = stringResource(R.string.flow_receiver_confirm_title),
+        description = stringResource(R.string.flow_receiver_confirm_description)
+    ) {
+        payloadQr?.let { qr ->
+            QrBlock(
+                qr = qr,
+                description = stringResource(R.string.flow_receiver_qr_description),
+                size = 240.dp
+            )
+        }
+        if (expirySeconds > 0) {
+            Text(
+                text = stringResource(R.string.status_qr_expiry_remaining, expirySeconds),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+        VerificationCodeBlock(code = uiState.verificationCode)
+        PayloadDetailsSection(
+            payloadValue = uiState.confirmPayload,
+            onCopyPayload = onCopyPayload
+        )
+    }
+}
+
+@Composable
+private fun VerificationCard(
+    code: String,
+    onVerificationMatch: () -> Unit,
+    onVerificationMismatch: () -> Unit
+) {
+    StepCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("sender_verify_card"),
+        number = 3,
+        title = stringResource(R.string.flow_verification_title),
+        description = stringResource(R.string.flow_verification_description)
+    ) {
+        VerificationCodeBlock(code = code)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -563,32 +821,199 @@ private fun EntryActionsCard(
             Button(
                 modifier = Modifier
                     .weight(1f)
-                    .heightIn(min = 46.dp)
-                    .testTag("entry_start_sender_button"),
-                enabled = canStartNewFlow,
-                onClick = onStartSender
+                    .heightIn(min = 48.dp)
+                    .testTag("verification_match_button"),
+                onClick = onVerificationMatch
             ) {
-                Text(stringResource(R.string.action_start_sender))
+                Text(stringResource(R.string.flow_verification_match))
             }
-            Button(
+            FilledTonalButton(
                 modifier = Modifier
                     .weight(1f)
-                    .heightIn(min = 46.dp)
-                    .testTag("entry_scan_init_button"),
-                enabled = canStartNewFlow,
-                onClick = onStartListenerScan
+                    .heightIn(min = 48.dp)
+                    .testTag("verification_mismatch_button"),
+                onClick = onVerificationMismatch
             ) {
-                Text(stringResource(R.string.action_start_listener_scan))
+                Text(stringResource(R.string.flow_verification_mismatch))
             }
         }
-        FilledTonalButton(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 46.dp),
-            enabled = canStopSession,
-            onClick = onStop
+    }
+}
+
+@Composable
+private fun ConnectedTipsCard(uiState: MainUiState) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(stringResource(R.string.action_stop_session))
+            Text(
+                text = stringResource(R.string.flow_connected_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = stringResource(connectedTipRes(uiState)),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun TroubleshootingDetailsCard(uiState: MainUiState) {
+    if (!uiState.connectionDiagnostics.hasContent() && uiState.failure == null && uiState.activeSessionId.isBlank()) {
+        return
+    }
+
+    var expanded by remember { mutableStateOf(false) }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.flow_details_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = { expanded = !expanded }) {
+                    Text(
+                        stringResource(
+                            if (expanded) R.string.flow_details_hide else R.string.flow_details_show
+                        )
+                    )
+                }
+            }
+
+            if (expanded) {
+                if (uiState.activeSessionId.isNotBlank()) {
+                    Text(
+                        text = stringResource(R.string.status_session_id),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    SelectionContainer {
+                        Text(text = uiState.activeSessionId, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+
+                if (uiState.connectionDiagnostics.hasContent()) {
+                    HorizontalDivider()
+                    Text(
+                        text = stringResource(R.string.status_network_path_title),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = stringResource(uiState.connectionDiagnostics.pathType.labelResId()),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.status_local_candidates_format,
+                            uiState.connectionDiagnostics.localCandidatesCount
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (uiState.connectionDiagnostics.selectedCandidatePairType.isNotBlank()) {
+                        Text(
+                            text = stringResource(
+                                R.string.status_selected_pair_format,
+                                uiState.connectionDiagnostics.selectedCandidatePairType
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (uiState.connectionDiagnostics.failureHint.isNotBlank()) {
+                        Text(
+                            text = stringResource(
+                                R.string.status_failure_hint_format,
+                                uiState.connectionDiagnostics.localizedHintText()
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+
+                uiState.failure?.let { failure ->
+                    HorizontalDivider()
+                    Text(
+                        text = stringResource(
+                            R.string.status_failure_format,
+                            stringResource(failure.code.labelResId())
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RoleActionCard(
+    title: String,
+    description: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    testTag: String
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Button(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .testTag(testTag),
+                enabled = enabled,
+                onClick = onClick
+            ) {
+                Text(title)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChecklistBlock(items: List<String>) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = stringResource(R.string.flow_checklist_title),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold
+        )
+        items.forEach { item ->
+            Text(
+                text = "• $item",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -622,8 +1047,8 @@ private fun StepCard(
 ) {
     Card(modifier = modifier) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -631,7 +1056,7 @@ private fun StepCard(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(24.dp)
+                        .size(26.dp)
                         .background(
                             color = MaterialTheme.colorScheme.primaryContainer,
                             shape = MaterialTheme.shapes.small
@@ -664,47 +1089,47 @@ private fun StepCard(
 }
 
 @Composable
-private fun ConnectionCodeBlock(
-    payloadTitle: String,
+private fun PayloadDetailsSection(
     payloadValue: String,
-    payloadQr: android.graphics.Bitmap?,
-    payloadQrDescription: String,
     onCopyPayload: () -> Unit
 ) {
+    if (payloadValue.isBlank()) {
+        return
+    }
+
+    var expanded by remember(payloadValue) { mutableStateOf(false) }
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = payloadTitle,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold
-        )
-        SelectionContainer {
-            Text(
-                text = payloadValue,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            TextButton(onClick = { expanded = !expanded }) {
+                Text(
+                    stringResource(
+                        if (expanded) R.string.flow_payload_details_hide else R.string.flow_payload_details_show
+                    )
+                )
+            }
+            Spacer(modifier = Modifier.weight(1f))
             TextButton(onClick = onCopyPayload) {
                 Text(stringResource(R.string.flow_copy_payload))
             }
-            Text(
-                text = stringResource(R.string.flow_payload_chars, payloadValue.length),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
-
-        payloadQr?.let { qr ->
-            QrBlock(
-                qr = qr,
-                description = payloadQrDescription,
-                size = 220.dp
-            )
+        Text(
+            text = stringResource(R.string.flow_payload_chars, payloadValue.length),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (expanded) {
+            SelectionContainer {
+                Text(
+                    text = payloadValue,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 }
@@ -728,12 +1153,86 @@ private fun QrBlock(
 }
 
 @Composable
+private fun rememberExpirySeconds(expiresAtUnixMs: Long): Int {
+    var secondsRemaining by remember(expiresAtUnixMs) {
+        mutableStateOf(expirySeconds(expiresAtUnixMs))
+    }
+
+    LaunchedEffect(expiresAtUnixMs) {
+        if (expiresAtUnixMs <= 0L) {
+            secondsRemaining = 0
+            return@LaunchedEffect
+        }
+
+        while (true) {
+            val remaining = expirySeconds(expiresAtUnixMs)
+            secondsRemaining = remaining
+            if (remaining <= 0) {
+                break
+            }
+            delay(1_000)
+        }
+    }
+
+    return secondsRemaining
+}
+
+private fun expirySeconds(expiresAtUnixMs: Long): Int {
+    if (expiresAtUnixMs <= 0L) {
+        return 0
+    }
+    val remainingMs = expiresAtUnixMs - System.currentTimeMillis()
+    return if (remainingMs <= 0L) 0 else ((remainingMs + 999L) / 1_000L).toInt()
+}
+
+@Composable
 private fun statusColor(state: AudioStreamState) = when (state) {
     AudioStreamState.STREAMING -> Color(0xFF176C2E)
     AudioStreamState.FAILED -> MaterialTheme.colorScheme.error
     AudioStreamState.CONNECTING,
     AudioStreamState.CAPTURING -> Color(0xFFAD5D0C)
+    AudioStreamState.INTERRUPTED -> Color(0xFF8B4D16)
     else -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+private fun currentRoleLabel(setupMode: SetupMode): String = when (setupMode) {
+    SetupMode.SENDER -> "現在は送信側を案内しています"
+    SetupMode.LISTENER -> "現在は受信側を案内しています"
+    SetupMode.NONE -> "まずは送信側か受信側を選ぶだけで始められます"
+}
+
+private fun journeyLabels(setupMode: SetupMode): List<Int> = when (setupMode) {
+    SetupMode.SENDER -> listOf(
+        R.string.flow_tips_sender_step_1,
+        R.string.flow_tips_sender_step_2,
+        R.string.flow_tips_sender_step_3
+    )
+    SetupMode.LISTENER -> listOf(
+        R.string.flow_tips_listener_step_1,
+        R.string.flow_tips_listener_step_2,
+        R.string.flow_tips_listener_step_3
+    )
+    SetupMode.NONE -> listOf(
+        R.string.flow_tips_default_step_1,
+        R.string.flow_tips_default_step_2,
+        R.string.flow_tips_default_step_3
+    )
+}
+
+private fun journeyActiveIndex(uiState: MainUiState): Int = when (uiState.setupStep) {
+    SetupStep.ENTRY -> 0
+    SetupStep.SENDER_PREPARE -> 0
+    SetupStep.PATH_DIAGNOSING,
+    SetupStep.SENDER_SHOW_INIT,
+    SetupStep.LISTENER_SCAN_INIT -> 1
+    SetupStep.SENDER_VERIFY_CODE,
+    SetupStep.LISTENER_SHOW_CONFIRM -> 2
+}
+
+private fun connectedTipRes(uiState: MainUiState): Int = when {
+    uiState.streamState == AudioStreamState.STREAMING && uiState.setupMode == SetupMode.SENDER -> R.string.flow_connected_sender_tip
+    uiState.streamState == AudioStreamState.STREAMING && uiState.setupMode == SetupMode.LISTENER -> R.string.flow_connected_listener_tip
+    else -> R.string.flow_connected_generic_tip
 }
 
 private fun recommendedActionRes(uiState: MainUiState): Int {
@@ -758,6 +1257,7 @@ private fun recommendedActionRes(uiState: MainUiState): Int {
     }
     return when (uiState.setupStep) {
         SetupStep.ENTRY -> R.string.status_next_action_entry
+        SetupStep.SENDER_PREPARE -> R.string.status_next_action_sender_prepare
         SetupStep.PATH_DIAGNOSING -> R.string.status_next_action_diagnosing
         SetupStep.SENDER_SHOW_INIT -> R.string.status_next_action_show_init
         SetupStep.SENDER_VERIFY_CODE -> R.string.status_next_action_verify
@@ -802,7 +1302,7 @@ private fun ConnectionDiagnostics.localizedHintText(): String = when (failureHin
     "wifi_lan_check" -> stringResource(R.string.status_hint_wifi_check)
     "network_interface_check" -> stringResource(R.string.status_hint_network_interface_check)
     "peer_disconnected" -> stringResource(R.string.status_peer_disconnected)
-    else -> failureHint
+    else -> stringResource(R.string.status_hint_generic_connection_check)
 }
 
 private fun NetworkPathType.labelResId(): Int = when (this) {

@@ -6,283 +6,317 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    Title="P2P Audio (Windows)">
-
-    <Window.SystemBackdrop>
-        <MicaBackdrop />
-    </Window.SystemBackdrop>
+    Title="音声リンク (Windows)">
 
     <Grid>
         <Grid.Background>
             <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Color="#ECEEFF" Offset="0" />
-                <GradientStop Color="#FFF3E6" Offset="1" />
+                <GradientStop Color="#F2F5FF" Offset="0" />
+                <GradientStop Color="#FFF4E8" Offset="1" />
             </LinearGradientBrush>
         </Grid.Background>
 
-        <ScrollViewer Padding="24" VerticalScrollBarVisibility="Auto">
-            <StackPanel Spacing="14" MaxWidth="560">
+        <ScrollViewer Padding="28" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="16" MaxWidth="760">
 
-                <!-- Header -->
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel>
-                        <TextBlock
-                            Text="P2P Audio"
-                            FontSize="32"
-                            FontWeight="Black" />
-                        <TextBlock
-                            Text="{x:Bind ViewModel.BackendLabel, Mode=OneWay}"
-                            FontSize="13"
-                            Opacity="0.6"
-                            Margin="0,2,0,0" />
-                    </StackPanel>
-                    <Button
-                        Grid.Column="1"
-                        Content="Stop"
-                        Click="OnStopClick"
-                        IsEnabled="{x:Bind ViewModel.CanStop, Mode=OneWay}"
-                        Style="{StaticResource AccentButtonStyle}"
-                        Padding="16,8"
-                        VerticalAlignment="Top" />
-                </Grid>
-
-                <!-- Status Card -->
                 <Border
-                    Background="#EAFFFFFF"
-                    CornerRadius="16"
-                    BorderBrush="#0F000000"
+                    Background="#ECFFFFFF"
+                    CornerRadius="20"
+                    BorderBrush="#12000000"
                     BorderThickness="1"
-                    Padding="16">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Connection Status" FontWeight="SemiBold" FontSize="15" />
+                    Padding="20">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="6">
+                            <TextBlock
+                                Text="音声リンク"
+                                FontSize="32"
+                                FontWeight="Black" />
+                            <TextBlock
+                                Text="同じWi-FiまたはUSBテザリング上の2台を、QRだけでつなぎます。"
+                                FontSize="14"
+                                Opacity="0.72"
+                                TextWrapping="Wrap" />
+                            <TextBlock
+                                Text="{x:Bind ViewModel.BackendLabel, Mode=OneWay}"
+                                FontSize="12"
+                                Opacity="0.62"
+                                Margin="0,4,0,0" />
+                        </StackPanel>
+                        <Button
+                            Grid.Column="1"
+                            Content="接続を終了する"
+                            Click="OnStopClick"
+                            IsEnabled="{x:Bind ViewModel.CanStop, Mode=OneWay}"
+                            Style="{StaticResource AccentButtonStyle}"
+                            Padding="18,10"
+                            VerticalAlignment="Top" />
+                    </Grid>
+                </Border>
+
+                <Border
+                    Background="#ECFFFFFF"
+                    CornerRadius="20"
+                    BorderBrush="#12000000"
+                    BorderThickness="1"
+                    Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="はじめてでも3ステップ" FontWeight="SemiBold" FontSize="18" />
+                        <TextBlock
+                            Text="{x:Bind ViewModel.FlowStateLabel, Mode=OneWay}"
+                            FontSize="13"
+                            Opacity="0.68" />
+                        <ProgressBar
+                            Minimum="0"
+                            Maximum="3"
+                            Value="{x:Bind ViewModel.ProgressValue, Mode=OneWay}"
+                            Height="8" />
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="1. 役割を選ぶ" FontSize="13" Opacity="0.82" />
+                            <TextBlock Text="2. QRを交換する" FontSize="13" Opacity="0.82" />
+                            <TextBlock Text="3. 6桁コードを確認する" FontSize="13" Opacity="0.82" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border
+                    Background="#ECFFFFFF"
+                    CornerRadius="20"
+                    BorderBrush="#12000000"
+                    BorderThickness="1"
+                    Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="現在の状況" FontWeight="SemiBold" FontSize="18" />
 
                         <TextBlock
                             x:Name="StreamStateText"
                             Text="{x:Bind ViewModel.StreamStateLabel, Mode=OneWay}"
                             FontWeight="SemiBold"
-                            FontSize="14" />
+                            FontSize="26" />
 
                         <TextBlock
                             Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
                             TextWrapping="Wrap"
-                            FontSize="13" />
+                            FontSize="14" />
 
-                        <!-- Session ID -->
-                        <StackPanel
-                            x:Name="SessionIdPanel"
-                            Visibility="Collapsed"
-                            Spacing="2">
-                            <TextBlock Text="Session ID" FontSize="11" Opacity="0.5" />
-                            <TextBlock
-                                Text="{x:Bind ViewModel.ActiveSessionId, Mode=OneWay}"
-                                FontSize="11"
-                                FontFamily="Consolas"
-                                IsTextSelectionEnabled="True" />
-                        </StackPanel>
-
-                        <!-- Network Diagnostics -->
-                        <Rectangle Height="1" Fill="#0A000000" Margin="0,4" />
-                        <TextBlock Text="{x:Bind ViewModel.NetworkPathLabel, Mode=OneWay}" FontSize="12" Opacity="0.7" />
-                        <TextBlock Text="{x:Bind ViewModel.CandidateCountLabel, Mode=OneWay}" FontSize="12" Opacity="0.7" />
-                        <TextBlock
-                            Text="{x:Bind ViewModel.SelectedCandidatePairLabel, Mode=OneWay}"
-                            FontSize="12"
-                            Opacity="0.7" />
-                        <TextBlock
-                            Text="{x:Bind ViewModel.FailureHintLabel, Mode=OneWay}"
-                            FontSize="12"
-                            Foreground="#BD2E39" />
-                        <TextBlock
-                            Text="{x:Bind ViewModel.FailureCodeLabel, Mode=OneWay}"
-                            FontSize="12"
-                            Foreground="#BD2E39" />
-
-                        <!-- Recommended Action -->
-                        <Rectangle Height="1" Fill="#0A000000" Margin="0,4" />
-                        <TextBlock Text="Next Action" FontSize="11" Opacity="0.5" FontWeight="SemiBold" />
+                        <Rectangle Height="1" Fill="#12000000" />
+                        <TextBlock Text="次にやること" FontSize="12" Opacity="0.62" FontWeight="SemiBold" />
                         <TextBlock
                             Text="{x:Bind ViewModel.RecommendedAction, Mode=OneWay}"
-                            FontSize="13"
+                            FontSize="14"
                             TextWrapping="Wrap" />
+
+                        <Expander Header="接続の詳細（困ったときだけ確認）">
+                            <StackPanel Spacing="8" Margin="0,10,0,0">
+                                <StackPanel
+                                    x:Name="SessionIdPanel"
+                                    Visibility="Collapsed"
+                                    Spacing="2">
+                                    <TextBlock Text="セッションID" FontSize="11" Opacity="0.56" />
+                                    <TextBlock
+                                        Text="{x:Bind ViewModel.ActiveSessionId, Mode=OneWay}"
+                                        FontSize="12"
+                                        FontFamily="Consolas"
+                                        IsTextSelectionEnabled="True" />
+                                </StackPanel>
+                                <TextBlock Text="{x:Bind ViewModel.NetworkPathLabel, Mode=OneWay}" FontSize="12" Opacity="0.76" />
+                                <TextBlock Text="{x:Bind ViewModel.CandidateCountLabel, Mode=OneWay}" FontSize="12" Opacity="0.76" />
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.SelectedCandidatePairLabel, Mode=OneWay}"
+                                    FontSize="12"
+                                    Opacity="0.76" />
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.FailureHintLabel, Mode=OneWay}"
+                                    FontSize="12"
+                                    Foreground="#B42318"
+                                    TextWrapping="Wrap" />
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.FailureCodeLabel, Mode=OneWay}"
+                                    FontSize="12"
+                                    Foreground="#B42318"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Expander>
                     </StackPanel>
                 </Border>
 
-                <!-- Step 1: Entry Card (always visible) -->
                 <Border
                     x:Name="EntryCard"
-                    Background="#EAFFFFFF"
-                    CornerRadius="16"
-                    BorderBrush="#0F000000"
+                    Background="#ECFFFFFF"
+                    CornerRadius="20"
+                    BorderBrush="#12000000"
                     BorderThickness="1"
-                    Padding="16">
-                    <StackPanel Spacing="10">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Border
-                                Background="#D6EDFF"
-                                CornerRadius="7"
-                                Width="26" Height="26"
-                                HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <TextBlock
-                                    Text="1"
-                                    FontSize="12"
-                                    FontWeight="Bold"
-                                    Foreground="#065B7D"
-                                    HorizontalAlignment="Center"
-                                    VerticalAlignment="Center" />
-                            </Border>
-                            <TextBlock
-                                Text="Choose your role"
-                                FontSize="17"
-                                FontWeight="SemiBold" />
-                        </StackPanel>
+                    Padding="20">
+                    <StackPanel Spacing="14">
+                        <TextBlock Text="役割を選ぶ" FontSize="20" FontWeight="SemiBold" />
                         <TextBlock
-                            Text="Select Sender to share your audio, or Listener to receive."
-                            FontSize="13"
-                            Opacity="0.65"
+                            Text="難しい設定は不要です。まず、このPCが音を送る側か受け取る側かを選んでください。"
+                            FontSize="14"
+                            Opacity="0.72"
                             TextWrapping="Wrap" />
-                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
-                            <Button
-                                Content="Start Sender"
-                                Click="OnStartSenderClick"
-                                IsEnabled="{x:Bind ViewModel.CanStartSender, Mode=OneWay}"
-                                Style="{StaticResource AccentButtonStyle}"
-                                Padding="20,10" />
-                            <Button
-                                Content="Start Listener"
-                                Click="OnStartListenerClick"
-                                IsEnabled="{x:Bind ViewModel.CanStartListener, Mode=OneWay}"
-                                Style="{StaticResource AccentButtonStyle}"
-                                Padding="20,10" />
-                        </StackPanel>
+
+                        <Border
+                            Background="#F8FBFF"
+                            CornerRadius="16"
+                            BorderBrush="#14000000"
+                            BorderThickness="1"
+                            Padding="16">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="このPCの音を送る" FontSize="17" FontWeight="SemiBold" />
+                                <TextBlock
+                                    Text="このPCで再生している音を、相手端末へ送ります。"
+                                    FontSize="13"
+                                    Opacity="0.68"
+                                    TextWrapping="Wrap" />
+                                <Button
+                                    Content="送信側として始める"
+                                    Click="OnStartSenderClick"
+                                    IsEnabled="{x:Bind ViewModel.CanStartSender, Mode=OneWay}"
+                                    Style="{StaticResource AccentButtonStyle}"
+                                    Padding="20,10" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border
+                            Background="#FFF9F3"
+                            CornerRadius="16"
+                            BorderBrush="#14000000"
+                            BorderThickness="1"
+                            Padding="16">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="相手の音を受け取る" FontSize="17" FontWeight="SemiBold" />
+                                <TextBlock
+                                    Text="相手端末に表示された開始QRを読み取り、このPCで音を再生します。"
+                                    FontSize="13"
+                                    Opacity="0.68"
+                                    TextWrapping="Wrap" />
+                                <Button
+                                    Content="受信側として始める"
+                                    Click="OnStartListenerClick"
+                                    IsEnabled="{x:Bind ViewModel.CanStartListener, Mode=OneWay}"
+                                    Style="{StaticResource AccentButtonStyle}"
+                                    Padding="20,10" />
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </Border>
 
-                <!-- Step 2: Path Diagnosing -->
                 <Border
                     x:Name="PathDiagnosingCard"
                     Visibility="Collapsed"
-                    Background="#EAFFFFFF"
-                    CornerRadius="16"
-                    BorderBrush="#0F000000"
+                    Background="#ECFFFFFF"
+                    CornerRadius="20"
+                    BorderBrush="#12000000"
                     BorderThickness="1"
-                    Padding="16">
-                    <StackPanel Spacing="10">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Border Background="#D6EDFF" CornerRadius="7" Width="26" Height="26">
-                                <TextBlock Text="2" FontSize="12" FontWeight="Bold" Foreground="#065B7D"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Border>
-                            <TextBlock Text="Check local path" FontSize="17" FontWeight="SemiBold" />
-                        </StackPanel>
+                    Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="接続の準備をしています" FontSize="20" FontWeight="SemiBold" />
                         <TextBlock
-                            Text="Checking the local network path and preparing the next QR step."
-                            FontSize="13"
-                            Opacity="0.65"
+                            Text="同じネットワーク上で直接つなぐための確認をしています。"
+                            FontSize="14"
+                            Opacity="0.72"
                             TextWrapping="Wrap" />
+                        <ProgressBar IsIndeterminate="True" Height="8" />
                     </StackPanel>
                 </Border>
 
-                <!-- Step 2/3: Sender Show Init -->
                 <Border
                     x:Name="SenderShowInitCard"
                     Visibility="Collapsed"
-                    Background="#EAFFFFFF"
-                    CornerRadius="16"
-                    BorderBrush="#0F000000"
+                    Background="#ECFFFFFF"
+                    CornerRadius="20"
+                    BorderBrush="#12000000"
                     BorderThickness="1"
-                    Padding="16">
-                    <StackPanel Spacing="10">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Border Background="#D6EDFF" CornerRadius="7" Width="26" Height="26">
-                                <TextBlock Text="2" FontSize="12" FontWeight="Bold" Foreground="#065B7D"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Border>
-                            <TextBlock Text="Share init code" FontSize="17" FontWeight="SemiBold" />
-                        </StackPanel>
+                    Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="開始QRを相手に見せる" FontSize="20" FontWeight="SemiBold" />
                         <TextBlock
-                            Text="Show this QR code to the listener device, then scan their confirm code."
-                            FontSize="13" Opacity="0.65" TextWrapping="Wrap" />
+                            Text="この大きいQRを受信側に見せてください。読み取り後は、相手の応答QRをこのPCで読み取ります。"
+                            FontSize="14"
+                            Opacity="0.72"
+                            TextWrapping="Wrap" />
+                        <TextBlock
+                            Text="QRは1分以内を目安に読み取ってください。"
+                            FontSize="12"
+                            Foreground="#0F6CBD" />
 
-                        <!-- QR Code -->
                         <Image
                             Source="{x:Bind ViewModel.PayloadQrImage, Mode=OneWay}"
-                            Width="220" Height="220"
+                            Width="280"
+                            Height="280"
                             Stretch="Uniform"
                             HorizontalAlignment="Center"
                             Margin="0,4" />
 
-                        <!-- Payload text -->
-                        <TextBlock Text="Init Payload" FontSize="11" Opacity="0.5" FontWeight="SemiBold" />
-                        <Border
-                            Background="White"
-                            CornerRadius="10"
-                            BorderBrush="#1F000000"
-                            BorderThickness="1"
-                            Padding="10"
-                            MaxHeight="120">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                <TextBlock
-                                    Text="{x:Bind ViewModel.CurrentPayload, Mode=OneWay}"
-                                    FontSize="11"
-                                    FontFamily="Consolas"
-                                    TextWrapping="Wrap"
-                                    IsTextSelectionEnabled="True" />
-                            </ScrollViewer>
-                        </Border>
+                        <Button
+                            Content="相手の応答QRを読み取る"
+                            Click="OnScanFromCameraClick"
+                            Style="{StaticResource AccentButtonStyle}"
+                            Padding="20,10" />
 
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Content="Copy Payload" Click="OnCopyPayloadClick" Padding="14,8" />
-                            <Button Content="Scan Confirm QR" Click="OnScanFromCameraClick"
-                                    Padding="14,8" />
-                            <Button Content="Paste Confirm" Click="OnPastePayloadClick"
-                                    Padding="14,8" />
-                        </StackPanel>
+                        <Expander Header="上級者向け: QR内容を使う">
+                            <StackPanel Spacing="10" Margin="0,10,0,0">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="開始QRの内容をコピー" Click="OnCopyPayloadClick" Padding="14,8" />
+                                    <Button Content="クリップボードの応答QRを使う" Click="OnPastePayloadClick" Padding="14,8" />
+                                </StackPanel>
+                                <TextBlock Text="開始QRの内容" FontSize="11" Opacity="0.56" FontWeight="SemiBold" />
+                                <Border
+                                    Background="White"
+                                    CornerRadius="10"
+                                    BorderBrush="#1F000000"
+                                    BorderThickness="1"
+                                    Padding="10"
+                                    MaxHeight="140">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                        <TextBlock
+                                            Text="{x:Bind ViewModel.CurrentPayload, Mode=OneWay}"
+                                            FontSize="11"
+                                            FontFamily="Consolas"
+                                            TextWrapping="Wrap"
+                                            IsTextSelectionEnabled="True" />
+                                    </ScrollViewer>
+                                </Border>
+                            </StackPanel>
+                        </Expander>
                     </StackPanel>
                 </Border>
 
-                <!-- Step 3: Sender Verify Code -->
                 <Border
                     x:Name="SenderVerifyCodeCard"
                     Visibility="Collapsed"
-                    Background="#EAFFFFFF"
-                    CornerRadius="16"
-                    BorderBrush="#0F000000"
+                    Background="#ECFFFFFF"
+                    CornerRadius="20"
+                    BorderBrush="#12000000"
                     BorderThickness="1"
-                    Padding="16">
-                    <StackPanel Spacing="10">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Border Background="#D6EDFF" CornerRadius="7" Width="26" Height="26">
-                                <TextBlock Text="3" FontSize="12" FontWeight="Bold" Foreground="#065B7D"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Border>
-                            <TextBlock Text="Verify code" FontSize="17" FontWeight="SemiBold" />
-                        </StackPanel>
+                    Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="6桁コードを確認する" FontSize="20" FontWeight="SemiBold" />
                         <TextBlock
-                            Text="Compare this 6-digit code with the listener device. Press Match if they are identical."
-                            FontSize="13" Opacity="0.65" TextWrapping="Wrap" />
-
-                        <!-- Verification Code -->
-                        <TextBlock Text="Verification Code" FontSize="11" Opacity="0.5" FontWeight="SemiBold" />
+                            Text="両端末で同じ番号が表示されているときだけ接続してください。"
+                            FontSize="14"
+                            Opacity="0.72"
+                            TextWrapping="Wrap" />
+                        <TextBlock Text="照合コード" FontSize="12" Opacity="0.56" FontWeight="SemiBold" />
                         <TextBlock
-                            Text="{x:Bind ViewModel.VerificationCode, Mode=OneWay}"
-                            FontSize="36"
+                            Text="{x:Bind ViewModel.VerificationCodeDisplay, Mode=OneWay}"
+                            FontSize="42"
                             FontWeight="Black"
+                            FontFamily="Consolas"
                             HorizontalAlignment="Center"
                             Margin="0,8" />
-
                         <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
                             <Button
-                                Content="Codes Match"
+                                Content="一致している"
                                 Click="OnApproveVerificationClick"
                                 IsEnabled="{x:Bind ViewModel.CanApproveCode, Mode=OneWay}"
                                 Style="{StaticResource AccentButtonStyle}"
                                 Padding="24,10" />
                             <Button
-                                Content="Codes Don't Match"
+                                Content="違うのでやり直す"
                                 Click="OnRejectVerificationClick"
                                 IsEnabled="{x:Bind ViewModel.CanRejectCode, Mode=OneWay}"
                                 Padding="24,10" />
@@ -290,110 +324,110 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Step 2: Listener Scan Init -->
                 <Border
                     x:Name="ListenerScanInitCard"
                     Visibility="Collapsed"
-                    Background="#EAFFFFFF"
-                    CornerRadius="16"
-                    BorderBrush="#0F000000"
+                    Background="#ECFFFFFF"
+                    CornerRadius="20"
+                    BorderBrush="#12000000"
                     BorderThickness="1"
-                    Padding="16">
-                    <StackPanel Spacing="10">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Border Background="#D6EDFF" CornerRadius="7" Width="26" Height="26">
-                                <TextBlock Text="2" FontSize="12" FontWeight="Bold" Foreground="#065B7D"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Border>
-                            <TextBlock Text="Scan sender's init code" FontSize="17" FontWeight="SemiBold" />
-                        </StackPanel>
+                    Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="送信側の開始QRを読み取る" FontSize="20" FontWeight="SemiBold" />
                         <TextBlock
-                            Text="Scan the sender device's QR code, or paste their init payload."
-                            FontSize="13" Opacity="0.65" TextWrapping="Wrap" />
+                            Text="送信側の画面に表示されている大きいQRを、このPCで読み取ってください。"
+                            FontSize="14"
+                            Opacity="0.72"
+                            TextWrapping="Wrap" />
+                        <Button
+                            Content="開始QRをカメラで読み取る"
+                            Click="OnScanFromCameraClick"
+                            Style="{StaticResource AccentButtonStyle}"
+                            Padding="20,10" />
+                        <TextBlock
+                            Text="読み取りに失敗したときだけ、下の詳細を使ってください。"
+                            FontSize="12"
+                            Opacity="0.6" />
 
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Content="Scan QR (Camera)" Click="OnScanFromCameraClick"
-                                    Style="{StaticResource AccentButtonStyle}" Padding="20,10" />
-                            <Button Content="Paste Payload" Click="OnPastePayloadClick"
-                                    Padding="20,10" />
-                        </StackPanel>
-
-                        <!-- Manual payload input -->
-                        <TextBlock Text="Or enter payload manually:" FontSize="11" Opacity="0.5" />
-                        <TextBox
-                            x:Name="ManualPayloadInput"
-                            PlaceholderText="Paste init payload here..."
-                            AcceptsReturn="True"
-                            Height="80"
-                            FontSize="11"
-                            FontFamily="Consolas" />
-                        <Button Content="Process Payload" Click="OnProcessManualPayloadClick"
-                                Padding="14,8" />
+                        <Expander Header="読み取りに失敗したときだけ使う">
+                            <StackPanel Spacing="10" Margin="0,10,0,0">
+                                <Button Content="クリップボードのQR内容を使う" Click="OnPastePayloadClick" Padding="20,10" />
+                                <TextBlock Text="手動入力" FontSize="11" Opacity="0.56" FontWeight="SemiBold" />
+                                <TextBox
+                                    x:Name="ManualPayloadInput"
+                                    PlaceholderText="開始QRの内容を貼り付ける"
+                                    AcceptsReturn="True"
+                                    Height="96"
+                                    FontSize="11"
+                                    FontFamily="Consolas" />
+                                <Button Content="この内容で進める" Click="OnProcessManualPayloadClick" Padding="14,8" />
+                            </StackPanel>
+                        </Expander>
                     </StackPanel>
                 </Border>
 
-                <!-- Step 3: Listener Show Confirm -->
                 <Border
                     x:Name="ListenerShowConfirmCard"
                     Visibility="Collapsed"
-                    Background="#EAFFFFFF"
-                    CornerRadius="16"
-                    BorderBrush="#0F000000"
+                    Background="#ECFFFFFF"
+                    CornerRadius="20"
+                    BorderBrush="#12000000"
                     BorderThickness="1"
-                    Padding="16">
-                    <StackPanel Spacing="10">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Border Background="#D6EDFF" CornerRadius="7" Width="26" Height="26">
-                                <TextBlock Text="3" FontSize="12" FontWeight="Bold" Foreground="#065B7D"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Border>
-                            <TextBlock Text="Share confirm code" FontSize="17" FontWeight="SemiBold" />
-                        </StackPanel>
+                    Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="応答QRを送信側に見せる" FontSize="20" FontWeight="SemiBold" />
                         <TextBlock
-                            Text="Show this QR code to the sender. Waiting for audio stream..."
-                            FontSize="13" Opacity="0.65" TextWrapping="Wrap" />
+                            Text="このQRと6桁コードを送信側に見せると、接続が完了します。"
+                            FontSize="14"
+                            Opacity="0.72"
+                            TextWrapping="Wrap" />
+                        <TextBlock
+                            Text="QRは1分以内を目安に読み取ってください。"
+                            FontSize="12"
+                            Foreground="#0F6CBD" />
 
-                        <!-- QR Code -->
                         <Image
                             Source="{x:Bind ViewModel.PayloadQrImage, Mode=OneWay}"
-                            Width="220" Height="220"
+                            Width="280"
+                            Height="280"
                             Stretch="Uniform"
                             HorizontalAlignment="Center"
                             Margin="0,4" />
 
-                        <!-- Payload text -->
-                        <TextBlock Text="Confirm Payload" FontSize="11" Opacity="0.5" FontWeight="SemiBold" />
-                        <Border
-                            Background="White"
-                            CornerRadius="10"
-                            BorderBrush="#1F000000"
-                            BorderThickness="1"
-                            Padding="10"
-                            MaxHeight="120">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                <TextBlock
-                                    Text="{x:Bind ViewModel.CurrentPayload, Mode=OneWay}"
-                                    FontSize="11"
-                                    FontFamily="Consolas"
-                                    TextWrapping="Wrap"
-                                    IsTextSelectionEnabled="True" />
-                            </ScrollViewer>
-                        </Border>
-
-                        <Button Content="Copy Payload" Click="OnCopyPayloadClick" Padding="14,8" />
-
-                        <!-- Verification Code -->
-                        <TextBlock Text="Verification Code" FontSize="11" Opacity="0.5" FontWeight="SemiBold" />
+                        <TextBlock Text="照合コード" FontSize="12" Opacity="0.56" FontWeight="SemiBold" />
                         <TextBlock
-                            Text="{x:Bind ViewModel.VerificationCode, Mode=OneWay}"
-                            FontSize="36"
+                            Text="{x:Bind ViewModel.VerificationCodeDisplay, Mode=OneWay}"
+                            FontSize="42"
                             FontWeight="Black"
+                            FontFamily="Consolas"
                             HorizontalAlignment="Center"
                             Margin="0,8" />
+
+                        <Expander Header="上級者向け: 応答QRの内容を使う">
+                            <StackPanel Spacing="10" Margin="0,10,0,0">
+                                <Button Content="応答QRの内容をコピー" Click="OnCopyPayloadClick" Padding="14,8" />
+                                <TextBlock Text="応答QRの内容" FontSize="11" Opacity="0.56" FontWeight="SemiBold" />
+                                <Border
+                                    Background="White"
+                                    CornerRadius="10"
+                                    BorderBrush="#1F000000"
+                                    BorderThickness="1"
+                                    Padding="10"
+                                    MaxHeight="140">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                        <TextBlock
+                                            Text="{x:Bind ViewModel.CurrentPayload, Mode=OneWay}"
+                                            FontSize="11"
+                                            FontFamily="Consolas"
+                                            TextWrapping="Wrap"
+                                            IsTextSelectionEnabled="True" />
+                                    </ScrollViewer>
+                                </Border>
+                            </StackPanel>
+                        </Expander>
                     </StackPanel>
                 </Border>
 
-                <!-- Transient Message (InfoBar) -->
                 <InfoBar
                     x:Name="TransientInfoBar"
                     IsOpen="False"

@@ -1,25 +1,62 @@
+using System.Runtime.InteropServices;
+using Microsoft.UI.Composition.SystemBackdrops;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using P2PAudio.Windows.App.ViewModels;
 using P2PAudio.Windows.Core.Models;
 using Windows.ApplicationModel.DataTransfer;
+using Windows.Graphics;
+using WinRT.Interop;
 
 namespace P2PAudio.Windows.App;
 
 public sealed partial class MainWindow : Window
 {
+    private const int SwShow = 5;
+    private const int SwRestore = 9;
+
     private DispatcherTimer? _transientTimer;
+    private bool _startupInitialized;
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(nint hWnd, int nCmdShow);
 
     public MainWindow()
     {
-        ViewModel = new MainViewModel();
+        ViewModel = new MainViewModel(initializeImmediately: false);
         InitializeComponent();
+        TryApplySystemBackdrop();
+        Activated += OnActivated;
         Closed += OnClosed;
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
         UpdateFlowCards();
     }
 
     public MainViewModel ViewModel { get; }
+
+    public void Present()
+    {
+        Activate();
+        EnsureWindowVisible();
+        _ = DispatcherQueue.TryEnqueue(EnsureWindowVisible);
+    }
+
+    private async void OnActivated(object sender, WindowActivatedEventArgs args)
+    {
+        _ = args;
+        EnsureWindowVisible();
+        if (_startupInitialized)
+        {
+            return;
+        }
+
+        _startupInitialized = true;
+        Activated -= OnActivated;
+
+        await Task.Yield();
+        await ViewModel.InitializeAsync();
+    }
 
     private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
@@ -44,7 +81,7 @@ public sealed partial class MainWindow : Window
     {
         var step = ViewModel.CurrentSetupStep;
         var streamState = ViewModel.CurrentStreamState;
-        var showEntryCard = step == SetupStep.Entry;
+        var showEntryCard = step == SetupStep.Entry || streamState == StreamState.Failed;
         var hideSetupCards = streamState is StreamState.Streaming or StreamState.Interrupted or StreamState.Ended or StreamState.Failed;
 
         EntryCard.Visibility = showEntryCard ? Visibility.Visible : Visibility.Collapsed;
@@ -110,7 +147,7 @@ public sealed partial class MainWindow : Window
         dataPackage.SetText(ViewModel.CurrentPayload);
         Clipboard.SetContent(dataPackage);
 
-        ShowTransientMessage("Payload copied to clipboard.");
+        ShowTransientMessage("QRの内容をクリップボードへコピーしました。");
     }
 
     private void ShowTransientMessage(string message)
@@ -131,5 +168,37 @@ public sealed partial class MainWindow : Window
     private void OnClosed(object sender, WindowEventArgs args)
     {
         ViewModel.Shutdown();
+    }
+
+    private void TryApplySystemBackdrop()
+    {
+        if (!MicaController.IsSupported())
+        {
+            return;
+        }
+
+        SystemBackdrop = new Microsoft.UI.Xaml.Media.MicaBackdrop();
+    }
+
+    private void EnsureWindowVisible()
+    {
+        var appWindow = AppWindow;
+        if (appWindow.Size.Width <= 0 || appWindow.Size.Height <= 0)
+        {
+            appWindow.Resize(new SizeInt32(980, 760));
+        }
+        if (!appWindow.IsVisible)
+        {
+            appWindow.Show();
+        }
+
+        var windowHandle = WindowNative.GetWindowHandle(this);
+        if (windowHandle == nint.Zero)
+        {
+            return;
+        }
+
+        _ = ShowWindow(windowHandle, SwRestore);
+        _ = ShowWindow(windowHandle, SwShow);
     }
 }

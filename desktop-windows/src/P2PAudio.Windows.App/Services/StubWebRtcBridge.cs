@@ -24,7 +24,7 @@ public sealed class StubWebRtcBridge : IWebRtcBridge
             return Task.FromResult(
                 new WebRtcOfferResult(
                     Success: false,
-                    ErrorMessage: "Native WebRTC backend is required.",
+                    ErrorMessage: "ネイティブ接続モジュールが必要です。",
                     SessionId: string.Empty,
                     OfferSdp: string.Empty,
                     Fingerprint: string.Empty,
@@ -53,7 +53,7 @@ public sealed class StubWebRtcBridge : IWebRtcBridge
             return Task.FromResult(
                 new WebRtcAnswerResult(
                     Success: false,
-                    ErrorMessage: "Native WebRTC backend is required.",
+                    ErrorMessage: "ネイティブ接続モジュールが必要です。",
                     AnswerSdp: string.Empty,
                     Fingerprint: string.Empty,
                     Diagnostics: CreateDiagnostics()
@@ -79,8 +79,8 @@ public sealed class StubWebRtcBridge : IWebRtcBridge
         return Task.FromResult(
             new WebRtcOperationResult(
                 Success: false,
-                ErrorMessage: "Native WebRTC backend is not available",
-                StatusMessage: "Apply answer failed",
+                ErrorMessage: "ネイティブ接続モジュールを利用できません。",
+                StatusMessage: "応答QRの適用に失敗しました。",
                 Diagnostics: CreateDiagnostics()
             )
         );
@@ -110,7 +110,7 @@ public sealed class StubWebRtcBridge : IWebRtcBridge
             return new BridgeBackendHealth(
                 IsReady: true,
                 IsDevelopmentStub: true,
-                Message: "Native backend unavailable. Running development stub.",
+                Message: "ネイティブ接続モジュールが見つからないため、開発用スタブで起動しています。",
                 BlockingFailureCode: null
             );
         }
@@ -118,7 +118,7 @@ public sealed class StubWebRtcBridge : IWebRtcBridge
         return new BridgeBackendHealth(
             IsReady: false,
             IsDevelopmentStub: false,
-            Message: $"Native backend unavailable. {_startupReason}",
+            Message: $"ネイティブ接続モジュールを利用できません。{_startupReason}",
             BlockingFailureCode: FailureCode.WebRtcNegotiationFailed
         );
     }

@@ -10,61 +10,80 @@ namespace P2PAudio.Windows.App.ViewModels;
 
 public sealed partial class MainViewModel : ObservableObject
 {
-    private readonly IWebRtcBridge _bridge;
+    private IWebRtcBridge _bridge;
+    private readonly Func<IWebRtcBridge>? _startupBridgeFactory;
     private readonly LoopbackPcmSender _loopbackSender;
     private readonly PcmPlaybackService _playbackService;
     private readonly CancellationTokenSource _receiveLoopCts = new();
-    private readonly BridgeBackendHealth _backendHealth;
     private readonly IQrImageService _qrImageService;
     private readonly SynchronizationContext? _uiContext = SynchronizationContext.Current;
+    private BridgeBackendHealth _backendHealth;
+    private Task? _startupTask;
+    private bool _isStartupComplete;
+    private bool _receiveLoopStarted;
 
     private string _localSenderFingerprint = string.Empty;
     private string _pendingAnswerSdp = string.Empty;
     private int _receiveIdleTicks;
 
-    public MainViewModel() : this(CreateBridge(), new QrImageService())
+    public MainViewModel() : this(initializeImmediately: true)
     {
     }
 
-    public MainViewModel(IWebRtcBridge bridge) : this(bridge, new QrImageService())
+    public MainViewModel(bool initializeImmediately)
+        : this(
+            initialBridge: initializeImmediately ? CreateBridge() : CreateStartupPlaceholderBridge(),
+            qrImageService: new QrImageService(),
+            startupBridgeFactory: initializeImmediately ? null : CreateBridge,
+            initializeImmediately: initializeImmediately
+        )
+    {
+    }
+
+    public MainViewModel(IWebRtcBridge bridge) : this(bridge, new QrImageService(), initializeImmediately: true)
     {
     }
 
     public MainViewModel(IWebRtcBridge bridge, IQrImageService qrImageService)
+        : this(bridge, qrImageService, initializeImmediately: true)
     {
-        _bridge = bridge;
+    }
+
+    public MainViewModel(IWebRtcBridge bridge, IQrImageService qrImageService, bool initializeImmediately)
+        : this(
+            initialBridge: initializeImmediately ? bridge : CreateStartupPlaceholderBridge(),
+            qrImageService: qrImageService,
+            startupBridgeFactory: initializeImmediately ? null : () => bridge,
+            initializeImmediately: initializeImmediately
+        )
+    {
+    }
+
+    private MainViewModel(
+        IWebRtcBridge initialBridge,
+        IQrImageService qrImageService,
+        Func<IWebRtcBridge>? startupBridgeFactory,
+        bool initializeImmediately)
+    {
+        _bridge = initialBridge;
+        _startupBridgeFactory = startupBridgeFactory;
         _qrImageService = qrImageService;
         _loopbackSender = new LoopbackPcmSender(packet => _bridge.SendPcmPacket(packet));
         _playbackService = new PcmPlaybackService();
-        _backendHealth = _bridge.GetBackendHealth();
+        _backendHealth = CreatePendingBackendHealth();
 
-        BackendLabel = _bridge.IsNativeBackend
-            ? "Backend: Native bridge (required)"
-            : _backendHealth.IsDevelopmentStub
-                ? "Backend: Development stub (ALLOW_STUB_FOR_DEV)"
-                : "Backend: Native backend missing";
-
+        BackendLabel = "内部処理を初期化しています...";
+        StatusMessage = "起動準備をしています。";
         UpdateDiagnostics(new ConnectionDiagnostics(PathType: UsbTetheringDetector.ClassifyPrimaryPath()));
-        RefreshDiagnosticsFromBridge();
 
-        if (_backendHealth.IsReady)
+        if (initializeImmediately)
         {
-            StatusMessage = _backendHealth.Message;
-            SetStreamState(StreamState.Idle);
+            ApplyStartupState(CreateStartupState(initialBridge));
         }
-        else
-        {
-            SetFailureState(
-                _backendHealth.Message,
-                _backendHealth.BlockingFailureCode ?? FailureCode.WebRtcNegotiationFailed
-            );
-        }
-
-        _ = Task.Run(() => ReceiveLoopAsync(_receiveLoopCts.Token));
     }
 
     [ObservableProperty]
-    private string statusMessage = "Ready";
+    private string statusMessage = "準備できました。";
 
     [ObservableProperty]
     private string currentPayload = string.Empty;
@@ -73,22 +92,24 @@ public sealed partial class MainViewModel : ObservableObject
     private BitmapImage? payloadQrImage;
 
     [ObservableProperty]
-    private string networkPathLabel = "Network path: Unknown";
+    private string networkPathLabel = "接続経路: 判定前";
 
     [ObservableProperty]
-    private string candidateCountLabel = "Local host ICE candidates: 0";
+    private string candidateCountLabel = "利用可能なローカル候補: 0";
 
     [ObservableProperty]
-    private string selectedCandidatePairLabel = "Selected pair: -";
+    private string selectedCandidatePairLabel = "選択中の接続経路: -";
 
     [ObservableProperty]
     private string failureHintLabel = string.Empty;
 
     [ObservableProperty]
-    private string failureCodeLabel = "Failure code: -";
+    private string failureCodeLabel = "原因コード: -";
 
     [ObservableProperty]
     private string verificationCode = string.Empty;
+
+    public string VerificationCodeDisplay => FormatVerificationCode(VerificationCode);
 
     [ObservableProperty]
     private string activeSessionId = string.Empty;
@@ -97,10 +118,10 @@ public sealed partial class MainViewModel : ObservableObject
     private string backendLabel = string.Empty;
 
     [ObservableProperty]
-    private string flowStateLabel = "Step: Entry";
+    private string flowStateLabel = "案内: 最初の選択";
 
     [ObservableProperty]
-    private string streamStateLabel = "Stream state: idle";
+    private string streamStateLabel = "待機中";
 
     [ObservableProperty]
     private StreamState currentStreamState = StreamState.Idle;
@@ -113,12 +134,23 @@ public sealed partial class MainViewModel : ObservableObject
 
     public string RecommendedAction => GetRecommendedAction();
 
+    public double ProgressValue => CurrentSetupStep switch
+    {
+        SetupStep.Entry => 1,
+        SetupStep.PathDiagnosing => 2,
+        SetupStep.ListenerScanInit => 2,
+        SetupStep.SenderShowInit => 2,
+        SetupStep.SenderVerifyCode => 3,
+        SetupStep.ListenerShowConfirm => 3,
+        _ => 1
+    };
+
     public bool CanStartSender => _backendHealth.IsReady &&
-        CurrentSetupStep == SetupStep.Entry &&
+        (CurrentSetupStep == SetupStep.Entry || CurrentStreamState == StreamState.Failed) &&
         CurrentStreamState is StreamState.Idle or StreamState.Ended or StreamState.Failed;
 
     public bool CanStartListener => _backendHealth.IsReady &&
-        CurrentSetupStep == SetupStep.Entry &&
+        (CurrentSetupStep == SetupStep.Entry || CurrentStreamState == StreamState.Failed) &&
         CurrentStreamState is StreamState.Idle or StreamState.Ended or StreamState.Failed;
 
     public bool CanProcessPayload => _backendHealth.IsReady &&
@@ -140,8 +172,8 @@ public sealed partial class MainViewModel : ObservableObject
         StopLoopbackIfRunning();
         SetStreamState(StreamState.Capturing);
         SetFailureCode(null, clearWhenNull: true);
-        StatusMessage = "Diagnosing local path and preparing sender offer.";
-        FlowStateLabel = "Step: Path diagnosing";
+        StatusMessage = "ローカル接続を確認し、送信側の開始QRを準備しています。";
+        FlowStateLabel = "案内: 接続準備";
         VerificationCode = string.Empty;
         IsVerificationPending = false;
         CurrentSetupStep = SetupStep.PathDiagnosing;
@@ -152,7 +184,7 @@ public sealed partial class MainViewModel : ObservableObject
         if (!localOffer.Success)
         {
             SetFailureState(
-                $"Create offer failed: {localOffer.ErrorMessage}",
+                $"開始QRの作成に失敗しました: {localOffer.ErrorMessage}",
                 localOffer.Diagnostics.NormalizedFailureCode ?? FailureCode.WebRtcNegotiationFailed
             );
             return;
@@ -170,8 +202,8 @@ public sealed partial class MainViewModel : ObservableObject
         CurrentPayload = QrPayloadCodec.EncodeInit(payload);
         PayloadQrImage = await _qrImageService.CreateAsync(CurrentPayload);
         CurrentSetupStep = SetupStep.SenderShowInit;
-        StatusMessage = "Init payload generated. Share this QR with listener.";
-        FlowStateLabel = "Step: Sender show init";
+        StatusMessage = "開始QRを表示しました。受信側に読み取ってもらってください。";
+        FlowStateLabel = "案内: 開始QRを表示";
     }
 
     public void StartListener()
@@ -192,15 +224,15 @@ public sealed partial class MainViewModel : ObservableObject
         ActiveSessionId = string.Empty;
         IsVerificationPending = false;
         CurrentSetupStep = SetupStep.PathDiagnosing;
-        FlowStateLabel = "Step: Path diagnosing";
-        StatusMessage = "Diagnosing local path.";
+        FlowStateLabel = "案内: 接続準備";
+        StatusMessage = "ローカル接続を確認しています。";
         SetStreamState(StreamState.Idle);
         SetFailureCode(null, clearWhenNull: true);
         UpdateDiagnostics(new ConnectionDiagnostics(PathType: UsbTetheringDetector.ClassifyPrimaryPath()));
         RefreshDiagnosticsFromBridge();
         CurrentSetupStep = SetupStep.ListenerScanInit;
-        FlowStateLabel = "Step: Listener scan init";
-        StatusMessage = "Ready to scan sender init payload.";
+        FlowStateLabel = "案内: 開始QRを読み取る";
+        StatusMessage = "送信側の開始QRを読み取る準備ができました。";
     }
 
     public async Task ProcessInputPayloadAsync(string rawPayload)
@@ -212,7 +244,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         if (string.IsNullOrWhiteSpace(rawPayload))
         {
-            StatusMessage = "Payload is empty.";
+            StatusMessage = "QRの内容が空です。";
             return;
         }
 
@@ -224,12 +256,12 @@ public sealed partial class MainViewModel : ObservableObject
 
         if (CurrentSetupStep == SetupStep.ListenerShowConfirm)
         {
-            StatusMessage = "Confirm payload already generated. Wait for stream or press Stop to restart.";
+            StatusMessage = "応答QRはすでに作成済みです。相手に見せるか、停止してやり直してください。";
             return;
         }
 
         CurrentSetupStep = SetupStep.ListenerScanInit;
-        FlowStateLabel = "Step: Listener scan init";
+        FlowStateLabel = "案内: 開始QRを読み取る";
         await CreateConfirmFromInitAsync(rawPayload);
     }
 
@@ -243,7 +275,7 @@ public sealed partial class MainViewModel : ObservableObject
         var dataPackage = global::Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
         if (!dataPackage.Contains(global::Windows.ApplicationModel.DataTransfer.StandardDataFormats.Text))
         {
-            StatusMessage = "Clipboard has no text payload.";
+            StatusMessage = "クリップボードに文字データがありません。";
             return;
         }
         var text = await dataPackage.GetTextAsync();
@@ -260,7 +292,7 @@ public sealed partial class MainViewModel : ObservableObject
         var payload = await QrCameraScannerService.ScanAsync();
         if (string.IsNullOrWhiteSpace(payload))
         {
-            StatusMessage = "No QR payload detected.";
+            StatusMessage = "QRを読み取れませんでした。";
             return;
         }
         await ProcessInputPayloadAsync(payload);
@@ -275,7 +307,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         if (string.IsNullOrWhiteSpace(_pendingAnswerSdp))
         {
-            StatusMessage = "No pending answer to apply.";
+            StatusMessage = "適用できる応答QRがありません。";
             return;
         }
 
@@ -285,16 +317,16 @@ public sealed partial class MainViewModel : ObservableObject
         if (!applyResult.Success)
         {
             SetFailureState(
-                $"Apply answer failed: {applyResult.ErrorMessage}",
+                $"応答QRの適用に失敗しました: {applyResult.ErrorMessage}",
                 applyResult.Diagnostics.NormalizedFailureCode ?? FailureCode.WebRtcNegotiationFailed
             );
             return;
         }
 
         IsVerificationPending = false;
-        FlowStateLabel = "Step: Streaming";
+        FlowStateLabel = "案内: 接続中";
         SetStreamState(StreamState.Streaming);
-        StatusMessage = "Connected. Starting loopback audio sender.";
+        StatusMessage = "接続しました。このPCの音声送信を開始します。";
         RefreshDiagnosticsFromBridge();
 
         try
@@ -303,13 +335,13 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            SetFailureState($"Audio capture failed: {ex.Message}", FailureCode.AudioCaptureNotSupported);
+            SetFailureState($"音声取得に失敗しました: {ex.Message}", FailureCode.AudioCaptureNotSupported);
         }
     }
 
     public void RejectVerificationAndRestart()
     {
-        RestartSetup("Verification mismatch.", FailureCode.InvalidPayload);
+        RestartSetup("6桁コードが一致しませんでした。", FailureCode.InvalidPayload);
     }
 
     public void Stop()
@@ -326,8 +358,8 @@ public sealed partial class MainViewModel : ObservableObject
         ActiveSessionId = string.Empty;
         IsVerificationPending = false;
         CurrentSetupStep = SetupStep.Entry;
-        FlowStateLabel = "Step: Entry";
-        StatusMessage = "Stopped";
+        FlowStateLabel = "案内: 最初の選択";
+        StatusMessage = "接続を終了しました。";
         SetFailureCode(null, clearWhenNull: true);
         SetStreamState(StreamState.Ended);
         RefreshDiagnosticsFromBridge();
@@ -340,6 +372,85 @@ public sealed partial class MainViewModel : ObservableObject
             _receiveLoopCts.Cancel();
         }
         Stop();
+    }
+
+    public async Task InitializeAsync()
+    {
+        if (_isStartupComplete)
+        {
+            return;
+        }
+
+        if (_startupTask is null)
+        {
+            if (_startupBridgeFactory is null)
+            {
+                _isStartupComplete = true;
+                return;
+            }
+
+            _startupTask = InitializeDeferredAsync();
+        }
+
+        await _startupTask;
+    }
+
+    private async Task InitializeDeferredAsync()
+    {
+        var startupState = await Task.Run(() => CreateStartupState(_startupBridgeFactory!));
+
+        RunOnUiThread(() =>
+        {
+            if (_receiveLoopCts.IsCancellationRequested)
+            {
+                startupState.Bridge.Close();
+                return;
+            }
+
+            ApplyStartupState(startupState);
+        });
+    }
+
+    private void ApplyStartupState(StartupState startupState)
+    {
+        _bridge = startupState.Bridge;
+        _backendHealth = startupState.BackendHealth;
+
+        BackendLabel = _bridge.IsNativeBackend
+            ? "内部処理: ネイティブ接続モジュール"
+            : _backendHealth.IsDevelopmentStub
+                ? "内部処理: 開発用スタブ"
+                : "内部処理: ネイティブ接続モジュール未検出";
+
+        UpdateDiagnostics(new ConnectionDiagnostics(PathType: UsbTetheringDetector.ClassifyPrimaryPath()));
+
+        if (_backendHealth.IsReady)
+        {
+            SetFailureCode(null, clearWhenNull: true);
+            StatusMessage = _backendHealth.Message;
+            SetStreamState(StreamState.Idle);
+        }
+        else
+        {
+            SetStreamState(StreamState.Idle);
+            SetFailureCode(_backendHealth.BlockingFailureCode ?? FailureCode.WebRtcNegotiationFailed);
+            StatusMessage = $"接続モジュールが利用できません。{_backendHealth.Message}";
+        }
+
+        EnsureReceiveLoopStarted();
+        _isStartupComplete = true;
+        NotifyComputedProperties();
+    }
+
+    private void EnsureReceiveLoopStarted()
+    {
+        if (_receiveLoopStarted)
+        {
+            return;
+        }
+
+        _receiveLoopStarted = true;
+        _ = Task.Run(() => ReceiveLoopAsync(_receiveLoopCts.Token));
     }
 
     private async Task CreateConfirmFromInitAsync(string initPayloadRaw)
@@ -360,7 +471,7 @@ public sealed partial class MainViewModel : ObservableObject
             if (!answer.Success)
             {
                 SetFailureState(
-                    $"Create answer failed: {answer.ErrorMessage}",
+                    $"応答QRの作成に失敗しました: {answer.ErrorMessage}",
                     answer.Diagnostics.NormalizedFailureCode ?? FailureCode.WebRtcNegotiationFailed
                 );
                 return;
@@ -382,8 +493,8 @@ public sealed partial class MainViewModel : ObservableObject
             );
             ActiveSessionId = initPayload.SessionId;
             CurrentSetupStep = SetupStep.ListenerShowConfirm;
-            FlowStateLabel = "Step: Listener show confirm";
-            StatusMessage = "Confirm payload generated. Show this QR to sender, then wait for stream.";
+            FlowStateLabel = "案内: 応答QRを表示";
+            StatusMessage = "応答QRを作成しました。送信側に見せて接続を待ってください。";
             SetFailureCode(null, clearWhenNull: true);
             RefreshDiagnosticsFromBridge();
         }
@@ -393,7 +504,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            RestartSetup($"Failed to process init payload: {ex.Message}", FailureCode.InvalidPayload);
+            RestartSetup($"開始QRを処理できませんでした: {ex.Message}", FailureCode.InvalidPayload);
         }
     }
 
@@ -415,7 +526,7 @@ public sealed partial class MainViewModel : ObservableObject
 
             if (string.IsNullOrWhiteSpace(_localSenderFingerprint))
             {
-                RestartSetup("Local sender fingerprint is missing.", FailureCode.InvalidPayload);
+                RestartSetup("送信側の情報が不足しています。", FailureCode.InvalidPayload);
                 return Task.CompletedTask;
             }
 
@@ -427,10 +538,10 @@ public sealed partial class MainViewModel : ObservableObject
             _pendingAnswerSdp = confirmPayload.AnswerSdp;
             CurrentSetupStep = SetupStep.SenderVerifyCode;
             IsVerificationPending = true;
-            FlowStateLabel = "Step: Sender verify code";
+            FlowStateLabel = "案内: 6桁コードを確認";
             SetStreamState(StreamState.Connecting);
             SetFailureCode(null, clearWhenNull: true);
-            StatusMessage = "Verify the 6-digit code and approve.";
+            StatusMessage = "6桁コードを確認してから接続してください。";
         }
         catch (SessionFailure failure)
         {
@@ -438,7 +549,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            RestartSetup($"Failed to process confirm payload: {ex.Message}", FailureCode.InvalidPayload);
+            RestartSetup($"応答QRを処理できませんでした: {ex.Message}", FailureCode.InvalidPayload);
         }
         return Task.CompletedTask;
     }
@@ -451,7 +562,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         SetFailureState(
-            $"Native backend is required. {_backendHealth.Message}",
+            $"接続モジュールが利用できません。{_backendHealth.Message}",
             _backendHealth.BlockingFailureCode ?? FailureCode.WebRtcNegotiationFailed
         );
         return false;
@@ -470,14 +581,17 @@ public sealed partial class MainViewModel : ObservableObject
         ActiveSessionId = string.Empty;
         IsVerificationPending = false;
         CurrentSetupStep = SetupStep.Entry;
-        FlowStateLabel = "Step: Entry";
+        FlowStateLabel = "案内: 最初からやり直し";
         SetStreamState(StreamState.Idle);
         SetFailureCode(code);
-        StatusMessage = $"{message} Restart from Step 1.";
+        StatusMessage = $"{message} 最初からやり直してください。";
     }
 
     private void SetFailureState(string message, FailureCode code)
     {
+        CurrentSetupStep = SetupStep.Entry;
+        FlowStateLabel = "案内: 最初からやり直し";
+        IsVerificationPending = false;
         SetStreamState(StreamState.Failed);
         SetFailureCode(code);
         StatusMessage = message;
@@ -499,20 +613,20 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (code is not null)
         {
-            FailureCodeLabel = $"Failure code: {FailureCodeMapper.ToWireValue(code.Value)}";
+            FailureCodeLabel = $"原因コード: {FailureCodeMapper.ToWireValue(code.Value)}";
             return;
         }
 
         if (clearWhenNull)
         {
-            FailureCodeLabel = "Failure code: -";
+            FailureCodeLabel = "原因コード: -";
         }
     }
 
     private void SetStreamState(StreamState state)
     {
         CurrentStreamState = state;
-        StreamStateLabel = $"Stream state: {state.ToString().ToLowerInvariant()}";
+        StreamStateLabel = DescribeStreamState(state);
         NotifyComputedProperties();
     }
 
@@ -543,13 +657,13 @@ public sealed partial class MainViewModel : ObservableObject
                         if (CurrentStreamState == StreamState.Connecting && CurrentSetupStep == SetupStep.ListenerShowConfirm)
                         {
                             SetStreamState(StreamState.Streaming);
-                            FlowStateLabel = "Step: Streaming";
-                            StatusMessage = "Streaming remote audio.";
+                            FlowStateLabel = "案内: 接続済み";
+                            StatusMessage = "相手の音声を受信しています。";
                         }
                         else if (CurrentStreamState == StreamState.Interrupted)
                         {
                             SetStreamState(StreamState.Streaming);
-                            StatusMessage = "Stream recovered.";
+                            StatusMessage = "接続が復旧しました。";
                         }
                     });
                     continue;
@@ -569,7 +683,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            RunOnUiThread(() => SetFailureState($"Receive loop failed: {ex.Message}", FailureCode.WebRtcNegotiationFailed));
+            RunOnUiThread(() => SetFailureState($"受信処理で問題が発生しました: {ex.Message}", FailureCode.WebRtcNegotiationFailed));
         }
     }
 
@@ -587,11 +701,11 @@ public sealed partial class MainViewModel : ObservableObject
                 {
                     if (code == FailureCode.NetworkChanged || code == FailureCode.PeerUnreachable)
                     {
-                        SetInterruptedState($"Stream interrupted: {diagnostics.FailureHint}", code.Value);
+                        SetInterruptedState($"接続が中断しました: {LocalizeFailureHint(diagnostics.FailureHint)}", code.Value);
                     }
                     else if (code == FailureCode.WebRtcNegotiationFailed && CurrentStreamState == StreamState.Streaming)
                     {
-                        SetInterruptedState($"Transport unstable: {diagnostics.FailureHint}", code.Value);
+                        SetInterruptedState($"通信が不安定です: {LocalizeFailureHint(diagnostics.FailureHint)}", code.Value);
                     }
                 }
             });
@@ -642,17 +756,17 @@ public sealed partial class MainViewModel : ObservableObject
     {
         NetworkPathLabel = diagnostics.PathType switch
         {
-            NetworkPathType.WifiLan => "Network path: Wi-Fi / LAN",
-            NetworkPathType.UsbTether => "Network path: USB tethering",
-            _ => "Network path: Unknown"
+            NetworkPathType.WifiLan => "接続経路: Wi-Fi / ローカルネットワーク",
+            NetworkPathType.UsbTether => "接続経路: USBテザリング",
+            _ => "接続経路: 判定前"
         };
-        CandidateCountLabel = $"Local host ICE candidates: {diagnostics.LocalCandidatesCount}";
+        CandidateCountLabel = $"利用可能なローカル候補: {diagnostics.LocalCandidatesCount}";
         SelectedCandidatePairLabel = string.IsNullOrWhiteSpace(diagnostics.SelectedCandidatePairType)
-            ? "Selected pair: -"
-            : $"Selected pair: {diagnostics.SelectedCandidatePairType}";
+            ? "選択中の接続経路: -"
+            : $"選択中の接続経路: {diagnostics.SelectedCandidatePairType}";
         FailureHintLabel = string.IsNullOrWhiteSpace(diagnostics.FailureHint)
             ? string.Empty
-            : $"Hint: {diagnostics.FailureHint}";
+            : $"補足: {LocalizeFailureHint(diagnostics.FailureHint)}";
 
         var mappedCode = diagnostics.NormalizedFailureCode ?? FailureCodeMapper.FromFailureHint(diagnostics.FailureHint);
         if (mappedCode is not null)
@@ -730,9 +844,64 @@ public sealed partial class MainViewModel : ObservableObject
                (bool.TryParse(value, out var enabled) && enabled);
     }
 
+    private static IWebRtcBridge CreateStartupPlaceholderBridge()
+    {
+        return new StubWebRtcBridge(
+            enabledForDevelopment: false,
+            startupReason: "接続モジュールの初期化がまだ完了していません。"
+        );
+    }
+
+    private static BridgeBackendHealth CreatePendingBackendHealth()
+    {
+        return new BridgeBackendHealth(
+            IsReady: false,
+            IsDevelopmentStub: false,
+            Message: "ネイティブ接続モジュールを起動しています。",
+            BlockingFailureCode: null
+        );
+    }
+
+    private static StartupState CreateStartupState(Func<IWebRtcBridge> bridgeFactory)
+    {
+        try
+        {
+            return CreateStartupState(bridgeFactory());
+        }
+        catch (Exception ex)
+        {
+            var fallbackBridge = new StubWebRtcBridge(
+                enabledForDevelopment: false,
+                startupReason: ex.Message
+            );
+            return new StartupState(fallbackBridge, fallbackBridge.GetBackendHealth());
+        }
+    }
+
+    private static StartupState CreateStartupState(IWebRtcBridge bridge)
+    {
+        try
+        {
+            return new StartupState(bridge, bridge.GetBackendHealth());
+        }
+        catch (Exception ex)
+        {
+            var fallbackBridge = new StubWebRtcBridge(
+                enabledForDevelopment: false,
+                startupReason: ex.Message
+            );
+            return new StartupState(fallbackBridge, fallbackBridge.GetBackendHealth());
+        }
+    }
+
     partial void OnCurrentSetupStepChanged(SetupStep value)
     {
         NotifyComputedProperties();
+    }
+
+    partial void OnVerificationCodeChanged(string value)
+    {
+        OnPropertyChanged(nameof(VerificationCodeDisplay));
     }
 
     partial void OnIsVerificationPendingChanged(bool value)
@@ -749,33 +918,79 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(CanApproveCode));
         OnPropertyChanged(nameof(CanRejectCode));
         OnPropertyChanged(nameof(CanStop));
+        OnPropertyChanged(nameof(ProgressValue));
     }
 
     private string GetRecommendedAction()
     {
+        if (!_backendHealth.IsReady && CurrentSetupStep == SetupStep.Entry)
+            return "ネイティブ接続モジュールが見つかりません。必要なランタイムを入れてから再起動してください。";
         if (CurrentStreamState == StreamState.Streaming)
-            return "Audio is streaming. Press Stop to end.";
+            return "音声共有中です。終了するときは「接続を終了する」を押してください。";
         if (CurrentStreamState == StreamState.Failed)
         {
             return NetworkPathLabel.Contains("USB") && CandidateCountLabel.Contains(": 0")
-                ? "Enable USB tethering, then retry."
+                ? "USBテザリングを有効にして、もう一度やり直してください。"
                 : CandidateCountLabel.Contains(": 0")
-                    ? "Check your network interface and retry."
-                    : "Press Stop, then restart.";
+                    ? "Wi-FiまたはUSBテザリングの接続状態を確認してからやり直してください。"
+                    : "接続を終了してから、もう一度やり直してください。";
         }
         if (CurrentStreamState == StreamState.Interrupted)
-            return "Stream interrupted. Waiting for recovery...";
+            return "接続の復旧を待っています。両端末のネットワークを確認してください。";
         return CurrentSetupStep switch
         {
-            SetupStep.Entry => "Choose Sender or Listener to begin.",
-            SetupStep.PathDiagnosing => "Checking the local network path and preparing the next QR step.",
-            SetupStep.SenderShowInit => "Show the QR code to the listener device, then scan their confirm code.",
-            SetupStep.SenderVerifyCode => "Compare the 6-digit code with the listener and approve.",
-            SetupStep.ListenerScanInit => "Scan the sender's QR code to proceed.",
-            SetupStep.ListenerShowConfirm => "Show this QR code to the sender. Waiting for stream...",
+            SetupStep.Entry => "送信側か受信側を選ぶと、画面の案内に沿って進められます。",
+            SetupStep.PathDiagnosing => "同じネットワーク上で直接つなぐための準備をしています。",
+            SetupStep.SenderShowInit => "この大きい開始QRを受信側に見せてください。読み取り後は相手の応答QRを読み取ります。",
+            SetupStep.SenderVerifyCode => "両端末の6桁コードが同じなら接続してください。",
+            SetupStep.ListenerScanInit => "送信側に表示されている開始QRを読み取ってください。",
+            SetupStep.ListenerShowConfirm => "この応答QRと6桁コードを送信側に見せて接続を待ってください。",
             _ => string.Empty
         };
     }
+
+    private static string DescribeStreamState(StreamState state)
+    {
+        return state switch
+        {
+            StreamState.Idle => "待機中",
+            StreamState.Capturing => "準備中",
+            StreamState.Connecting => "接続中",
+            StreamState.Streaming => "接続済み",
+            StreamState.Interrupted => "一時中断",
+            StreamState.Failed => "対応が必要",
+            StreamState.Ended => "停止済み",
+            _ => "待機中"
+        };
+    }
+
+    private static string FormatVerificationCode(string value)
+    {
+        if (value.Length != 6)
+        {
+            return value;
+        }
+
+        return $"{value[..3]} - {value[3..]}";
+    }
+
+    private static string LocalizeFailureHint(string failureHint)
+    {
+        return failureHint switch
+        {
+            "usb_tether_detected_but_not_reachable" => "USB接続は見つかりましたが通信できません。",
+            "usb_tether_unavailable" => "USBテザリングが利用できません。",
+            "usb_tether_check" => "USBケーブル、信頼ダイアログ、USBテザリング設定を確認してください。",
+            "wifi_lan_check" => "両端末が同じWi-Fiまたは同じローカルネットワーク上にあるか確認してください。",
+            "network_interface_check" => "利用可能なローカルネットワークが見つかりませんでした。",
+            "peer_disconnected" => "相手端末との接続が切れました。",
+            "network_changed" => "ネットワークが変更されました。",
+            "native_backend_unavailable" => "接続モジュールが利用できません。",
+            _ => failureHint
+        };
+    }
+
+    private sealed record StartupState(IWebRtcBridge Bridge, BridgeBackendHealth BackendHealth);
 }
 
 public enum SetupStep

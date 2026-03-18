@@ -126,12 +126,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun beginSenderFlow() {
+        AppLogger.i("MainViewModel", "sender_flow_guidance", "Sender guidance selected")
+        _uiState.update {
+            it.copy(
+                setupMode = SetupMode.SENDER,
+                setupStep = SetupStep.SENDER_PREPARE,
+                payloadExpiresAtUnixMs = 0L,
+                initPayload = "",
+                confirmPayload = "",
+                localSenderFingerprint = "",
+                verificationCode = "",
+                pendingAnswerSdp = "",
+                activeSessionId = "",
+                failure = null,
+                statusMessage = text(R.string.status_sender_prepare)
+            )
+        }
+    }
+
     fun beginListenerFlow() {
         AppLogger.i("MainViewModel", "listener_flow_start", "Listener flow selected")
         _uiState.update {
             it.copy(
                 setupMode = SetupMode.LISTENER,
                 setupStep = SetupStep.LISTENER_SCAN_INIT,
+                payloadExpiresAtUnixMs = 0L,
                 initPayload = "",
                 confirmPayload = "",
                 localSenderFingerprint = "",
@@ -160,6 +180,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(
                 setupMode = SetupMode.SENDER,
                 setupStep = SetupStep.PATH_DIAGNOSING,
+                payloadExpiresAtUnixMs = 0L,
                 initPayload = "",
                 confirmPayload = "",
                 verificationCode = "",
@@ -272,6 +293,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         setupMode = SetupMode.SENDER,
                         setupStep = SetupStep.SENDER_SHOW_INIT,
+                        payloadExpiresAtUnixMs = payload.expiresAtUnixMs,
                         activeSessionId = payload.sessionId,
                         localSenderFingerprint = local.localFingerprint,
                         initPayload = QrPayloadCodec.encodeInit(payload),
@@ -351,6 +373,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         it.copy(
                             setupMode = SetupMode.LISTENER,
                             setupStep = SetupStep.LISTENER_SHOW_CONFIRM,
+                            payloadExpiresAtUnixMs = confirmPayload.expiresAtUnixMs,
                             activeSessionId = init.sessionId,
                             confirmPayload = QrPayloadCodec.encodeConfirm(confirmPayload),
                             verificationCode = verificationCode,
@@ -446,6 +469,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         setupMode = SetupMode.SENDER,
                         setupStep = SetupStep.SENDER_VERIFY_CODE,
+                        payloadExpiresAtUnixMs = 0L,
                         pendingAnswerSdp = confirm.answerSdp,
                         verificationCode = verificationCode,
                         statusMessage = text(R.string.status_verification_ready),
@@ -493,10 +517,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                     _uiState.update {
                         it.copy(
-                            setupMode = SetupMode.NONE,
-                            setupStep = SetupStep.ENTRY,
-                            pendingAnswerSdp = "",
-                            statusMessage = text(R.string.status_answer_applied)
+                                setupMode = SetupMode.SENDER,
+                                setupStep = SetupStep.ENTRY,
+                                payloadExpiresAtUnixMs = 0L,
+                                initPayload = "",
+                                confirmPayload = "",
+                                pendingAnswerSdp = "",
+                                statusMessage = text(R.string.status_answer_applied)
                         )
                     }
                 }

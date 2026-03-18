@@ -9,6 +9,7 @@ data class MainUiState(
     val statusMessage: String = "",
     val setupMode: SetupMode = SetupMode.NONE,
     val setupStep: SetupStep = SetupStep.ENTRY,
+    val payloadExpiresAtUnixMs: Long = 0L,
     val initPayload: String = "",
     val confirmPayload: String = "",
     val localSenderFingerprint: String = "",
@@ -27,6 +28,7 @@ enum class SetupMode {
 
 enum class SetupStep {
     ENTRY,
+    SENDER_PREPARE,
     PATH_DIAGNOSING,
     SENDER_SHOW_INIT,
     SENDER_VERIFY_CODE,

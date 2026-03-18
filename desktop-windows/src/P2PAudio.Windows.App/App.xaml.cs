@@ -4,7 +4,7 @@ namespace P2PAudio.Windows.App;
 
 public partial class App : Application
 {
-    private Window? _window;
+    private MainWindow? _window;
 
     public App()
     {
@@ -13,7 +13,14 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        _window = new MainWindow();
-        _window.Activate();
+        _ = args;
+
+        if (_window is null)
+        {
+            _window = new MainWindow();
+            _ = Task.Run(StartMenuShortcut.EnsureStartMenuShortcut);
+        }
+
+        _window.Present();
     }
 }
