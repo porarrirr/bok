@@ -1,5 +1,6 @@
 using System.Runtime.ExceptionServices;
 using CommunityToolkit.Mvvm.ComponentModel;
+using P2PAudio.Windows.App.Logging;
 using P2PAudio.Windows.App.Services;
 using P2PAudio.Windows.Core.Models;
 using P2PAudio.Windows.Core.Networking;
@@ -10,6 +11,9 @@ namespace P2PAudio.Windows.App.ViewModels;
 public sealed partial class MainViewModel : ObservableObject
 {
     private const long PayloadTtlMs = 600_000;
+    private const int ReceiveLoopIdleDelayMs = 5;
+    private const int ReceiveHealthCheckIdleTicks = 100;
+    private const long ReceiveStatsLogIntervalMs = 5_000;
 
     private IWebRtcBridge _bridge;
     private readonly Func<IWebRtcBridge>? _startupBridgeFactory;
@@ -26,6 +30,8 @@ public sealed partial class MainViewModel : ObservableObject
     private string _localSenderFingerprint = string.Empty;
     private string _pendingAnswerSdp = string.Empty;
     private int _receiveIdleTicks;
+    private long _receivedPackets;
+    private long _lastReceiveStatsLogAtMs = Environment.TickCount64;
     private IConnectionCodeSession? _connectionCodeSession;
     private CancellationTokenSource? _connectionCodeWaitCts;
 
@@ -490,6 +496,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         _receiveLoopStarted = true;
+        AppLogger.I("MainViewModel", "receive_loop_started", "Receive loop started");
         _ = Task.Run(() => ReceiveLoopAsync(_receiveLoopCts.Token));
     }
 
@@ -749,6 +756,16 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void RestartSetup(string message, FailureCode code)
     {
+        AppLogger.W(
+            "MainViewModel",
+            "setup_restarted",
+            "Restarting setup after a recoverable failure",
+            new Dictionary<string, object?>
+            {
+                ["message"] = message,
+                ["code"] = FailureCodeMapper.ToWireValue(code)
+            }
+        );
         ResetConnectionCodeSession();
         _bridge.Close();
         StopLoopbackIfRunning();
@@ -769,6 +786,16 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void SetFailureState(string message, FailureCode code)
     {
+        AppLogger.E(
+            "MainViewModel",
+            "stream_failed",
+            "Stream entered failed state",
+            new Dictionary<string, object?>
+            {
+                ["message"] = message,
+                ["code"] = FailureCodeMapper.ToWireValue(code)
+            }
+        );
         ResetConnectionCodeSession();
         CurrentSetupStep = SetupStep.Entry;
         FlowStateLabel = "案内: 最初からやり直し";
@@ -785,6 +812,16 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        AppLogger.W(
+            "MainViewModel",
+            "stream_interrupted",
+            "Stream entered interrupted state",
+            new Dictionary<string, object?>
+            {
+                ["message"] = message,
+                ["code"] = FailureCodeMapper.ToWireValue(code)
+            }
+        );
         SetStreamState(StreamState.Interrupted);
         SetFailureCode(code);
         StatusMessage = message;
@@ -825,9 +862,12 @@ public sealed partial class MainViewModel : ObservableObject
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                if (_bridge.TryReceivePcmPacket(out var packet))
+                var receivedPacket = false;
+                while (_bridge.TryReceivePcmPacket(out var packet))
                 {
+                    receivedPacket = true;
                     _receiveIdleTicks = 0;
+                    _receivedPackets++;
                     if (!_playbackService.PlayPacket(packet))
                     {
                         continue;
@@ -847,16 +887,21 @@ public sealed partial class MainViewModel : ObservableObject
                             StatusMessage = "接続が復旧しました。";
                         }
                     });
+                }
+
+                if (receivedPacket)
+                {
+                    LogReceiveStatsIfNeeded();
                     continue;
                 }
 
                 _receiveIdleTicks++;
-                if (_receiveIdleTicks % 25 == 0)
+                if (_receiveIdleTicks % ReceiveHealthCheckIdleTicks == 0)
                 {
                     EvaluateStreamHealth();
                 }
 
-                await Task.Delay(20, cancellationToken);
+                await Task.Delay(ReceiveLoopIdleDelayMs, cancellationToken);
             }
         }
         catch (OperationCanceledException)
@@ -864,8 +909,32 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            AppLogger.E("MainViewModel", "receive_loop_failed", "Receive loop failed", exception: ex);
             RunOnUiThread(() => SetFailureState($"受信処理で問題が発生しました: {ex.Message}", FailureCode.WebRtcNegotiationFailed));
         }
+    }
+
+    private void LogReceiveStatsIfNeeded()
+    {
+        var now = Environment.TickCount64;
+        if (now - _lastReceiveStatsLogAtMs < ReceiveStatsLogIntervalMs)
+        {
+            return;
+        }
+
+        _lastReceiveStatsLogAtMs = now;
+        AppLogger.D(
+            "MainViewModel",
+            "receive_loop_stats",
+            "Receive loop stats",
+            new Dictionary<string, object?>
+            {
+                ["receivedPackets"] = _receivedPackets,
+                ["streamState"] = CurrentStreamState.ToString(),
+                ["setupStep"] = CurrentSetupStep.ToString(),
+                ["idleTicks"] = _receiveIdleTicks
+            }
+        );
     }
 
     private void EvaluateStreamHealth()

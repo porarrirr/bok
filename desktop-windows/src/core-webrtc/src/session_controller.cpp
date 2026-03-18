@@ -27,6 +27,7 @@ namespace {
 
 constexpr auto kNegotiationTimeout = std::chrono::seconds(12);
 constexpr auto kDataChannelOpenTimeout = std::chrono::seconds(12);
+constexpr int kMaxBufferedAmountBytes = 256000;
 
 std::string trim_copy(std::string value) {
     while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())) != 0) {
@@ -254,7 +255,11 @@ offer_result session_controller::create_offer() {
     diagnostics_.selected_candidate_pair_type.clear();
     diagnostics_.failure_hint.clear();
 
-    data_channel_id_ = rtcCreateDataChannel(peer_connection_id_, "audio-pcm");
+    rtcDataChannelInit data_channel_init{};
+    data_channel_init.reliability.unordered = false;
+    data_channel_init.reliability.unreliable = true;
+    data_channel_init.reliability.maxRetransmits = 0;
+    data_channel_id_ = rtcCreateDataChannelEx(peer_connection_id_, "audio-pcm", &data_channel_init);
     if (data_channel_id_ < 0) {
         close_locked();
         throw std::runtime_error(format_error("create_data_channel_failed", data_channel_id_));
@@ -506,6 +511,12 @@ bool session_controller::send_pcm_frame(const uint8_t* data, std::size_t size) {
         return false;
     }
     data_channel_open_ = true;
+
+    const auto buffered_amount = rtcGetBufferedAmount(data_channel_id_);
+    if (buffered_amount > kMaxBufferedAmountBytes) {
+        diagnostics_.failure_hint = "send_pcm_backpressure";
+        return false;
+    }
 
     const auto send_result = rtcSendMessage(data_channel_id_, reinterpret_cast<const char*>(data), static_cast<int>(size));
     if (send_result < 0) {

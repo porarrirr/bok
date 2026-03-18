@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using P2PAudio.Windows.App.Logging;
 using P2PAudio.Windows.Core.Models;
 using P2PAudio.Windows.Core.Protocol;
 
@@ -7,10 +8,12 @@ namespace P2PAudio.Windows.App.Services;
 public sealed class NativeWebRtcBridge : IWebRtcBridge, IDisposable
 {
     private const int MaxReceivePacketBytes = 65_536;
+    private const long SendFailureLogIntervalMs = 1_000;
 
     private readonly nint _handle;
     private readonly byte[] _receiveBuffer = new byte[MaxReceivePacketBytes];
     private bool _disposed;
+    private long _lastSendFailureLogAtMs;
 
     public NativeWebRtcBridge()
     {
@@ -19,6 +22,8 @@ public sealed class NativeWebRtcBridge : IWebRtcBridge, IDisposable
         {
             throw new InvalidOperationException("Failed to create native WebRTC controller");
         }
+
+        AppLogger.I("NativeWebRtcBridge", "bridge_created", "Native WebRTC bridge created");
     }
 
     public bool IsNativeBackend => true;
@@ -105,9 +110,34 @@ public sealed class NativeWebRtcBridge : IWebRtcBridge, IDisposable
         EnsureNotDisposed();
         if (packet.Length == 0)
         {
+            AppLogger.W("NativeWebRtcBridge", "send_empty_packet", "Attempted to send an empty PCM packet");
             return false;
         }
-        return NativeMethods.core_webrtc_send_pcm_frame(_handle, packet, (nuint)packet.Length) != 0;
+
+        var sent = NativeMethods.core_webrtc_send_pcm_frame(_handle, packet, (nuint)packet.Length) != 0;
+        if (!sent)
+        {
+            var now = Environment.TickCount64;
+            if (now - _lastSendFailureLogAtMs >= SendFailureLogIntervalMs)
+            {
+                _lastSendFailureLogAtMs = now;
+                var diagnostics = GetDiagnostics();
+                AppLogger.W(
+                    "NativeWebRtcBridge",
+                    "send_pcm_failed",
+                    "Native bridge rejected a PCM packet",
+                    new Dictionary<string, object?>
+                    {
+                        ["packetBytes"] = packet.Length,
+                        ["failureHint"] = diagnostics.FailureHint,
+                        ["pathType"] = diagnostics.PathType.ToString(),
+                        ["selectedCandidatePairType"] = diagnostics.SelectedCandidatePairType
+                    }
+                );
+            }
+        }
+
+        return sent;
     }
 
     public bool TryReceivePcmPacket(out byte[] packet)
@@ -177,6 +207,7 @@ public sealed class NativeWebRtcBridge : IWebRtcBridge, IDisposable
     public void Close()
     {
         if (_disposed) return;
+        AppLogger.I("NativeWebRtcBridge", "bridge_close", "Closing native WebRTC bridge");
         NativeMethods.core_webrtc_close(_handle);
     }
 
@@ -246,6 +277,7 @@ public sealed class NativeWebRtcBridge : IWebRtcBridge, IDisposable
     public void Dispose()
     {
         if (_disposed) return;
+        AppLogger.I("NativeWebRtcBridge", "bridge_dispose", "Disposing native WebRTC bridge");
         NativeMethods.core_webrtc_close(_handle);
         NativeMethods.core_webrtc_destroy(_handle);
         _disposed = true;

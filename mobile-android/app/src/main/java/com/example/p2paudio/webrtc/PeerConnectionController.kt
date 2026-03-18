@@ -34,6 +34,7 @@ class PeerConnectionController(
     private var audioDataChannel: DataChannel? = null
     private var currentSessionId: String? = null
     private var lastSendDropLogAtMs = 0L
+    private var lastBufferPressureLogAtMs = 0L
     private var connectionDiagnostics = ConnectionDiagnostics()
 
     suspend fun createOfferSession(): Result<LocalOfferResult> = withContext(Dispatchers.IO) {
@@ -177,7 +178,14 @@ class PeerConnectionController(
             )
             return false
         }
-        return channel.send(DataChannel.Buffer(ByteBuffer.wrap(packet), true))
+        val sent = channel.send(DataChannel.Buffer(ByteBuffer.wrap(packet), true))
+        if (!sent) {
+            logDroppedFrame(
+                reason = "data_channel_send_false",
+                context = mapOf("bufferedAmount" to channel.bufferedAmount())
+            )
+        }
+        return sent
     }
 
     fun close() {
@@ -206,7 +214,15 @@ class PeerConnectionController(
         }
         val channel = peer.createDataChannel(AUDIO_CHANNEL_LABEL, init)
             ?: error("Failed to create audio data channel")
-        AppLogger.i("PeerConnection", "data_channel_create", "Created local audio data channel")
+        AppLogger.i(
+            "PeerConnection",
+            "data_channel_create",
+            "Created local audio data channel",
+            context = mapOf(
+                "ordered" to init.ordered,
+                "maxRetransmits" to init.maxRetransmits
+            )
+        )
         bindAudioDataChannel(channel)
     }
 
@@ -218,7 +234,24 @@ class PeerConnectionController(
         }
 
         channel.registerObserver(object : DataChannel.Observer {
-            override fun onBufferedAmountChange(previousAmount: Long) = Unit
+            override fun onBufferedAmountChange(previousAmount: Long) {
+                val currentAmount = channel.bufferedAmount()
+                val now = System.currentTimeMillis()
+                if (currentAmount >= BUFFER_PRESSURE_WARNING_BYTES &&
+                    now - lastBufferPressureLogAtMs >= BUFFER_PRESSURE_LOG_INTERVAL_MS
+                ) {
+                    lastBufferPressureLogAtMs = now
+                    AppLogger.w(
+                        "PeerConnection",
+                        "data_channel_buffer_pressure",
+                        "Data channel buffered amount is elevated",
+                        context = mapOf(
+                            "bufferedAmount" to currentAmount,
+                            "previousAmount" to previousAmount
+                        )
+                    )
+                }
+            }
 
             override fun onStateChange() {
                 AppLogger.i(
@@ -549,6 +582,8 @@ class PeerConnectionController(
         private const val ICE_GATHER_TIMEOUT_MS = 8_000L
         private const val AUDIO_CHANNEL_LABEL = "audio-pcm"
         private const val MAX_BUFFERED_AMOUNT_BYTES = 256_000L
-        private const val SEND_DROP_LOG_INTERVAL_MS = 3_000L
+        private const val BUFFER_PRESSURE_WARNING_BYTES = 128_000L
+        private const val SEND_DROP_LOG_INTERVAL_MS = 1_000L
+        private const val BUFFER_PRESSURE_LOG_INTERVAL_MS = 1_000L
     }
 }

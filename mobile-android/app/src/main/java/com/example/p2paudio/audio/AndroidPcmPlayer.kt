@@ -4,6 +4,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Process
+import com.example.p2paudio.logging.AppLogger
 import java.util.PriorityQueue
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
@@ -19,6 +20,12 @@ class AndroidPcmPlayer {
     private var lastFormatKey: String? = null
     private var frameBytes: Int = 0
     private var frameDurationMs: Long = 20
+    private var playedFrames: Long = 0
+    private var insertedSilenceFrames: Long = 0
+    private var queueOverflowDrops: Long = 0
+    private var staleFrameDrops: Long = 0
+    private var lastStatsLogAtMs: Long = System.currentTimeMillis()
+    private var lastWarningLogAtMs: Long = 0L
 
     fun enqueue(frame: PcmFrame) {
         if (frame.pcmBytes.isEmpty()) {
@@ -28,6 +35,12 @@ class AndroidPcmPlayer {
         synchronized(lock) {
             val formatKey = "${frame.sampleRate}-${frame.channels}-${frame.bitsPerSample}"
             if (lastFormatKey != null && lastFormatKey != formatKey) {
+                AppLogger.i(
+                    "PcmPlayer",
+                    "player_format_change",
+                    "PCM player format changed; resetting playback state",
+                    context = mapOf("from" to lastFormatKey, "to" to formatKey)
+                )
                 resetUnsafe()
             }
             if (audioTrack == null) {
@@ -40,6 +53,15 @@ class AndroidPcmPlayer {
             pendingFrames.add(frame)
             if (pendingFrames.size > MAX_QUEUE_FRAMES) {
                 pendingFrames.poll()
+                queueOverflowDrops++
+                logPlaybackWarning(
+                    event = "player_queue_overflow",
+                    message = "Dropped the oldest queued frame to cap playback latency",
+                    context = mapOf(
+                        "queueSize" to pendingFrames.size,
+                        "queueOverflowDrops" to queueOverflowDrops
+                    )
+                )
             }
             lock.notifyAll()
         }
@@ -57,6 +79,23 @@ class AndroidPcmPlayer {
         }
         playbackThread?.interrupt()
         playbackThread = null
+        AppLogger.i(
+            "PcmPlayer",
+            "player_stop",
+            "PCM player stopped",
+            context = mapOf(
+                "playedFrames" to playedFrames,
+                "insertedSilenceFrames" to insertedSilenceFrames,
+                "queueOverflowDrops" to queueOverflowDrops,
+                "staleFrameDrops" to staleFrameDrops
+            )
+        )
+        playedFrames = 0
+        insertedSilenceFrames = 0
+        queueOverflowDrops = 0
+        staleFrameDrops = 0
+        lastStatsLogAtMs = System.currentTimeMillis()
+        lastWarningLogAtMs = 0L
     }
 
     private fun startPlaybackLoop() {
@@ -92,7 +131,18 @@ class AndroidPcmPlayer {
                 }
                 val track = trackToWrite ?: continue
                 val bytes = bytesToWrite ?: continue
-                track.write(bytes, 0, bytes.size, AudioTrack.WRITE_BLOCKING)
+                val writeResult = track.write(bytes, 0, bytes.size, AudioTrack.WRITE_BLOCKING)
+                if (writeResult < 0) {
+                    logPlaybackWarning(
+                        event = "player_write_failed",
+                        message = "AudioTrack write failed",
+                        context = mapOf("writeResult" to writeResult)
+                    )
+                    continue
+                }
+
+                playedFrames++
+                logStatsIfNeeded()
             }
         }.apply {
             name = "android-pcm-player"
@@ -108,6 +158,9 @@ class AndroidPcmPlayer {
 
         val expected = expectedSequence
         if (expected == null) {
+            if (pendingFrames.size < STARTUP_PREBUFFER_FRAMES) {
+                return null
+            }
             val first = pendingFrames.poll() ?: return null
             expectedSequence = first.sequence + 1
             return first.pcmBytes
@@ -120,6 +173,7 @@ class AndroidPcmPlayer {
                 break
             }
             pendingFrames.poll()
+            staleFrameDrops++
         }
 
         val head = pendingFrames.peek()
@@ -134,6 +188,17 @@ class AndroidPcmPlayer {
         }
 
         expectedSequence = expected + 1
+        insertedSilenceFrames++
+        logPlaybackWarning(
+            event = "player_gap_concealed",
+            message = "Inserted silence for a missing PCM frame",
+            context = mapOf(
+                "expectedSequence" to expected,
+                "pendingFrames" to pendingFrames.size,
+                "insertedSilenceFrames" to insertedSilenceFrames,
+                "staleFrameDrops" to staleFrameDrops
+            )
+        )
         return ByteArray(frameBytes)
     }
 
@@ -149,6 +214,17 @@ class AndroidPcmPlayer {
             AudioFormat.ENCODING_PCM_16BIT
         )
         val bufferSize = max(minBufferSize, frame.pcmBytes.size * MIN_TRACK_BUFFER_FRAMES)
+        AppLogger.i(
+            "PcmPlayer",
+            "player_track_create",
+            "Creating AudioTrack for remote PCM playback",
+            context = mapOf(
+                "sampleRate" to frame.sampleRate,
+                "channels" to frame.channels,
+                "frameBytes" to frame.pcmBytes.size,
+                "bufferSize" to bufferSize
+            )
+        )
         return AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -187,9 +263,42 @@ class AndroidPcmPlayer {
         audioTrack = null
     }
 
+    private fun logPlaybackWarning(event: String, message: String, context: Map<String, Any?>) {
+        val now = System.currentTimeMillis()
+        if (now - lastWarningLogAtMs < WARNING_LOG_INTERVAL_MS) {
+            return
+        }
+        lastWarningLogAtMs = now
+        AppLogger.w("PcmPlayer", event, message, context)
+    }
+
+    private fun logStatsIfNeeded() {
+        val now = System.currentTimeMillis()
+        if (now - lastStatsLogAtMs < STATS_LOG_INTERVAL_MS) {
+            return
+        }
+
+        lastStatsLogAtMs = now
+        AppLogger.d(
+            "PcmPlayer",
+            "player_stats",
+            "PCM player stats",
+            context = mapOf(
+                "playedFrames" to playedFrames,
+                "insertedSilenceFrames" to insertedSilenceFrames,
+                "queueOverflowDrops" to queueOverflowDrops,
+                "staleFrameDrops" to staleFrameDrops,
+                "queueDepth" to synchronized(lock) { pendingFrames.size }
+            )
+        )
+    }
+
     companion object {
-        private const val PREBUFFER_FRAMES = 2
-        private const val MAX_QUEUE_FRAMES = 10
-        private const val MIN_TRACK_BUFFER_FRAMES = 8
+        private const val STARTUP_PREBUFFER_FRAMES = 4
+        private const val PREBUFFER_FRAMES = 4
+        private const val MAX_QUEUE_FRAMES = 24
+        private const val MIN_TRACK_BUFFER_FRAMES = 12
+        private const val STATS_LOG_INTERVAL_MS = 5_000L
+        private const val WARNING_LOG_INTERVAL_MS = 1_000L
     }
 }
