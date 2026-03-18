@@ -1,0 +1,37 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.10.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "P2PAudio.Windows.Core", "src\P2PAudio.Windows.Core\P2PAudio.Windows.Core.csproj", "{A1B2C3D4-1111-2222-3333-444455556666}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "P2PAudio.Windows.App", "src\P2PAudio.Windows.App\P2PAudio.Windows.App.csproj", "{A1B2C3D4-1111-2222-3333-444455557777}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "P2PAudio.Windows.Core.Tests", "tests\P2PAudio.Windows.Core.Tests\P2PAudio.Windows.Core.Tests.csproj", "{A1B2C3D4-1111-2222-3333-444455558888}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "P2PAudio.Windows.App.Tests", "tests\P2PAudio.Windows.App.Tests\P2PAudio.Windows.App.Tests.csproj", "{A1B2C3D4-1111-2222-3333-444455559999}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A1B2C3D4-1111-2222-3333-444455556666}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1111-2222-3333-444455556666}.Debug|x64.Build.0 = Debug|Any CPU
+		{A1B2C3D4-1111-2222-3333-444455556666}.Release|x64.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-1111-2222-3333-444455556666}.Release|x64.Build.0 = Release|Any CPU
+		{A1B2C3D4-1111-2222-3333-444455557777}.Debug|x64.ActiveCfg = Debug|x64
+		{A1B2C3D4-1111-2222-3333-444455557777}.Debug|x64.Build.0 = Debug|x64
+		{A1B2C3D4-1111-2222-3333-444455557777}.Release|x64.ActiveCfg = Release|x64
+		{A1B2C3D4-1111-2222-3333-444455557777}.Release|x64.Build.0 = Release|x64
+		{A1B2C3D4-1111-2222-3333-444455558888}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1111-2222-3333-444455558888}.Debug|x64.Build.0 = Debug|Any CPU
+		{A1B2C3D4-1111-2222-3333-444455558888}.Release|x64.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-1111-2222-3333-444455558888}.Release|x64.Build.0 = Release|Any CPU
+		{A1B2C3D4-1111-2222-3333-444455559999}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1111-2222-3333-444455559999}.Debug|x64.Build.0 = Debug|Any CPU
+		{A1B2C3D4-1111-2222-3333-444455559999}.Release|x64.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-1111-2222-3333-444455559999}.Release|x64.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

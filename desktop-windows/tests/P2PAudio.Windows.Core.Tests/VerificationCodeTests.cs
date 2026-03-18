@@ -16,4 +16,16 @@ public sealed class VerificationCodeTests
         Assert.Equal(6, code.Length);
         Assert.Matches("^[0-9]{6}$", code);
     }
+
+    [Fact]
+    public void MatchesKnownCrossPlatformVector()
+    {
+        var code = VerificationCode.FromSessionAndFingerprints(
+            sessionId: "session-a",
+            senderFingerprint: "sender-fp",
+            receiverFingerprint: "receiver-fp"
+        );
+
+        Assert.Equal("912851", code);
+    }
 }

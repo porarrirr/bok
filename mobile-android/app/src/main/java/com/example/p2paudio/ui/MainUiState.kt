@@ -27,6 +27,7 @@ enum class SetupMode {
 
 enum class SetupStep {
     ENTRY,
+    PATH_DIAGNOSING,
     SENDER_SHOW_INIT,
     SENDER_VERIFY_CODE,
     LISTENER_SCAN_INIT,

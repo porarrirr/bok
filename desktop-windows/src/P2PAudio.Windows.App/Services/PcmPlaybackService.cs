@@ -11,12 +11,12 @@ public sealed class PcmPlaybackService : IDisposable
     private BufferedWaveProvider? _bufferedProvider;
     private WaveFormat? _currentFormat;
 
-    public void PlayPacket(byte[] packet)
+    public bool PlayPacket(byte[] packet)
     {
         var frame = PcmPacketCodec.Decode(packet);
         if (frame is null)
         {
-            return;
+            return false;
         }
 
         lock (_sync)
@@ -24,6 +24,7 @@ public sealed class PcmPlaybackService : IDisposable
             EnsureOutput(frame.SampleRate, frame.Channels);
             _bufferedProvider!.AddSamples(frame.PcmBytes, 0, frame.PcmBytes.Length);
         }
+        return true;
     }
 
     public void Stop()

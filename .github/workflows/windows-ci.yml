@@ -79,7 +79,7 @@ jobs:
         run: dotnet test desktop-windows/tests/P2PAudio.Windows.Core.Tests/P2PAudio.Windows.Core.Tests.csproj -c Release --no-build
 
       - name: Build Windows App
-        run: dotnet build desktop-windows/src/P2PAudio.Windows.App/P2PAudio.Windows.App.csproj -c Release -r win10-x64 -p:Platform=x64
+        run: dotnet build desktop-windows/src/P2PAudio.Windows.App/P2PAudio.Windows.App.csproj -c Release -p:Platform=x64
 
       - name: Run Windows App tests
         run: dotnet test desktop-windows/tests/P2PAudio.Windows.App.Tests/P2PAudio.Windows.App.Tests.csproj -c Release

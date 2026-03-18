@@ -21,6 +21,7 @@
     <string name="status_failure_format">Issue: %1$s</string>
     <string name="status_next_action_title">Next step</string>
     <string name="status_ready">Choose one start action below.</string>
+    <string name="status_path_diagnosing">Checking the local network path and preparing the session.</string>
     <string name="status_listener_ready_to_scan">Scan the sender init QR.</string>
     <string name="status_receiving_remote_audio">Receiving audio from the other device</string>
     <string name="status_capturing">Preparing audio sharing</string>
@@ -35,6 +36,9 @@
     <string name="status_ice_connection_failed">Could not establish a direct connection</string>
 
     <string name="status_next_action_entry">Tap either Start Sharing or Scan Sender QR.</string>
+    <string name="status_next_action_diagnosing">Wait while the app checks the local path and prepares the QR flow.</string>
+    <string name="status_next_action_connecting">Waiting for the direct connection to finish.</string>
+    <string name="status_next_action_recovering">Waiting for the stream to recover. Keep both devices on the same local network.</string>
     <string name="status_next_action_show_init">Show the init QR and ask the listener to scan it.</string>
     <string name="status_next_action_scan_init">Use Scan Sender QR to read the sender init QR.</string>
     <string name="status_next_action_show_confirm">Show your confirm QR and 6-digit code to the sender.</string>
@@ -60,6 +64,8 @@
 
     <string name="flow_entry_title">Step 1: Choose start action</string>
     <string name="flow_entry_description">No manual code input. Use QR scan only.</string>
+    <string name="flow_diagnosing_title">Step 2: Check local path</string>
+    <string name="flow_diagnosing_description">Checking the current local network path before the QR pairing step.</string>
 
     <string name="flow_sender_step_title">Step 2: Show init QR</string>
     <string name="flow_sender_step_description">After the listener scans this QR, scan their confirm QR.</string>

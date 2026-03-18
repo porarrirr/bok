@@ -217,6 +217,15 @@ private fun MainScreen(
     val clipboardManager = LocalClipboardManager.current
     val initCopiedText = stringResource(R.string.flow_sender_payload_copied)
     val confirmCopiedText = stringResource(R.string.flow_receiver_payload_copied)
+    val canStartNewFlow = uiState.setupStep == SetupStep.ENTRY && uiState.streamState == AudioStreamState.IDLE
+    val canStopSession = !canStartNewFlow
+    val showSetupCards = when (uiState.streamState) {
+        AudioStreamState.STREAMING,
+        AudioStreamState.INTERRUPTED,
+        AudioStreamState.FAILED,
+        AudioStreamState.ENDED -> false
+        else -> true
+    }
 
     val initQr = remember(uiState.initPayload) {
         uiState.initPayload.takeIf { it.isNotBlank() }?.let { QrCodeEncoder.generate(it) }
@@ -257,7 +266,9 @@ private fun MainScreen(
             EntryActionsCard(
                 onStartSender = onStartSender,
                 onStartListenerScan = onStartListenerScan,
-                onStop = onStop
+                onStop = onStop,
+                canStartNewFlow = canStartNewFlow,
+                canStopSession = canStopSession
             )
 
             if (transientMessage.isNotBlank()) {
@@ -271,114 +282,131 @@ private fun MainScreen(
                 )
             }
 
-            when (uiState.setupStep) {
-                SetupStep.ENTRY -> Unit
-                SetupStep.SENDER_SHOW_INIT -> StepCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("sender_init_step_card"),
-                    number = 1,
-                    title = stringResource(R.string.flow_sender_step_title),
-                    description = stringResource(R.string.flow_sender_step_description)
-                ) {
-                    if (uiState.initPayload.isBlank()) {
+            if (showSetupCards) {
+                when (uiState.setupStep) {
+                    SetupStep.ENTRY -> Unit
+                    SetupStep.PATH_DIAGNOSING -> StepCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("path_diagnosing_step_card"),
+                        number = 2,
+                        title = stringResource(R.string.flow_diagnosing_title),
+                        description = stringResource(R.string.flow_diagnosing_description)
+                    ) {
                         Text(
-                            text = stringResource(R.string.flow_sender_waiting_code),
+                            text = stringResource(R.string.status_path_diagnosing),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    } else {
-                        ConnectionCodeBlock(
-                            payloadTitle = stringResource(R.string.flow_sender_payload_title),
-                            payloadValue = uiState.initPayload,
-                            payloadQr = initQr,
-                            payloadQrDescription = stringResource(R.string.flow_sender_qr_description),
-                            onCopyPayload = {
-                                clipboardManager.setText(AnnotatedString(uiState.initPayload))
-                                transientMessage = initCopiedText
-                            }
-                        )
                     }
-                    FilledTonalButton(
+
+                    SetupStep.SENDER_SHOW_INIT -> StepCard(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 46.dp)
-                            .testTag("scan_confirm_button"),
-                        enabled = uiState.initPayload.isNotBlank(),
-                        onClick = onScanConfirm
+                            .testTag("sender_init_step_card"),
+                        number = 2,
+                        title = stringResource(R.string.flow_sender_step_title),
+                        description = stringResource(R.string.flow_sender_step_description)
                     ) {
-                        Text(stringResource(R.string.flow_sender_scan_button))
-                    }
-                }
-
-                SetupStep.SENDER_VERIFY_CODE -> StepCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("sender_verify_card"),
-                    number = 2,
-                    title = stringResource(R.string.flow_verification_title),
-                    description = stringResource(R.string.flow_verification_description)
-                ) {
-                    VerificationCodeBlock(code = uiState.verificationCode)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Button(
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = 46.dp)
-                                .testTag("verification_match_button"),
-                            onClick = onVerificationMatch
-                        ) {
-                            Text(stringResource(R.string.flow_verification_match))
+                        if (uiState.initPayload.isBlank()) {
+                            Text(
+                                text = stringResource(R.string.flow_sender_waiting_code),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            ConnectionCodeBlock(
+                                payloadTitle = stringResource(R.string.flow_sender_payload_title),
+                                payloadValue = uiState.initPayload,
+                                payloadQr = initQr,
+                                payloadQrDescription = stringResource(R.string.flow_sender_qr_description),
+                                onCopyPayload = {
+                                    clipboardManager.setText(AnnotatedString(uiState.initPayload))
+                                    transientMessage = initCopiedText
+                                }
+                            )
                         }
                         FilledTonalButton(
                             modifier = Modifier
-                                .weight(1f)
+                                .fillMaxWidth()
                                 .heightIn(min = 46.dp)
-                                .testTag("verification_mismatch_button"),
-                            onClick = onVerificationMismatch
+                                .testTag("scan_confirm_button"),
+                            enabled = uiState.initPayload.isNotBlank(),
+                            onClick = onScanConfirm
                         ) {
-                            Text(stringResource(R.string.flow_verification_mismatch))
+                            Text(stringResource(R.string.flow_sender_scan_button))
                         }
                     }
-                }
 
-                SetupStep.LISTENER_SCAN_INIT -> StepCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("listener_scan_step_card"),
-                    number = 1,
-                    title = stringResource(R.string.flow_receiver_step_title),
-                    description = stringResource(R.string.flow_receiver_step_description)
-                ) {
-                    Text(
-                        text = stringResource(R.string.flow_receiver_waiting_code),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                SetupStep.LISTENER_SHOW_CONFIRM -> StepCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("listener_confirm_step_card"),
-                    number = 2,
-                    title = stringResource(R.string.flow_receiver_confirm_title),
-                    description = stringResource(R.string.flow_receiver_confirm_description)
-                ) {
-                    ConnectionCodeBlock(
-                        payloadTitle = stringResource(R.string.flow_receiver_payload_title),
-                        payloadValue = uiState.confirmPayload,
-                        payloadQr = confirmQr,
-                        payloadQrDescription = stringResource(R.string.flow_receiver_qr_description),
-                        onCopyPayload = {
-                            clipboardManager.setText(AnnotatedString(uiState.confirmPayload))
-                            transientMessage = confirmCopiedText
+                    SetupStep.SENDER_VERIFY_CODE -> StepCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("sender_verify_card"),
+                        number = 3,
+                        title = stringResource(R.string.flow_verification_title),
+                        description = stringResource(R.string.flow_verification_description)
+                    ) {
+                        VerificationCodeBlock(code = uiState.verificationCode)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Button(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 46.dp)
+                                    .testTag("verification_match_button"),
+                                onClick = onVerificationMatch
+                            ) {
+                                Text(stringResource(R.string.flow_verification_match))
+                            }
+                            FilledTonalButton(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 46.dp)
+                                    .testTag("verification_mismatch_button"),
+                                onClick = onVerificationMismatch
+                            ) {
+                                Text(stringResource(R.string.flow_verification_mismatch))
+                            }
                         }
-                    )
-                    VerificationCodeBlock(code = uiState.verificationCode)
+                    }
+
+                    SetupStep.LISTENER_SCAN_INIT -> StepCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("listener_scan_step_card"),
+                        number = 2,
+                        title = stringResource(R.string.flow_receiver_step_title),
+                        description = stringResource(R.string.flow_receiver_step_description)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.flow_receiver_waiting_code),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    SetupStep.LISTENER_SHOW_CONFIRM -> StepCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("listener_confirm_step_card"),
+                        number = 3,
+                        title = stringResource(R.string.flow_receiver_confirm_title),
+                        description = stringResource(R.string.flow_receiver_confirm_description)
+                    ) {
+                        ConnectionCodeBlock(
+                            payloadTitle = stringResource(R.string.flow_receiver_payload_title),
+                            payloadValue = uiState.confirmPayload,
+                            payloadQr = confirmQr,
+                            payloadQrDescription = stringResource(R.string.flow_receiver_qr_description),
+                            onCopyPayload = {
+                                clipboardManager.setText(AnnotatedString(uiState.confirmPayload))
+                                transientMessage = confirmCopiedText
+                            }
+                        )
+                        VerificationCodeBlock(code = uiState.verificationCode)
+                    }
                 }
             }
         }
@@ -516,7 +544,9 @@ private fun SessionStatusCard(uiState: MainUiState) {
 private fun EntryActionsCard(
     onStartSender: () -> Unit,
     onStartListenerScan: () -> Unit,
-    onStop: () -> Unit
+    onStop: () -> Unit,
+    canStartNewFlow: Boolean,
+    canStopSession: Boolean
 ) {
     StepCard(
         modifier = Modifier
@@ -535,6 +565,7 @@ private fun EntryActionsCard(
                     .weight(1f)
                     .heightIn(min = 46.dp)
                     .testTag("entry_start_sender_button"),
+                enabled = canStartNewFlow,
                 onClick = onStartSender
             ) {
                 Text(stringResource(R.string.action_start_sender))
@@ -544,6 +575,7 @@ private fun EntryActionsCard(
                     .weight(1f)
                     .heightIn(min = 46.dp)
                     .testTag("entry_scan_init_button"),
+                enabled = canStartNewFlow,
                 onClick = onStartListenerScan
             ) {
                 Text(stringResource(R.string.action_start_listener_scan))
@@ -553,6 +585,7 @@ private fun EntryActionsCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 46.dp),
+            enabled = canStopSession,
             onClick = onStop
         ) {
             Text(stringResource(R.string.action_stop_session))
@@ -707,6 +740,12 @@ private fun recommendedActionRes(uiState: MainUiState): Int {
     if (uiState.streamState == AudioStreamState.STREAMING) {
         return R.string.status_next_action_connected
     }
+    if (uiState.streamState == AudioStreamState.INTERRUPTED) {
+        return R.string.status_next_action_recovering
+    }
+    if (uiState.streamState == AudioStreamState.CONNECTING && uiState.setupStep == SetupStep.ENTRY) {
+        return R.string.status_next_action_connecting
+    }
     uiState.failure?.let { failure ->
         return when (failure.code) {
             FailureCode.PERMISSION_DENIED -> R.string.status_next_action_permission
@@ -719,6 +758,7 @@ private fun recommendedActionRes(uiState: MainUiState): Int {
     }
     return when (uiState.setupStep) {
         SetupStep.ENTRY -> R.string.status_next_action_entry
+        SetupStep.PATH_DIAGNOSING -> R.string.status_next_action_diagnosing
         SetupStep.SENDER_SHOW_INIT -> R.string.status_next_action_show_init
         SetupStep.SENDER_VERIFY_CODE -> R.string.status_next_action_verify
         SetupStep.LISTENER_SCAN_INIT -> R.string.status_next_action_scan_init

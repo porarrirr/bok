@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using Windows.Media.Capture;
 using ZXing;
+using ZXing.Windows.Compatibility;
 
 namespace P2PAudio.Windows.App.Services;
 

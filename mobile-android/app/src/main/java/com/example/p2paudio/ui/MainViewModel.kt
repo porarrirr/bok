@@ -159,14 +159,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update {
             it.copy(
                 setupMode = SetupMode.SENDER,
-                setupStep = SetupStep.SENDER_SHOW_INIT,
+                setupStep = SetupStep.PATH_DIAGNOSING,
                 initPayload = "",
                 confirmPayload = "",
                 verificationCode = "",
                 pendingAnswerSdp = "",
                 activeSessionId = "",
                 failure = null,
-                statusMessage = text(R.string.status_capturing)
+                statusMessage = text(R.string.status_path_diagnosing)
             )
         }
 
@@ -231,7 +231,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update {
             it.copy(
                 streamState = AudioStreamState.CAPTURING,
-                statusMessage = text(R.string.status_capturing)
+                statusMessage = text(R.string.status_path_diagnosing)
             )
         }
         createInitPayload()
@@ -493,8 +493,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                     _uiState.update {
                         it.copy(
-                            setupMode = SetupMode.SENDER,
-                            setupStep = SetupStep.SENDER_SHOW_INIT,
+                            setupMode = SetupMode.NONE,
+                            setupStep = SetupStep.ENTRY,
                             pendingAnswerSdp = "",
                             statusMessage = text(R.string.status_answer_applied)
                         )

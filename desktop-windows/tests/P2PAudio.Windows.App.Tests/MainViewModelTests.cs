@@ -1,5 +1,6 @@
 using P2PAudio.Windows.App.Services;
 using P2PAudio.Windows.App.ViewModels;
+using P2PAudio.Windows.Core.Audio;
 using P2PAudio.Windows.Core.Models;
 using P2PAudio.Windows.Core.Protocol;
 
@@ -26,6 +27,17 @@ public sealed class MainViewModelTests
             receiverPubKeyFingerprint: "receiver-fp",
             answerSdp: "v=0\r\ns=answer\r\n",
             expiresAtUnixMs: expiresAtUnixMs ?? FutureExpiry
+        ));
+
+    private static byte[] MakeValidPcmPacket(int sequence = 0) =>
+        PcmPacketCodec.Encode(new PcmFrame(
+            Sequence: sequence,
+            TimestampMs: 123_456,
+            SampleRate: 48_000,
+            Channels: 2,
+            BitsPerSample: 16,
+            FrameSamplesPerChannel: 960,
+            PcmBytes: Enumerable.Repeat((byte)0x2A, 3840).ToArray()
         ));
 
     // --- Backend readiness ---
@@ -319,7 +331,7 @@ public sealed class MainViewModelTests
         await viewModel.ProcessInputPayloadAsync(MakeInitPayload());
         Assert.Equal(StreamState.Connecting, viewModel.CurrentStreamState);
 
-        bridge.EnqueueIncomingPacket([0x00]);
+        bridge.EnqueueIncomingPacket(MakeValidPcmPacket());
         await WaitUntilAsync(() => viewModel.CurrentStreamState == StreamState.Streaming, TimeSpan.FromSeconds(2));
 
         Assert.Equal("Step: Streaming", viewModel.FlowStateLabel);
@@ -405,7 +417,7 @@ public sealed class MainViewModelTests
 
         viewModel.StartListener();
         await viewModel.ProcessInputPayloadAsync(MakeInitPayload());
-        bridge.EnqueueIncomingPacket([0x00]);
+        bridge.EnqueueIncomingPacket(MakeValidPcmPacket());
         await WaitUntilAsync(() => viewModel.CurrentStreamState == StreamState.Streaming, TimeSpan.FromSeconds(2));
 
         bridge.Diagnostics = new ConnectionDiagnostics(
@@ -428,7 +440,7 @@ public sealed class MainViewModelTests
 
         viewModel.StartListener();
         await viewModel.ProcessInputPayloadAsync(MakeInitPayload());
-        bridge.EnqueueIncomingPacket([0x00]);
+        bridge.EnqueueIncomingPacket(MakeValidPcmPacket());
         await WaitUntilAsync(() => viewModel.CurrentStreamState == StreamState.Streaming, TimeSpan.FromSeconds(2));
 
         bridge.Diagnostics = new ConnectionDiagnostics(
@@ -438,7 +450,7 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() => viewModel.CurrentStreamState == StreamState.Interrupted, TimeSpan.FromSeconds(3));
 
         bridge.Diagnostics = new ConnectionDiagnostics();
-        bridge.EnqueueIncomingPacket([0x01]);
+        bridge.EnqueueIncomingPacket(MakeValidPcmPacket(sequence: 1));
         await WaitUntilAsync(() => viewModel.CurrentStreamState == StreamState.Streaming, TimeSpan.FromSeconds(2));
 
         Assert.Equal(StreamState.Streaming, viewModel.CurrentStreamState);
@@ -517,6 +529,134 @@ public sealed class MainViewModelTests
         await viewModel.ApproveVerificationAndConnectAsync();
 
         Assert.Contains("No pending answer", viewModel.StatusMessage);
+        viewModel.Shutdown();
+    }
+
+    // --- Computed UI properties ---
+
+    [Fact]
+    public void Initial_CanStartSenderAndListener_AreTrue()
+    {
+        var bridge = new FakeWebRtcBridge();
+        var viewModel = new MainViewModel(bridge);
+
+        Assert.True(viewModel.CanStartSender);
+        Assert.True(viewModel.CanStartListener);
+        Assert.False(viewModel.CanProcessPayload);
+        Assert.False(viewModel.CanApproveCode);
+        Assert.False(viewModel.CanRejectCode);
+        viewModel.Shutdown();
+    }
+
+    [Fact]
+    public async Task AfterStartSender_CannotStartAgain_CanProcessPayload()
+    {
+        var bridge = new FakeWebRtcBridge();
+        var viewModel = new MainViewModel(bridge);
+
+        await viewModel.StartSenderAsync();
+
+        Assert.False(viewModel.CanStartSender);
+        Assert.False(viewModel.CanStartListener);
+        Assert.True(viewModel.CanProcessPayload);
+        Assert.True(viewModel.CanStop);
+        viewModel.Shutdown();
+    }
+
+    [Fact]
+    public void AfterStartListener_CanProcessPayload()
+    {
+        var bridge = new FakeWebRtcBridge();
+        var viewModel = new MainViewModel(bridge);
+
+        viewModel.StartListener();
+
+        Assert.False(viewModel.CanStartSender);
+        Assert.False(viewModel.CanStartListener);
+        Assert.True(viewModel.CanProcessPayload);
+        Assert.True(viewModel.CanStop);
+        viewModel.Shutdown();
+    }
+
+    [Fact]
+    public async Task SenderVerifyCode_CanApproveAndReject()
+    {
+        var bridge = new FakeWebRtcBridge();
+        var viewModel = new MainViewModel(bridge);
+
+        await viewModel.StartSenderAsync();
+        await viewModel.ProcessInputPayloadAsync(MakeConfirmPayload());
+
+        Assert.True(viewModel.CanApproveCode);
+        Assert.True(viewModel.CanRejectCode);
+        viewModel.Shutdown();
+    }
+
+    [Fact]
+    public void Initial_RecommendedAction_PromptToChooseRole()
+    {
+        var bridge = new FakeWebRtcBridge();
+        var viewModel = new MainViewModel(bridge);
+
+        Assert.Contains("Choose", viewModel.RecommendedAction);
+        viewModel.Shutdown();
+    }
+
+    [Fact]
+    public async Task Streaming_RecommendedAction_SaysStreaming()
+    {
+        var bridge = new FakeWebRtcBridge();
+        var viewModel = new MainViewModel(bridge);
+
+        await viewModel.StartSenderAsync();
+        await viewModel.ProcessInputPayloadAsync(MakeConfirmPayload());
+        await viewModel.ApproveVerificationAndConnectAsync();
+
+        Assert.Contains("streaming", viewModel.RecommendedAction, StringComparison.OrdinalIgnoreCase);
+        viewModel.Shutdown();
+    }
+
+    [Fact]
+    public async Task SetupStep_IsPublicAndTracksFlow()
+    {
+        var bridge = new FakeWebRtcBridge();
+        var viewModel = new MainViewModel(bridge);
+
+        Assert.Equal(SetupStep.Entry, viewModel.CurrentSetupStep);
+
+        await viewModel.StartSenderAsync();
+        Assert.Equal(SetupStep.SenderShowInit, viewModel.CurrentSetupStep);
+
+        await viewModel.ProcessInputPayloadAsync(MakeConfirmPayload());
+        Assert.Equal(SetupStep.SenderVerifyCode, viewModel.CurrentSetupStep);
+
+        viewModel.Stop();
+        Assert.Equal(SetupStep.Entry, viewModel.CurrentSetupStep);
+        viewModel.Shutdown();
+    }
+
+    [Fact]
+    public void ListenerSetupStep_TracksFlow()
+    {
+        var bridge = new FakeWebRtcBridge();
+        var viewModel = new MainViewModel(bridge);
+
+        viewModel.StartListener();
+        Assert.Equal(SetupStep.ListenerScanInit, viewModel.CurrentSetupStep);
+        viewModel.Shutdown();
+    }
+
+    [Fact]
+    public async Task AfterStop_CanStartAgain()
+    {
+        var bridge = new FakeWebRtcBridge();
+        var viewModel = new MainViewModel(bridge);
+
+        await viewModel.StartSenderAsync();
+        viewModel.Stop();
+
+        Assert.True(viewModel.CanStartSender);
+        Assert.True(viewModel.CanStartListener);
         viewModel.Shutdown();
     }
 

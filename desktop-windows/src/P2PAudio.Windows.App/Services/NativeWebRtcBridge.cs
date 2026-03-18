@@ -30,13 +30,14 @@ public sealed class NativeWebRtcBridge : IWebRtcBridge, IDisposable
         try
         {
             var diagnostics = ToDiagnostics(native.diagnostics);
-            var success = native.success != 0 && !string.IsNullOrWhiteSpace(native.offer_sdp);
+            var offerSdp = PtrToString(native.offer_sdp);
+            var success = native.success != 0 && !string.IsNullOrWhiteSpace(offerSdp);
             return Task.FromResult(
                 new WebRtcOfferResult(
                     Success: success,
                     ErrorMessage: PtrToString(native.error_message),
                     SessionId: PtrToString(native.session_id),
-                    OfferSdp: PtrToString(native.offer_sdp),
+                    OfferSdp: offerSdp,
                     Fingerprint: PtrToString(native.fingerprint),
                     Diagnostics: diagnostics
                 )
@@ -55,12 +56,13 @@ public sealed class NativeWebRtcBridge : IWebRtcBridge, IDisposable
         try
         {
             var diagnostics = ToDiagnostics(native.diagnostics);
-            var success = native.success != 0 && !string.IsNullOrWhiteSpace(native.answer_sdp);
+            var answerSdp = PtrToString(native.answer_sdp);
+            var success = native.success != 0 && !string.IsNullOrWhiteSpace(answerSdp);
             return Task.FromResult(
                 new WebRtcAnswerResult(
                     Success: success,
                     ErrorMessage: PtrToString(native.error_message),
-                    AnswerSdp: PtrToString(native.answer_sdp),
+                    AnswerSdp: answerSdp,
                     Fingerprint: PtrToString(native.fingerprint),
                     Diagnostics: diagnostics
                 )

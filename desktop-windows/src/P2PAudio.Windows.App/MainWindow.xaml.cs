@@ -1,18 +1,61 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using P2PAudio.Windows.App.ViewModels;
+using P2PAudio.Windows.Core.Models;
+using Windows.ApplicationModel.DataTransfer;
 
 namespace P2PAudio.Windows.App;
 
 public sealed partial class MainWindow : Window
 {
+    private DispatcherTimer? _transientTimer;
+
     public MainWindow()
     {
         ViewModel = new MainViewModel();
         InitializeComponent();
         Closed += OnClosed;
+        ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+        UpdateFlowCards();
     }
 
     public MainViewModel ViewModel { get; }
+
+    private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (!DispatcherQueue.HasThreadAccess)
+        {
+            _ = DispatcherQueue.TryEnqueue(() => OnViewModelPropertyChanged(sender, e));
+            return;
+        }
+
+        if (e.PropertyName is nameof(MainViewModel.CurrentSetupStep) or nameof(MainViewModel.CurrentStreamState) or nameof(MainViewModel.IsVerificationPending))
+        {
+            UpdateFlowCards();
+        }
+        if (e.PropertyName == nameof(MainViewModel.ActiveSessionId))
+        {
+            SessionIdPanel.Visibility = string.IsNullOrEmpty(ViewModel.ActiveSessionId)
+                ? Visibility.Collapsed : Visibility.Visible;
+        }
+    }
+
+    private void UpdateFlowCards()
+    {
+        var step = ViewModel.CurrentSetupStep;
+        var streamState = ViewModel.CurrentStreamState;
+        var showEntryCard = step == SetupStep.Entry;
+        var hideSetupCards = streamState is StreamState.Streaming or StreamState.Interrupted or StreamState.Ended or StreamState.Failed;
+
+        EntryCard.Visibility = showEntryCard ? Visibility.Visible : Visibility.Collapsed;
+        PathDiagnosingCard.Visibility = !hideSetupCards && step == SetupStep.PathDiagnosing ? Visibility.Visible : Visibility.Collapsed;
+        SenderShowInitCard.Visibility = !hideSetupCards && step == SetupStep.SenderShowInit ? Visibility.Visible : Visibility.Collapsed;
+        SenderVerifyCodeCard.Visibility = !hideSetupCards && step == SetupStep.SenderVerifyCode && ViewModel.IsVerificationPending
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        ListenerScanInitCard.Visibility = !hideSetupCards && step == SetupStep.ListenerScanInit ? Visibility.Visible : Visibility.Collapsed;
+        ListenerShowConfirmCard.Visibility = !hideSetupCards && step == SetupStep.ListenerShowConfirm ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     private async void OnStartSenderClick(object sender, RoutedEventArgs e)
     {
@@ -24,11 +67,6 @@ public sealed partial class MainWindow : Window
         ViewModel.StartListener();
     }
 
-    private async void OnProcessPayloadClick(object sender, RoutedEventArgs e)
-    {
-        await ViewModel.ProcessInputPayloadAsync(ViewModel.CurrentPayload);
-    }
-
     private async void OnPastePayloadClick(object sender, RoutedEventArgs e)
     {
         await ViewModel.PasteFromClipboardAsync();
@@ -37,6 +75,15 @@ public sealed partial class MainWindow : Window
     private async void OnScanFromCameraClick(object sender, RoutedEventArgs e)
     {
         await ViewModel.ScanFromCameraAsync();
+    }
+
+    private async void OnProcessManualPayloadClick(object sender, RoutedEventArgs e)
+    {
+        var text = ManualPayloadInput.Text;
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            await ViewModel.ProcessInputPayloadAsync(text);
+        }
     }
 
     private async void OnApproveVerificationClick(object sender, RoutedEventArgs e)
@@ -52,6 +99,33 @@ public sealed partial class MainWindow : Window
     private void OnStopClick(object sender, RoutedEventArgs e)
     {
         ViewModel.Stop();
+    }
+
+    private void OnCopyPayloadClick(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(ViewModel.CurrentPayload))
+            return;
+
+        var dataPackage = new DataPackage();
+        dataPackage.SetText(ViewModel.CurrentPayload);
+        Clipboard.SetContent(dataPackage);
+
+        ShowTransientMessage("Payload copied to clipboard.");
+    }
+
+    private void ShowTransientMessage(string message)
+    {
+        TransientInfoBar.Message = message;
+        TransientInfoBar.IsOpen = true;
+
+        _transientTimer?.Stop();
+        _transientTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _transientTimer.Tick += (_, _) =>
+        {
+            TransientInfoBar.IsOpen = false;
+            _transientTimer.Stop();
+        };
+        _transientTimer.Start();
     }
 
     private void OnClosed(object sender, WindowEventArgs args)

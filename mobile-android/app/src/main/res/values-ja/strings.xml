@@ -21,6 +21,7 @@
     <string name="status_failure_format">問題: %1$s</string>
     <string name="status_next_action_title">次にやること</string>
     <string name="status_ready">下の開始アクションを選んでください。</string>
+    <string name="status_path_diagnosing">ローカル接続経路を確認し、セッション準備を進めています。</string>
     <string name="status_listener_ready_to_scan">送信側のinit QRを読み取ってください。</string>
     <string name="status_receiving_remote_audio">相手の音声を受信しています</string>
     <string name="status_capturing">音声共有の準備中</string>
@@ -35,6 +36,9 @@
     <string name="status_ice_connection_failed">直接接続を確立できませんでした</string>
 
     <string name="status_next_action_entry">「共有を開始」または「送信側QRを読む」を押してください。</string>
+    <string name="status_next_action_diagnosing">ローカル接続経路の確認とQRフロー準備が終わるまで待ってください。</string>
+    <string name="status_next_action_connecting">直接接続の完了を待っています。</string>
+    <string name="status_next_action_recovering">ストリームの復旧待ちです。両端末が同じローカルネットワーク上にあることを確認してください。</string>
     <string name="status_next_action_show_init">init QRを表示し、受信側に読み取ってもらってください。</string>
     <string name="status_next_action_scan_init">送信側のinit QRを読み取ってください。</string>
     <string name="status_next_action_show_confirm">confirm QRと6桁コードを送信側に見せてください。</string>
@@ -60,6 +64,8 @@
 
     <string name="flow_entry_title">Step 1: 開始方法を選ぶ</string>
     <string name="flow_entry_description">手入力は廃止しました。QR読み取りのみで接続します。</string>
+    <string name="flow_diagnosing_title">Step 2: 接続経路を確認</string>
+    <string name="flow_diagnosing_description">QRペアリングに進む前に、現在のローカル接続経路を確認しています。</string>
 
     <string name="flow_sender_step_title">Step 2: init QRを表示</string>
     <string name="flow_sender_step_description">受信側がこのQRを読んだ後、受信側のconfirm QRを読み取ります。</string>

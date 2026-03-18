@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.UI.Xaml.Media.Imaging;
 using P2PAudio.Windows.App.Services;
@@ -14,10 +15,10 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly PcmPlaybackService _playbackService;
     private readonly CancellationTokenSource _receiveLoopCts = new();
     private readonly BridgeBackendHealth _backendHealth;
+    private readonly SynchronizationContext? _uiContext = SynchronizationContext.Current;
 
     private string _localSenderFingerprint = string.Empty;
     private string _pendingAnswerSdp = string.Empty;
-    private SetupStep _setupStep = SetupStep.Entry;
     private int _receiveIdleTicks;
 
     public MainViewModel() : this(CreateBridge())
@@ -101,6 +102,28 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private bool isVerificationPending;
 
+    [ObservableProperty]
+    private SetupStep currentSetupStep = SetupStep.Entry;
+
+    public string RecommendedAction => GetRecommendedAction();
+
+    public bool CanStartSender => _backendHealth.IsReady &&
+        CurrentSetupStep == SetupStep.Entry &&
+        CurrentStreamState is StreamState.Idle or StreamState.Ended or StreamState.Failed;
+
+    public bool CanStartListener => _backendHealth.IsReady &&
+        CurrentSetupStep == SetupStep.Entry &&
+        CurrentStreamState is StreamState.Idle or StreamState.Ended or StreamState.Failed;
+
+    public bool CanProcessPayload => _backendHealth.IsReady &&
+        CurrentSetupStep is SetupStep.ListenerScanInit or SetupStep.SenderShowInit or SetupStep.SenderVerifyCode;
+
+    public bool CanApproveCode => _backendHealth.IsReady && IsVerificationPending;
+
+    public bool CanRejectCode => IsVerificationPending;
+
+    public bool CanStop => CurrentSetupStep != SetupStep.Entry || CurrentStreamState != StreamState.Idle;
+
     public async Task StartSenderAsync()
     {
         if (!EnsureBackendReady())
@@ -111,11 +134,11 @@ public sealed partial class MainViewModel : ObservableObject
         StopLoopbackIfRunning();
         SetStreamState(StreamState.Capturing);
         SetFailureCode(null, clearWhenNull: true);
-        StatusMessage = "Preparing sender offer...";
-        FlowStateLabel = "Step: Sender generate init";
+        StatusMessage = "Diagnosing local path and preparing sender offer.";
+        FlowStateLabel = "Step: Path diagnosing";
         VerificationCode = string.Empty;
         IsVerificationPending = false;
-        _setupStep = SetupStep.SenderShowInit;
+        CurrentSetupStep = SetupStep.PathDiagnosing;
         UpdateDiagnostics(new ConnectionDiagnostics(PathType: UsbTetheringDetector.ClassifyPrimaryPath()));
 
         var localOffer = await _bridge.CreateOfferAsync();
@@ -140,6 +163,7 @@ public sealed partial class MainViewModel : ObservableObject
         );
         CurrentPayload = QrPayloadCodec.EncodeInit(payload);
         PayloadQrImage = await QrImageService.CreateAsync(CurrentPayload);
+        CurrentSetupStep = SetupStep.SenderShowInit;
         StatusMessage = "Init payload generated. Share this QR with listener.";
         FlowStateLabel = "Step: Sender show init";
     }
@@ -161,13 +185,16 @@ public sealed partial class MainViewModel : ObservableObject
         VerificationCode = string.Empty;
         ActiveSessionId = string.Empty;
         IsVerificationPending = false;
-        _setupStep = SetupStep.ListenerScanInit;
-        FlowStateLabel = "Step: Listener scan init";
-        StatusMessage = "Ready to scan sender init payload.";
+        CurrentSetupStep = SetupStep.PathDiagnosing;
+        FlowStateLabel = "Step: Path diagnosing";
+        StatusMessage = "Diagnosing local path.";
         SetStreamState(StreamState.Idle);
         SetFailureCode(null, clearWhenNull: true);
         UpdateDiagnostics(new ConnectionDiagnostics(PathType: UsbTetheringDetector.ClassifyPrimaryPath()));
         RefreshDiagnosticsFromBridge();
+        CurrentSetupStep = SetupStep.ListenerScanInit;
+        FlowStateLabel = "Step: Listener scan init";
+        StatusMessage = "Ready to scan sender init payload.";
     }
 
     public async Task ProcessInputPayloadAsync(string rawPayload)
@@ -183,19 +210,19 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
-        if (_setupStep is SetupStep.SenderShowInit or SetupStep.SenderVerifyCode)
+        if (CurrentSetupStep is SetupStep.SenderShowInit or SetupStep.SenderVerifyCode)
         {
             await PrepareConfirmForVerificationAsync(rawPayload);
             return;
         }
 
-        if (_setupStep == SetupStep.ListenerShowConfirm)
+        if (CurrentSetupStep == SetupStep.ListenerShowConfirm)
         {
             StatusMessage = "Confirm payload already generated. Wait for stream or press Stop to restart.";
             return;
         }
 
-        _setupStep = SetupStep.ListenerScanInit;
+        CurrentSetupStep = SetupStep.ListenerScanInit;
         FlowStateLabel = "Step: Listener scan init";
         await CreateConfirmFromInitAsync(rawPayload);
     }
@@ -207,8 +234,8 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
-        var dataPackage = Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
-        if (!dataPackage.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Text))
+        var dataPackage = global::Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
+        if (!dataPackage.Contains(global::Windows.ApplicationModel.DataTransfer.StandardDataFormats.Text))
         {
             StatusMessage = "Clipboard has no text payload.";
             return;
@@ -292,7 +319,7 @@ public sealed partial class MainViewModel : ObservableObject
         VerificationCode = string.Empty;
         ActiveSessionId = string.Empty;
         IsVerificationPending = false;
-        _setupStep = SetupStep.Entry;
+        CurrentSetupStep = SetupStep.Entry;
         FlowStateLabel = "Step: Entry";
         StatusMessage = "Stopped";
         SetFailureCode(null, clearWhenNull: true);
@@ -348,7 +375,7 @@ public sealed partial class MainViewModel : ObservableObject
                 receiverFingerprint: answer.Fingerprint
             );
             ActiveSessionId = initPayload.SessionId;
-            _setupStep = SetupStep.ListenerShowConfirm;
+            CurrentSetupStep = SetupStep.ListenerShowConfirm;
             FlowStateLabel = "Step: Listener show confirm";
             StatusMessage = "Confirm payload generated. Show this QR to sender, then wait for stream.";
             SetFailureCode(null, clearWhenNull: true);
@@ -392,7 +419,7 @@ public sealed partial class MainViewModel : ObservableObject
                 receiverFingerprint: confirmPayload.ReceiverPubKeyFingerprint
             );
             _pendingAnswerSdp = confirmPayload.AnswerSdp;
-            _setupStep = SetupStep.SenderVerifyCode;
+            CurrentSetupStep = SetupStep.SenderVerifyCode;
             IsVerificationPending = true;
             FlowStateLabel = "Step: Sender verify code";
             SetStreamState(StreamState.Connecting);
@@ -436,7 +463,7 @@ public sealed partial class MainViewModel : ObservableObject
         VerificationCode = string.Empty;
         ActiveSessionId = string.Empty;
         IsVerificationPending = false;
-        _setupStep = SetupStep.Entry;
+        CurrentSetupStep = SetupStep.Entry;
         FlowStateLabel = "Step: Entry";
         SetStreamState(StreamState.Idle);
         SetFailureCode(code);
@@ -480,6 +507,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         CurrentStreamState = state;
         StreamStateLabel = $"Stream state: {state.ToString().ToLowerInvariant()}";
+        NotifyComputedProperties();
     }
 
     private void StopLoopbackIfRunning()
@@ -499,18 +527,25 @@ public sealed partial class MainViewModel : ObservableObject
                 if (_bridge.TryReceivePcmPacket(out var packet))
                 {
                     _receiveIdleTicks = 0;
-                    _playbackService.PlayPacket(packet);
-                    if (CurrentStreamState == StreamState.Connecting && _setupStep == SetupStep.ListenerShowConfirm)
+                    if (!_playbackService.PlayPacket(packet))
                     {
-                        SetStreamState(StreamState.Streaming);
-                        FlowStateLabel = "Step: Streaming";
-                        StatusMessage = "Streaming remote audio.";
+                        continue;
                     }
-                    else if (CurrentStreamState == StreamState.Interrupted)
+
+                    RunOnUiThread(() =>
                     {
-                        SetStreamState(StreamState.Streaming);
-                        StatusMessage = "Stream recovered.";
-                    }
+                        if (CurrentStreamState == StreamState.Connecting && CurrentSetupStep == SetupStep.ListenerShowConfirm)
+                        {
+                            SetStreamState(StreamState.Streaming);
+                            FlowStateLabel = "Step: Streaming";
+                            StatusMessage = "Streaming remote audio.";
+                        }
+                        else if (CurrentStreamState == StreamState.Interrupted)
+                        {
+                            SetStreamState(StreamState.Streaming);
+                            StatusMessage = "Stream recovered.";
+                        }
+                    });
                     continue;
                 }
 
@@ -528,7 +563,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            SetFailureState($"Receive loop failed: {ex.Message}", FailureCode.WebRtcNegotiationFailed);
+            RunOnUiThread(() => SetFailureState($"Receive loop failed: {ex.Message}", FailureCode.WebRtcNegotiationFailed));
         }
     }
 
@@ -537,20 +572,23 @@ public sealed partial class MainViewModel : ObservableObject
         try
         {
             var diagnostics = _bridge.GetDiagnostics();
-            UpdateDiagnostics(diagnostics);
-
             var code = diagnostics.NormalizedFailureCode ?? FailureCodeMapper.FromFailureHint(diagnostics.FailureHint);
-            if (code is not null)
+            RunOnUiThread(() =>
             {
-                if (code == FailureCode.NetworkChanged || code == FailureCode.PeerUnreachable)
+                UpdateDiagnostics(diagnostics);
+
+                if (code is not null)
                 {
-                    SetInterruptedState($"Stream interrupted: {diagnostics.FailureHint}", code.Value);
+                    if (code == FailureCode.NetworkChanged || code == FailureCode.PeerUnreachable)
+                    {
+                        SetInterruptedState($"Stream interrupted: {diagnostics.FailureHint}", code.Value);
+                    }
+                    else if (code == FailureCode.WebRtcNegotiationFailed && CurrentStreamState == StreamState.Streaming)
+                    {
+                        SetInterruptedState($"Transport unstable: {diagnostics.FailureHint}", code.Value);
+                    }
                 }
-                else if (code == FailureCode.WebRtcNegotiationFailed && CurrentStreamState == StreamState.Streaming)
-                {
-                    SetInterruptedState($"Transport unstable: {diagnostics.FailureHint}", code.Value);
-                }
-            }
+            });
         }
         catch
         {
@@ -602,6 +640,39 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    private void RunOnUiThread(Action action)
+    {
+        if (_uiContext is null || SynchronizationContext.Current == _uiContext)
+        {
+            action();
+            return;
+        }
+
+        Exception? failure = null;
+        using var completed = new ManualResetEventSlim(false);
+        _uiContext.Post(_ =>
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+            }
+            finally
+            {
+                completed.Set();
+            }
+        }, null);
+        completed.Wait();
+
+        if (failure is not null)
+        {
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+    }
+
     private static IWebRtcBridge CreateBridge()
     {
         try
@@ -629,12 +700,60 @@ public sealed partial class MainViewModel : ObservableObject
                (bool.TryParse(value, out var enabled) && enabled);
     }
 
-    private enum SetupStep
+    partial void OnCurrentSetupStepChanged(SetupStep value)
     {
-        Entry,
-        ListenerScanInit,
-        SenderShowInit,
-        SenderVerifyCode,
-        ListenerShowConfirm
+        NotifyComputedProperties();
     }
+
+    partial void OnIsVerificationPendingChanged(bool value)
+    {
+        NotifyComputedProperties();
+    }
+
+    private void NotifyComputedProperties()
+    {
+        OnPropertyChanged(nameof(RecommendedAction));
+        OnPropertyChanged(nameof(CanStartSender));
+        OnPropertyChanged(nameof(CanStartListener));
+        OnPropertyChanged(nameof(CanProcessPayload));
+        OnPropertyChanged(nameof(CanApproveCode));
+        OnPropertyChanged(nameof(CanRejectCode));
+        OnPropertyChanged(nameof(CanStop));
+    }
+
+    private string GetRecommendedAction()
+    {
+        if (CurrentStreamState == StreamState.Streaming)
+            return "Audio is streaming. Press Stop to end.";
+        if (CurrentStreamState == StreamState.Failed)
+        {
+            return NetworkPathLabel.Contains("USB") && CandidateCountLabel.Contains(": 0")
+                ? "Enable USB tethering, then retry."
+                : CandidateCountLabel.Contains(": 0")
+                    ? "Check your network interface and retry."
+                    : "Press Stop, then restart.";
+        }
+        if (CurrentStreamState == StreamState.Interrupted)
+            return "Stream interrupted. Waiting for recovery...";
+        return CurrentSetupStep switch
+        {
+            SetupStep.Entry => "Choose Sender or Listener to begin.",
+            SetupStep.PathDiagnosing => "Checking the local network path and preparing the next QR step.",
+            SetupStep.SenderShowInit => "Show the QR code to the listener device, then scan their confirm code.",
+            SetupStep.SenderVerifyCode => "Compare the 6-digit code with the listener and approve.",
+            SetupStep.ListenerScanInit => "Scan the sender's QR code to proceed.",
+            SetupStep.ListenerShowConfirm => "Show this QR code to the sender. Waiting for stream...",
+            _ => string.Empty
+        };
+    }
+}
+
+public enum SetupStep
+{
+    Entry,
+    PathDiagnosing,
+    ListenerScanInit,
+    SenderShowInit,
+    SenderVerifyCode,
+    ListenerShowConfirm
 }
