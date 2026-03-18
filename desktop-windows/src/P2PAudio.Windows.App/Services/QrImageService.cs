@@ -20,8 +20,11 @@ public sealed class QrImageService : IQrImageService
         }
 
         using var generator = new QRCodeGenerator();
-        using var data = generator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.M);
-        var png = new PngByteQRCode(data).GetGraphic(8);
+        using var data = generator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.L);
+        var targetDisplaySize = QrDisplaySizing.GetDisplaySize(payload.Length);
+        var moduleCount = Math.Max(1, data.ModuleMatrix.Count);
+        var pixelsPerModule = Math.Max(2, (int)Math.Ceiling(targetDisplaySize / moduleCount));
+        var png = new PngByteQRCode(data).GetGraphic(pixelsPerModule);
 
         using var stream = new InMemoryRandomAccessStream();
         await stream.WriteAsync(png.AsBuffer());

@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Text;
 
 namespace P2PAudio.Windows.App;
 
@@ -13,58 +15,293 @@ internal static class StartMenuShortcut
         try
         {
             var programsPath = Environment.GetFolderPath(Environment.SpecialFolder.Programs);
+            if (string.IsNullOrWhiteSpace(programsPath))
+            {
+                Debug.WriteLine("Start menu programs path is unavailable.");
+                return;
+            }
+
             var shortcutPath = Path.Combine(programsPath, ShortcutName);
-
-            if (File.Exists(shortcutPath))
+            var executablePath = GetExecutablePath();
+            if (!IsExecutablePath(executablePath) || !File.Exists(executablePath))
+            {
+                Debug.WriteLine("Current executable path is unavailable.");
                 return;
+            }
 
-            var exePath = GetExecutablePath();
-            if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath))
+            var desiredShortcut = CreateDesiredShortcut(shortcutPath, executablePath);
+            var existingShortcut = TryReadShortcut(shortcutPath);
+
+            if (!ShouldUpdateShortcut(existingShortcut, desiredShortcut))
+            {
                 return;
+            }
 
-            CreateShortcut(shortcutPath, exePath);
+            CreateOrUpdateShortcut(desiredShortcut);
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"Failed to ensure Start Menu shortcut: {ex}");
         }
+    }
+
+    internal static ShortcutDefinition CreateDesiredShortcut(string shortcutPath, string targetPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(shortcutPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
+
+        var normalizedTargetPath = NormalizePath(targetPath)
+            ?? throw new InvalidOperationException($"Could not normalize shortcut target '{targetPath}'.");
+        var workingDirectory = Path.GetDirectoryName(normalizedTargetPath);
+
+        if (string.IsNullOrWhiteSpace(workingDirectory))
+        {
+            throw new InvalidOperationException($"Could not determine a working directory for '{normalizedTargetPath}'.");
+        }
+
+        return new ShortcutDefinition(
+            ShortcutPath: shortcutPath,
+            TargetPath: normalizedTargetPath,
+            WorkingDirectory: workingDirectory,
+            IconLocation: $"{normalizedTargetPath},0",
+            Description: AppName
+        );
+    }
+
+    internal static bool ShouldUpdateShortcut(ShortcutSnapshot? existingShortcut, ShortcutDefinition desiredShortcut)
+    {
+        ArgumentNullException.ThrowIfNull(desiredShortcut);
+
+        if (existingShortcut is null)
+        {
+            return true;
+        }
+
+        if (!PathPointsToExistingFile(existingShortcut.TargetPath))
+        {
+            return true;
+        }
+
+        return !PathsMatch(existingShortcut.TargetPath, desiredShortcut.TargetPath) ||
+               !PathsMatch(existingShortcut.WorkingDirectory, desiredShortcut.WorkingDirectory) ||
+               !string.Equals(existingShortcut.Description?.Trim(), desiredShortcut.Description, StringComparison.OrdinalIgnoreCase) ||
+               !string.Equals(NormalizeIconLocation(existingShortcut.IconLocation), NormalizeIconLocation(desiredShortcut.IconLocation), StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? GetExecutablePath()
     {
         var processPath = Environment.ProcessPath;
-        if (!string.IsNullOrEmpty(processPath))
+        if (IsExecutablePath(processPath))
+        {
             return processPath;
+        }
+
+        using var process = Process.GetCurrentProcess();
+        var mainModulePath = process.MainModule?.FileName;
+        if (IsExecutablePath(mainModulePath))
+        {
+            return mainModulePath;
+        }
 
         var assemblyLocation = Assembly.GetExecutingAssembly().Location;
-        if (!string.IsNullOrEmpty(assemblyLocation) && File.Exists(assemblyLocation))
+        if (IsExecutablePath(assemblyLocation))
+        {
             return assemblyLocation;
+        }
 
         return null;
     }
 
-    private static void CreateShortcut(string shortcutPath, string targetPath)
+    private static bool IsExecutablePath(string? path) =>
+        !string.IsNullOrWhiteSpace(path) &&
+        string.Equals(Path.GetExtension(path), ".exe", StringComparison.OrdinalIgnoreCase);
+
+    private static ShortcutSnapshot? TryReadShortcut(string shortcutPath)
     {
-        var escapedShortcutPath = shortcutPath.Replace("'", "''");
-        var escapedTargetPath = targetPath.Replace("'", "''");
+        if (!File.Exists(shortcutPath))
+        {
+            return null;
+        }
 
-        var script = $@"
+        object? shell = null;
+        object? shortcut = null;
+
+        try
+        {
+            shell = CreateShell();
+            shortcut = OpenShortcut(shell, shortcutPath);
+
+            return new ShortcutSnapshot(
+                TargetPath: GetShortcutProperty(shortcut, nameof(ShortcutSnapshot.TargetPath)),
+                WorkingDirectory: GetShortcutProperty(shortcut, nameof(ShortcutSnapshot.WorkingDirectory)),
+                IconLocation: GetShortcutProperty(shortcut, nameof(ShortcutSnapshot.IconLocation)),
+                Description: GetShortcutProperty(shortcut, nameof(ShortcutSnapshot.Description))
+            );
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Failed to inspect Start Menu shortcut '{shortcutPath}': {ex}");
+            return null;
+        }
+        finally
+        {
+            ReleaseComObject(shortcut);
+            ReleaseComObject(shell);
+        }
+    }
+
+    private static void CreateOrUpdateShortcut(ShortcutDefinition shortcutDefinition)
+    {
+        var shortcutDirectory = Path.GetDirectoryName(shortcutDefinition.ShortcutPath);
+        if (string.IsNullOrWhiteSpace(shortcutDirectory))
+        {
+            throw new InvalidOperationException($"Could not determine a shortcut directory for '{shortcutDefinition.ShortcutPath}'.");
+        }
+
+        Directory.CreateDirectory(shortcutDirectory);
+
+        var escapedShortcutPath = shortcutDefinition.ShortcutPath.Replace("'", "''");
+        var escapedTargetPath = shortcutDefinition.TargetPath.Replace("'", "''");
+        var escapedWorkingDirectory = shortcutDefinition.WorkingDirectory.Replace("'", "''");
+        var escapedIconLocation = shortcutDefinition.IconLocation.Replace("'", "''");
+        var escapedDescription = shortcutDefinition.Description.Replace("'", "''");
+
+        var script = $"""
 $ws = New-Object -ComObject WScript.Shell
-$s = $ws.CreateShortcut('{escapedShortcutPath}')
-$s.TargetPath = '{escapedTargetPath}'
-$s.Description = '{AppName}'
-$s.Save()
-";
+$shortcut = $ws.CreateShortcut('{escapedShortcutPath}')
+$shortcut.TargetPath = '{escapedTargetPath}'
+$shortcut.WorkingDirectory = '{escapedWorkingDirectory}'
+$shortcut.IconLocation = '{escapedIconLocation}'
+$shortcut.Description = '{escapedDescription}'
+$shortcut.Save()
+""";
 
+        var encodedScript = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
         var psi = new ProcessStartInfo
         {
             FileName = "powershell.exe",
-            Arguments = $"-NoProfile -NonInteractive -Command \"{script.Replace("\"", "\\\"")}\"",
+            Arguments = $"-NoProfile -NonInteractive -EncodedCommand {encodedScript}",
             CreateNoWindow = true,
             UseShellExecute = false,
             WindowStyle = ProcessWindowStyle.Hidden
         };
 
-        using var process = Process.Start(psi);
-        process?.WaitForExit(5000);
+        using var process = Process.Start(psi)
+            ?? throw new InvalidOperationException("Failed to start PowerShell for Start Menu shortcut creation.");
+
+        if (!process.WaitForExit(5_000))
+        {
+            throw new TimeoutException("Timed out while updating the Start Menu shortcut.");
+        }
+
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"PowerShell failed to update the Start Menu shortcut (exit code {process.ExitCode}).");
+        }
     }
+
+    private static object CreateShell()
+    {
+        var shellType = Type.GetTypeFromProgID("WScript.Shell")
+            ?? throw new InvalidOperationException("WScript.Shell COM type is unavailable.");
+
+        return Activator.CreateInstance(shellType)
+            ?? throw new InvalidOperationException("Failed to create the WScript.Shell COM object.");
+    }
+
+    private static object OpenShortcut(object shell, string shortcutPath) =>
+        shell.GetType().InvokeMember(
+            "CreateShortcut",
+            BindingFlags.InvokeMethod,
+            binder: null,
+            target: shell,
+            args: [shortcutPath]) ??
+        throw new InvalidOperationException($"Failed to open shortcut '{shortcutPath}'.");
+
+    private static string? GetShortcutProperty(object shortcut, string propertyName) =>
+        shortcut.GetType().InvokeMember(
+            propertyName,
+            BindingFlags.GetProperty,
+            binder: null,
+            target: shortcut,
+            args: null) as string;
+
+    private static void ReleaseComObject(object? comObject)
+    {
+        if (comObject is not null && Marshal.IsComObject(comObject))
+        {
+            _ = Marshal.FinalReleaseComObject(comObject);
+        }
+    }
+
+    private static bool PathPointsToExistingFile(string? path) =>
+        NormalizePath(path) is { } normalizedPath && File.Exists(normalizedPath);
+
+    private static bool PathsMatch(string? left, string? right) =>
+        NormalizePath(left) is { } normalizedLeft &&
+        NormalizePath(right) is { } normalizedRight &&
+        string.Equals(normalizedLeft, normalizedRight, StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeIconLocation(string? iconLocation)
+    {
+        if (string.IsNullOrWhiteSpace(iconLocation))
+        {
+            return string.Empty;
+        }
+
+        var parts = iconLocation.Split(',', 2, StringSplitOptions.TrimEntries);
+        var normalizedPath = NormalizePath(parts[0]);
+        if (normalizedPath is null)
+        {
+            return string.Empty;
+        }
+
+        var iconIndex = parts.Length > 1 && int.TryParse(parts[1], out var parsedIndex)
+            ? parsedIndex
+            : 0;
+
+        return $"{normalizedPath},{iconIndex}";
+    }
+
+    private static string? NormalizePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Path.GetFullPath(path.Trim().Trim('"'));
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+        catch (NotSupportedException)
+        {
+            return null;
+        }
+        catch (PathTooLongException)
+        {
+            return null;
+        }
+        catch (System.Security.SecurityException)
+        {
+            return null;
+        }
+    }
+
+    internal sealed record ShortcutDefinition(
+        string ShortcutPath,
+        string TargetPath,
+        string WorkingDirectory,
+        string IconLocation,
+        string Description);
+
+    internal sealed record ShortcutSnapshot(
+        string? TargetPath,
+        string? WorkingDirectory,
+        string? IconLocation,
+        string? Description);
 }

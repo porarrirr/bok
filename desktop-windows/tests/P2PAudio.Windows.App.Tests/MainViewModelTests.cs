@@ -130,6 +130,23 @@ public sealed class MainViewModelTests
         viewModel.Shutdown();
     }
 
+    [Fact]
+    public void CurrentPayload_UpdatesRecommendedQrDisplaySize()
+    {
+        var viewModel = CreateViewModel();
+
+        viewModel.CurrentPayload = "short";
+        Assert.Equal(QrDisplaySizing.DefaultDisplaySize, viewModel.PayloadQrDisplaySize);
+
+        viewModel.CurrentPayload = new string('a', 700);
+        Assert.Equal(380d, viewModel.PayloadQrDisplaySize);
+
+        viewModel.CurrentPayload = new string('a', 950);
+        Assert.Equal(420d, viewModel.PayloadQrDisplaySize);
+
+        viewModel.Shutdown();
+    }
+
     // --- Invalid / malformed payloads ---
 
     [Fact]

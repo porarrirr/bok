@@ -424,13 +424,7 @@ private struct ConnectionCodePanel: View {
                     .foregroundStyle(.secondary)
             }
 
-            HStack {
-                Spacer()
-                QRCodeImage(payload: payloadValue)
-                    .frame(width: 220, height: 220)
-                    .accessibilityLabel(Text(payloadQrDescription))
-                Spacer()
-            }
+            ResponsiveQRCode(payload: payloadValue, accessibilityDescription: payloadQrDescription)
         }
     }
 }
@@ -535,13 +529,49 @@ private extension NetworkPathType {
     }
 }
 
+private func recommendedQrDisplaySize(for payloadLength: Int) -> CGFloat {
+    switch payloadLength {
+    case 900...:
+        return 360
+    case 650...:
+        return 320
+    default:
+        return 280
+    }
+}
+
+private struct ResponsiveQRCode: View {
+    let payload: String
+    let accessibilityDescription: String
+
+    private var preferredSize: CGFloat {
+        recommendedQrDisplaySize(for: payload.count)
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let qrSize = min(geometry.size.width, preferredSize)
+            HStack {
+                Spacer()
+                QRCodeImage(payload: payload, preferredSize: qrSize)
+                    .frame(width: qrSize, height: qrSize)
+                    .accessibilityLabel(Text(accessibilityDescription))
+                Spacer()
+            }
+        }
+        .frame(height: preferredSize)
+    }
+}
+
 private struct QRCodeImage: View {
     private let payload: String
+    private let preferredSize: CGFloat
     private let context = CIContext()
     private let filter = CIFilter.qrCodeGenerator()
 
-    init(payload: String) {
+    init(payload: String, preferredSize: CGFloat) {
         self.payload = payload
+        self.preferredSize = preferredSize
     }
 
     var body: some View {
@@ -558,12 +588,14 @@ private struct QRCodeImage: View {
     private func generateImage() -> UIImage? {
         let data = Data(payload.utf8)
         filter.setValue(data, forKey: "inputMessage")
-        filter.setValue("M", forKey: "inputCorrectionLevel")
+        filter.setValue("L", forKey: "inputCorrectionLevel")
         guard let outputImage = filter.outputImage else {
             return nil
         }
 
-        let transformed = outputImage.transformed(by: CGAffineTransform(scaleX: 10, y: 10))
+        let moduleWidth = max(outputImage.extent.width, 1)
+        let scale = max(1, Int(ceil(preferredSize / moduleWidth)))
+        let transformed = outputImage.transformed(by: CGAffineTransform(scaleX: CGFloat(scale), y: CGFloat(scale)))
         guard let cgImage = context.createCGImage(transformed, from: transformed.extent) else {
             return nil
         }

@@ -92,6 +92,9 @@ public sealed partial class MainViewModel : ObservableObject
     private BitmapImage? payloadQrImage;
 
     [ObservableProperty]
+    private double payloadQrDisplaySize = QrDisplaySizing.DefaultDisplaySize;
+
+    [ObservableProperty]
     private string networkPathLabel = "接続経路: 判定前";
 
     [ObservableProperty]
@@ -144,6 +147,34 @@ public sealed partial class MainViewModel : ObservableObject
         SetupStep.ListenerShowConfirm => 3,
         _ => 1
     };
+
+    public string StreamStateIndicator => CurrentStreamState switch
+    {
+        StreamState.Idle => "\u23F8",
+        StreamState.Capturing => "\u23F3",
+        StreamState.Connecting => "\uD83D\uDD04",
+        StreamState.Streaming => "\uD83D\uDFE2",
+        StreamState.Interrupted => "\u26A0\uFE0F",
+        StreamState.Failed => "\u274C",
+        StreamState.Ended => "\u23F9",
+        _ => "\u23F8"
+    };
+
+    public string StepProgressLabel => CurrentSetupStep switch
+    {
+        SetupStep.Entry => "\u2460 \u5F79\u5272\u3092\u9078\u3076",
+        SetupStep.PathDiagnosing => "\u2460 \u6E96\u5099\u4E2D",
+        SetupStep.SenderShowInit => "\u2461 QR\u3092\u4EA4\u63DB",
+        SetupStep.ListenerScanInit => "\u2461 QR\u3092\u4EA4\u63DB",
+        SetupStep.SenderVerifyCode => "\u2462 \u30B3\u30FC\u30C9\u78BA\u8A8D",
+        SetupStep.ListenerShowConfirm => "\u2462 \u30B3\u30FC\u30C9\u78BA\u8A8D",
+        _ => string.Empty
+    };
+
+    partial void OnCurrentPayloadChanged(string value)
+    {
+        PayloadQrDisplaySize = QrDisplaySizing.GetDisplaySize(value.Length);
+    }
 
     public bool CanStartSender => _backendHealth.IsReady &&
         (CurrentSetupStep == SetupStep.Entry || CurrentStreamState == StreamState.Failed) &&
@@ -827,7 +858,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             return new StubWebRtcBridge(
                 enabledForDevelopment: IsStubAllowedForDevelopment(),
-                startupReason: ex.Message
+                startupReason: FormatBridgeStartupReason(ex)
             );
         }
     }
@@ -872,7 +903,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             var fallbackBridge = new StubWebRtcBridge(
                 enabledForDevelopment: false,
-                startupReason: ex.Message
+                startupReason: FormatBridgeStartupReason(ex)
             );
             return new StartupState(fallbackBridge, fallbackBridge.GetBackendHealth());
         }
@@ -888,10 +919,17 @@ public sealed partial class MainViewModel : ObservableObject
         {
             var fallbackBridge = new StubWebRtcBridge(
                 enabledForDevelopment: false,
-                startupReason: ex.Message
+                startupReason: FormatBridgeStartupReason(ex)
             );
             return new StartupState(fallbackBridge, fallbackBridge.GetBackendHealth());
         }
+    }
+
+    private static string FormatBridgeStartupReason(Exception ex)
+    {
+        return NativeWebRtcLibraryResolver.IsNativeLoadFailure(ex)
+            ? NativeWebRtcLibraryResolver.DescribeStartupFailure(ex)
+            : ex.Message;
     }
 
     partial void OnCurrentSetupStepChanged(SetupStep value)
@@ -919,6 +957,8 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(CanRejectCode));
         OnPropertyChanged(nameof(CanStop));
         OnPropertyChanged(nameof(ProgressValue));
+        OnPropertyChanged(nameof(StreamStateIndicator));
+        OnPropertyChanged(nameof(StepProgressLabel));
     }
 
     private string GetRecommendedAction()

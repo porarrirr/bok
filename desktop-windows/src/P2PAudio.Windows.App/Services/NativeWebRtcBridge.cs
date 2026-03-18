@@ -262,6 +262,11 @@ internal static class NativeMethods
 {
     private const string DllName = "p2paudio_core_webrtc";
 
+    static NativeMethods()
+    {
+        NativeWebRtcLibraryResolver.EnsureRegistered();
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     internal struct core_webrtc_diagnostics
     {

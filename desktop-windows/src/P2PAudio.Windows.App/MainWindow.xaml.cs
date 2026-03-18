@@ -3,6 +3,7 @@ using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using P2PAudio.Windows.App.ViewModels;
 using P2PAudio.Windows.Core.Models;
 using Windows.ApplicationModel.DataTransfer;
@@ -66,7 +67,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (e.PropertyName is nameof(MainViewModel.CurrentSetupStep) or nameof(MainViewModel.CurrentStreamState) or nameof(MainViewModel.IsVerificationPending))
+        if (e.PropertyName is nameof(MainViewModel.CurrentSetupStep) or nameof(MainViewModel.CurrentStreamState) or nameof(MainViewModel.IsVerificationPending) or nameof(MainViewModel.FailureHintLabel))
         {
             UpdateFlowCards();
         }
@@ -92,6 +93,38 @@ public sealed partial class MainWindow : Window
             : Visibility.Collapsed;
         ListenerScanInitCard.Visibility = !hideSetupCards && step == SetupStep.ListenerScanInit ? Visibility.Visible : Visibility.Collapsed;
         ListenerShowConfirmCard.Visibility = !hideSetupCards && step == SetupStep.ListenerShowConfirm ? Visibility.Visible : Visibility.Collapsed;
+
+        var showFailure = streamState is StreamState.Failed or StreamState.Interrupted
+            || !string.IsNullOrEmpty(ViewModel.FailureHintLabel);
+        StatusFailurePanel.Visibility = showFailure ? Visibility.Visible : Visibility.Collapsed;
+
+        UpdateStatusHeroVisual(streamState);
+    }
+
+    private void UpdateStatusHeroVisual(StreamState state)
+    {
+        string borderKey = state switch
+        {
+            StreamState.Streaming => "SystemFillColorSuccessBrush",
+            StreamState.Capturing or StreamState.Connecting => "SystemFillColorAttentionBrush",
+            StreamState.Interrupted => "SystemFillColorCautionBrush",
+            StreamState.Failed => "SystemFillColorCriticalBrush",
+            _ => "CardStrokeColorDefaultBrush"
+        };
+
+        if (Application.Current.Resources.TryGetValue(borderKey, out var brush) && brush is Brush b)
+        {
+            StatusHeroCard.BorderBrush = b;
+        }
+        else if (Application.Current.Resources.TryGetValue("CardStrokeColorDefaultBrush", out var fallback) && fallback is Brush fb)
+        {
+            StatusHeroCard.BorderBrush = fb;
+        }
+
+        StatusHeroCard.BorderThickness = state is StreamState.Streaming or StreamState.Interrupted
+            or StreamState.Failed or StreamState.Capturing or StreamState.Connecting
+            ? new Thickness(4, 1, 1, 1)
+            : new Thickness(1);
     }
 
     private async void OnStartSenderClick(object sender, RoutedEventArgs e)

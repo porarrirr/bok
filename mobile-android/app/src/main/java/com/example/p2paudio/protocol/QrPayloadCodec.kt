@@ -67,7 +67,7 @@ object QrPayloadCodec {
     }
 
     private fun compress(input: ByteArray): ByteArray? {
-        val deflater = Deflater(Deflater.BEST_SPEED)
+        val deflater = Deflater(Deflater.BEST_COMPRESSION)
         return try {
             deflater.setInput(input)
             deflater.finish()

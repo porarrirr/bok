@@ -12,6 +12,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -62,6 +63,7 @@ import com.example.p2paudio.model.ConnectionDiagnostics
 import com.example.p2paudio.model.FailureCode
 import com.example.p2paudio.model.NetworkPathType
 import com.example.p2paudio.qr.QrCodeEncoder
+import com.example.p2paudio.qr.QrDisplaySizing
 import com.example.p2paudio.service.AudioSendService
 import com.example.p2paudio.ui.MainUiState
 import com.example.p2paudio.ui.MainViewModel
@@ -236,10 +238,20 @@ private fun MainScreen(
     val expirySeconds = rememberExpirySeconds(uiState.payloadExpiresAtUnixMs)
 
     val initQr = remember(uiState.initPayload) {
-        uiState.initPayload.takeIf { it.isNotBlank() }?.let { QrCodeEncoder.generate(it) }
+        uiState.initPayload.takeIf { it.isNotBlank() }?.let {
+            QrCodeEncoder.generate(it, QrDisplaySizing.recommendedBitmapSizePx(it.length))
+        }
+    }
+    val initQrSize = remember(uiState.initPayload) {
+        QrDisplaySizing.recommendedDisplaySizeDp(uiState.initPayload.length).dp
     }
     val confirmQr = remember(uiState.confirmPayload) {
-        uiState.confirmPayload.takeIf { it.isNotBlank() }?.let { QrCodeEncoder.generate(it) }
+        uiState.confirmPayload.takeIf { it.isNotBlank() }?.let {
+            QrCodeEncoder.generate(it, QrDisplaySizing.recommendedBitmapSizePx(it.length))
+        }
+    }
+    val confirmQrSize = remember(uiState.confirmPayload) {
+        QrDisplaySizing.recommendedDisplaySizeDp(uiState.confirmPayload.length).dp
     }
 
     LaunchedEffect(transientMessage) {
@@ -310,6 +322,7 @@ private fun MainScreen(
                     SetupStep.SENDER_SHOW_INIT -> SenderShowInitCard(
                         uiState = uiState,
                         payloadQr = initQr,
+                        qrSize = initQrSize,
                         expirySeconds = expirySeconds,
                         onCopyPayload = {
                             clipboardManager.setText(AnnotatedString(uiState.initPayload))
@@ -332,6 +345,7 @@ private fun MainScreen(
                     SetupStep.LISTENER_SHOW_CONFIRM -> ListenerShowConfirmCard(
                         uiState = uiState,
                         payloadQr = confirmQr,
+                        qrSize = confirmQrSize,
                         expirySeconds = expirySeconds,
                         onCopyPayload = {
                             clipboardManager.setText(AnnotatedString(uiState.confirmPayload))
@@ -668,6 +682,7 @@ private fun DiagnosingCard() {
 private fun SenderShowInitCard(
     uiState: MainUiState,
     payloadQr: android.graphics.Bitmap?,
+    qrSize: Dp,
     expirySeconds: Int,
     onCopyPayload: () -> Unit,
     onScanConfirm: () -> Unit
@@ -691,7 +706,7 @@ private fun SenderShowInitCard(
                 QrBlock(
                     qr = qr,
                     description = stringResource(R.string.flow_sender_qr_description),
-                    size = 240.dp
+                    preferredSize = qrSize
                 )
             }
             if (expirySeconds > 0) {
@@ -765,6 +780,7 @@ private fun ListenerScanCard(
 private fun ListenerShowConfirmCard(
     uiState: MainUiState,
     payloadQr: android.graphics.Bitmap?,
+    qrSize: Dp,
     expirySeconds: Int,
     onCopyPayload: () -> Unit
 ) {
@@ -780,7 +796,7 @@ private fun ListenerShowConfirmCard(
             QrBlock(
                 qr = qr,
                 description = stringResource(R.string.flow_receiver_qr_description),
-                size = 240.dp
+                preferredSize = qrSize
             )
         }
         if (expirySeconds > 0) {
@@ -1138,16 +1154,17 @@ private fun PayloadDetailsSection(
 private fun QrBlock(
     qr: android.graphics.Bitmap,
     description: String,
-    size: Dp
+    preferredSize: Dp
 ) {
-    Row(
+    BoxWithConstraints(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Center
+        contentAlignment = Alignment.Center
     ) {
+        val qrSize = minOf(maxWidth, preferredSize)
         Image(
             bitmap = qr.asImageBitmap(),
             contentDescription = description,
-            modifier = Modifier.size(size)
+            modifier = Modifier.size(qrSize)
         )
     }
 }

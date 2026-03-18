@@ -100,7 +100,7 @@ public static class QrPayloadCodec
         try
         {
             using var output = new MemoryStream();
-            using (var compressor = new ZLibStream(output, CompressionLevel.Fastest, leaveOpen: true))
+            using (var compressor = new ZLibStream(output, CompressionLevel.SmallestSize, leaveOpen: true))
             {
                 compressor.Write(input, 0, input.Length);
             }

@@ -30,8 +30,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="runtimes\win-x64\native\p2paudio_core_webrtc.dll"
-          Condition="Exists('runtimes\\win-x64\\native\\p2paudio_core_webrtc.dll')"
-          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="runtimes\win-x64\native\*.dll"
+          Condition="Exists('runtimes\\win-x64\\native')"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
