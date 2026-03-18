@@ -187,6 +187,18 @@ public sealed partial class MainWindow : Window
         ShowTransientMessage("接続データをクリップボードへコピーしました。");
     }
 
+    private void OnCopyConnectionCodeClick(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(ViewModel.CurrentConnectionCode))
+            return;
+
+        var dataPackage = new DataPackage();
+        dataPackage.SetText(ViewModel.CurrentConnectionCode);
+        Clipboard.SetContent(dataPackage);
+
+        ShowTransientMessage("接続コードをクリップボードへコピーしました。");
+    }
+
     private void ShowTransientMessage(string message)
     {
         TransientInfoBar.Message = message;

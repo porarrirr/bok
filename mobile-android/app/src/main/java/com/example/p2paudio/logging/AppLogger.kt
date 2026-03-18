@@ -56,10 +56,12 @@ object AppLogger {
             }
         }
 
-        if (throwable != null) {
-            Log.e(tag, body, throwable)
-        } else {
-            Log.println(priority, tag, body)
+        when (priority) {
+            Log.DEBUG -> Log.d(tag, body)
+            Log.INFO -> Log.i(tag, body)
+            Log.WARN -> Log.w(tag, body)
+            Log.ERROR -> if (throwable != null) Log.e(tag, body, throwable) else Log.e(tag, body)
+            else -> Log.println(priority, tag, body)
         }
     }
 }

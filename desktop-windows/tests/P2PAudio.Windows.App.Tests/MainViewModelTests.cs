@@ -8,7 +8,7 @@ namespace P2PAudio.Windows.App.Tests;
 
 public sealed class MainViewModelTests
 {
-    private static long FutureExpiry => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60_000;
+    private static long FutureExpiry => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 600_000;
     private static long PastExpiry => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - 1;
 
     private static string MakeInitPayload(string sessionId = "session-1", long? expiresAtUnixMs = null) =>
@@ -40,8 +40,14 @@ public sealed class MainViewModelTests
             PcmBytes: Enumerable.Repeat((byte)0x2A, 3840).ToArray()
         ));
 
-    private static MainViewModel CreateViewModel(FakeWebRtcBridge? bridge = null) =>
-        new(bridge ?? new FakeWebRtcBridge());
+    private static MainViewModel CreateViewModel(
+        FakeWebRtcBridge? bridge = null,
+        FakeConnectionCodeSessionFactory? connectionCodeSessionFactory = null) =>
+        new(
+            bridge ?? new FakeWebRtcBridge(),
+            connectionCodeSessionFactory ?? new FakeConnectionCodeSessionFactory(),
+            initializeImmediately: true
+        );
 
     // --- Backend readiness ---
 
@@ -92,7 +98,11 @@ public sealed class MainViewModelTests
     public async Task InitializeAsync_WhenDeferred_EnablesStartupActions()
     {
         var bridge = new FakeWebRtcBridge();
-        var viewModel = new MainViewModel(bridge, initializeImmediately: false);
+        var viewModel = new MainViewModel(
+            bridge,
+            new FakeConnectionCodeSessionFactory(),
+            initializeImmediately: false
+        );
 
         Assert.Equal("内部処理を初期化しています...", viewModel.BackendLabel);
         Assert.False(viewModel.CanStartSender);
@@ -115,7 +125,11 @@ public sealed class MainViewModelTests
         {
             BackendHealthException = new InvalidOperationException("probe_failed")
         };
-        var viewModel = new MainViewModel(bridge, initializeImmediately: false);
+        var viewModel = new MainViewModel(
+            bridge,
+            new FakeConnectionCodeSessionFactory(),
+            initializeImmediately: false
+        );
 
         await viewModel.InitializeAsync();
 
@@ -426,6 +440,40 @@ public sealed class MainViewModelTests
         Assert.Equal("案内: 接続中", viewModel.FlowStateLabel);
         Assert.Equal(StreamState.Streaming, viewModel.CurrentStreamState);
         Assert.False(viewModel.IsVerificationPending);
+        viewModel.Shutdown();
+    }
+
+    [Fact]
+    public async Task StartSender_GeneratesConnectionCode()
+    {
+        var bridge = new FakeWebRtcBridge();
+        var connectionCodeFactory = new FakeConnectionCodeSessionFactory();
+        var viewModel = CreateViewModel(bridge, connectionCodeFactory);
+
+        await viewModel.StartSenderAsync();
+
+        Assert.StartsWith(ConnectionCodeCodec.Prefix, viewModel.CurrentConnectionCode);
+        Assert.Contains("接続コードを作成しました", viewModel.StatusMessage);
+        Assert.NotNull(connectionCodeFactory.ActiveSession);
+        viewModel.Shutdown();
+    }
+
+    [Fact]
+    public async Task SenderFlow_ConnectionCodeConfirm_AutoConnects()
+    {
+        var bridge = new FakeWebRtcBridge();
+        var connectionCodeFactory = new FakeConnectionCodeSessionFactory();
+        var viewModel = CreateViewModel(bridge, connectionCodeFactory);
+
+        await viewModel.StartSenderAsync();
+        connectionCodeFactory.ActiveSession!.CompleteConfirm(MakeConfirmPayload());
+
+        await WaitUntilAsync(() => viewModel.CurrentStreamState == StreamState.Streaming, TimeSpan.FromSeconds(2));
+
+        Assert.Equal(StreamState.Streaming, viewModel.CurrentStreamState);
+        Assert.False(viewModel.IsVerificationPending);
+        Assert.Empty(viewModel.CurrentConnectionCode);
+        Assert.NotEmpty(viewModel.VerificationCode);
         viewModel.Shutdown();
     }
 
@@ -821,6 +869,64 @@ public sealed class MainViewModelTests
             {
                 _incomingPackets.Enqueue(packet);
             }
+        }
+    }
+
+    private sealed class FakeConnectionCodeSessionFactory : IConnectionCodeSessionFactory
+    {
+        public FakeConnectionCodeSession? ActiveSession { get; private set; }
+
+        public Exception? CreateException { get; set; }
+
+        public IConnectionCodeSession Create(string initPayload, string offerSdp, long expiresAtUnixMs)
+        {
+            _ = initPayload;
+            _ = offerSdp;
+
+            if (CreateException is not null)
+            {
+                throw CreateException;
+            }
+
+            var connectionCode = ConnectionCodeCodec.Encode(new ConnectionCodePayload(
+                Host: "192.168.0.10",
+                Port: 45678,
+                Token: "token-123",
+                ExpiresAtUnixMs: expiresAtUnixMs
+            ));
+            ActiveSession = new FakeConnectionCodeSession(connectionCode, expiresAtUnixMs);
+            return ActiveSession;
+        }
+    }
+
+    private sealed class FakeConnectionCodeSession : IConnectionCodeSession
+    {
+        private readonly TaskCompletionSource<string> _confirmPayloadTcs =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public FakeConnectionCodeSession(string connectionCode, long expiresAtUnixMs)
+        {
+            ConnectionCode = connectionCode;
+            ExpiresAtUnixMs = expiresAtUnixMs;
+        }
+
+        public string ConnectionCode { get; }
+
+        public long ExpiresAtUnixMs { get; }
+
+        public Task<string> WaitForConfirmPayloadAsync(CancellationToken cancellationToken)
+        {
+            return _confirmPayloadTcs.Task.WaitAsync(cancellationToken);
+        }
+
+        public void CompleteConfirm(string confirmPayload)
+        {
+            _confirmPayloadTcs.TrySetResult(confirmPayload);
+        }
+
+        public void Dispose()
+        {
+            _confirmPayloadTcs.TrySetCanceled();
         }
     }
 }

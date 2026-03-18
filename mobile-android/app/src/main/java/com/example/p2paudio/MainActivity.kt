@@ -300,6 +300,12 @@ private fun MainScreen(
                         },
                         onSharePayload = { onSharePayload(uiState.confirmPayload) }
                     )
+
+                    SetupStep.LISTENER_WAIT_FOR_CONNECTION -> ListenerWaitingForConnectionCard(
+                        code = uiState.verificationCode,
+                        expirySeconds = expirySeconds,
+                        onStop = onStop
+                    )
                 }
             } else if (uiState.streamState != AudioStreamState.FAILED) {
                 ConnectedTipsCard(uiState = uiState)
@@ -741,6 +747,43 @@ private fun ListenerShowConfirmCard(
             onCopyPayload = onCopyPayload,
             onSharePayload = onSharePayload
         )
+    }
+}
+
+@Composable
+private fun ListenerWaitingForConnectionCard(
+    code: String,
+    expirySeconds: Int,
+    onStop: () -> Unit
+) {
+    StepCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("listener_wait_connection_card"),
+        number = 3,
+        title = stringResource(R.string.flow_receiver_auto_connect_title),
+        description = stringResource(R.string.flow_receiver_auto_connect_description)
+    ) {
+        if (expirySeconds > 0) {
+            Text(
+                text = stringResource(R.string.status_qr_expiry_remaining, expirySeconds),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+        VerificationCodeBlock(code = code)
+        Text(
+            text = stringResource(R.string.flow_receiver_auto_connect_hint),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedButton(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onStop
+        ) {
+            Text(stringResource(R.string.action_stop_session))
+        }
     }
 }
 
@@ -1208,7 +1251,8 @@ private fun journeyActiveIndex(uiState: MainUiState): Int = when (uiState.setupS
     SetupStep.SENDER_SHOW_INIT,
     SetupStep.LISTENER_SCAN_INIT -> 1
     SetupStep.SENDER_VERIFY_CODE,
-    SetupStep.LISTENER_SHOW_CONFIRM -> 2
+    SetupStep.LISTENER_SHOW_CONFIRM,
+    SetupStep.LISTENER_WAIT_FOR_CONNECTION -> 2
 }
 
 private fun connectedTipRes(uiState: MainUiState): Int = when {
@@ -1245,6 +1289,7 @@ private fun recommendedActionRes(uiState: MainUiState): Int {
         SetupStep.SENDER_VERIFY_CODE -> R.string.status_next_action_verify
         SetupStep.LISTENER_SCAN_INIT -> R.string.status_next_action_scan_init
         SetupStep.LISTENER_SHOW_CONFIRM -> R.string.status_next_action_show_confirm
+        SetupStep.LISTENER_WAIT_FOR_CONNECTION -> R.string.status_next_action_wait_connection_code
     }
 }
 

@@ -267,23 +267,46 @@
                                 <TextBlock Text="送信側" FontSize="11" FontWeight="Bold" Foreground="#1A56DB" />
                             </Border>
                             <TextBlock
-                                Text="開始データを共有する"
+                                Text="接続コードを Android に貼り付ける"
                                 FontSize="16"
                                 FontWeight="SemiBold"
                                 VerticalAlignment="Center" />
                         </StackPanel>
                         <TextBlock
-                            Text="開始データをコピーして Android 側へ渡してください。相手から応答データを受け取ったら、この画面に貼り付けます。"
+                            Text="Windows 側で接続コードをコピーし、Android 側に貼り付けるだけで接続できます。応答は自動で戻るので、通常はこの画面で待つだけです。"
                             FontSize="13"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             TextWrapping="Wrap" />
                         <TextBlock
-                            Text="⏱ 1分以内を目安に共有してください"
+                            Text="⏱ 接続コードの有効期限は 10 分です"
                             FontSize="12"
                             Foreground="{ThemeResource SystemFillColorAttentionBrush}" />
 
-                        <Expander Header="手動で操作する" Padding="0">
+                        <StackPanel Spacing="8">
+                            <Button Content="接続コードをコピー" Click="OnCopyConnectionCodeClick" Padding="12,6" />
+                            <TextBlock Text="接続コード" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontWeight="SemiBold" />
+                            <Border
+                                Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                CornerRadius="8"
+                                BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                Padding="12">
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.CurrentConnectionCode, Mode=OneWay}"
+                                    FontSize="15"
+                                    FontFamily="Consolas"
+                                    TextWrapping="Wrap"
+                                    IsTextSelectionEnabled="True" />
+                            </Border>
+                        </StackPanel>
+
+                        <Expander Header="従来の手動手順を使う" Padding="0">
                             <StackPanel Spacing="10" Margin="0,10,0,0">
+                                <TextBlock
+                                    Text="接続コードを使わず、開始データと応答データを手動でやり取りする場合のみ使います。"
+                                    FontSize="12"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    TextWrapping="Wrap" />
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Button Content="開始データをコピー" Click="OnCopyPayloadClick" Padding="12,6" />
                                     <Button Content="クリップボードの応答データを使う" Click="OnPastePayloadClick" Padding="12,6" />
@@ -459,7 +482,7 @@
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             TextWrapping="Wrap" />
                         <TextBlock
-                            Text="⏱ 1分以内を目安に共有してください"
+                            Text="⏱ 応答データの有効期限は 10 分です"
                             FontSize="12"
                             Foreground="{ThemeResource SystemFillColorAttentionBrush}" />
 

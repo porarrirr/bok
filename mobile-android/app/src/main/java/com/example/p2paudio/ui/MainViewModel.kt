@@ -23,6 +23,9 @@ import com.example.p2paudio.model.NetworkPathType
 import com.example.p2paudio.model.PairingConfirmPayload
 import com.example.p2paudio.model.PairingInitPayload
 import com.example.p2paudio.model.SessionFailure
+import com.example.p2paudio.protocol.ConnectionCodeClient
+import com.example.p2paudio.protocol.ConnectionCodeClientException
+import com.example.p2paudio.protocol.ConnectionCodeCodec
 import com.example.p2paudio.protocol.PairingPayloadValidator
 import com.example.p2paudio.protocol.QrPayloadCodec
 import com.example.p2paudio.protocol.VerificationCode
@@ -333,88 +336,247 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         AppLogger.i(
             "MainViewModel",
             "confirm_generation_start",
-            "Creating confirm payload from init transport string",
-            context = mapOf("initLength" to initRaw.length)
+            "Creating confirm payload from listener input",
+            context = mapOf(
+                "inputLength" to initRaw.length,
+                "transport" to if (ConnectionCodeCodec.looksLikeConnectionCode(initRaw)) "connection_code" else "init_payload"
+            )
         )
         beginListenerFlow()
         viewModelScope.launch {
-            runCatching {
-                val init = QrPayloadCodec.decodeInit(initRaw)
-                PairingPayloadValidator.validateInit(init, System.currentTimeMillis())?.let { failure ->
+            if (ConnectionCodeCodec.looksLikeConnectionCode(initRaw)) {
+                createConfirmFromConnectionCode(initRaw)
+            } else {
+                createConfirmFromInitPayload(initRaw)
+            }
+        }
+    }
+
+    private suspend fun createConfirmFromInitPayload(initRaw: String) {
+        runCatching {
+            val init = QrPayloadCodec.decodeInit(initRaw)
+            PairingPayloadValidator.validateInit(init, System.currentTimeMillis())?.let { failure ->
+                AppLogger.w(
+                    "MainViewModel",
+                    "init_validation_failed",
+                    "Init payload validation failed",
+                    context = mapOf(
+                        "sessionId" to init.sessionId,
+                        "failureCode" to failure.code.name,
+                        "reason" to failure.message
+                    )
+                )
+                recoverToEntry(failure, payloadRole = PayloadRole.INIT)
+                return
+            }
+
+            val answerResult = peerController.createAnswerForOffer(init.offerSdp)
+            answerResult.onSuccess { local ->
+                val confirmPayload = PairingConfirmPayload(
+                    sessionId = init.sessionId,
+                    receiverDeviceName = Build.MODEL ?: "android",
+                    receiverPubKeyFingerprint = local.localFingerprint,
+                    answerSdp = local.answerSdp,
+                    expiresAtUnixMs = System.currentTimeMillis() + PAYLOAD_TTL_MS
+                )
+                val verificationCode = VerificationCode.fromSessionAndFingerprints(
+                    sessionId = init.sessionId,
+                    senderFingerprint = init.senderPubKeyFingerprint,
+                    receiverFingerprint = local.localFingerprint
+                )
+                _uiState.update {
+                    it.copy(
+                        setupMode = SetupMode.LISTENER,
+                        setupStep = SetupStep.LISTENER_SHOW_CONFIRM,
+                        payloadExpiresAtUnixMs = confirmPayload.expiresAtUnixMs,
+                        activeSessionId = init.sessionId,
+                        confirmPayload = QrPayloadCodec.encodeConfirm(confirmPayload),
+                        verificationCode = verificationCode,
+                        statusMessage = text(R.string.status_confirm_generated),
+                        failure = null
+                    )
+                }
+                AppLogger.i(
+                    "MainViewModel",
+                    "confirm_generation_success",
+                    "Confirm payload generated",
+                    context = mapOf(
+                        "sessionId" to init.sessionId,
+                        "answerLength" to confirmPayload.answerSdp.length,
+                        "fingerprintHead" to local.localFingerprint.take(16)
+                    )
+                )
+            }.onFailure {
+                AppLogger.e(
+                    "MainViewModel",
+                    "confirm_generation_failed",
+                    "Confirm payload generation failed",
+                    context = mapOf("reason" to (it.message ?: "unknown")),
+                    throwable = it
+                )
+                recoverToEntry(
+                    negotiationFailure(it, text(R.string.error_create_answer_failed))
+                )
+            }
+        }.onFailure {
+            AppLogger.w(
+                "MainViewModel",
+                "init_decode_failed",
+                "Init payload decode failed",
+                context = mapOf("reason" to (it.message ?: "unknown"))
+            )
+            recoverToEntry(
+                SessionFailure(FailureCode.INVALID_PAYLOAD, text(R.string.error_invalid_init_payload)),
+                payloadRole = PayloadRole.INIT
+            )
+        }
+    }
+
+    private suspend fun createConfirmFromConnectionCode(connectionCodeRaw: String) {
+        val connectionCode = try {
+            ConnectionCodeCodec.decode(connectionCodeRaw)
+        } catch (error: IllegalArgumentException) {
+            AppLogger.w(
+                "MainViewModel",
+                "connection_code_decode_failed",
+                "Connection code decode failed",
+                context = mapOf("reason" to (error.message ?: "unknown"))
+            )
+            val message = text(R.string.error_invalid_connection_code)
+            resetToEntry(
+                statusMessage = message,
+                failure = SessionFailure(FailureCode.INVALID_PAYLOAD, message)
+            )
+            return
+        }
+
+        if (connectionCode.expiresAtUnixMs <= System.currentTimeMillis()) {
+            recoverToEntry(SessionFailure(FailureCode.SESSION_EXPIRED, text(R.string.error_session_expired)))
+            return
+        }
+
+        val initRaw = try {
+            ConnectionCodeClient.fetchInitPayload(connectionCode)
+        } catch (error: Exception) {
+            val failure = if (error is ConnectionCodeClientException) {
+                error.failure
+            } else {
+                SessionFailure(FailureCode.INVALID_PAYLOAD, text(R.string.error_invalid_connection_code))
+            }
+            AppLogger.w(
+                "MainViewModel",
+                "connection_code_fetch_failed",
+                "Failed to fetch init payload via connection code",
+                context = mapOf(
+                    "failureCode" to failure.code.name,
+                    "reason" to failure.message
+                )
+            )
+            recoverToEntry(failure)
+            return
+        }
+
+        runCatching {
+            val init = QrPayloadCodec.decodeInit(initRaw)
+            PairingPayloadValidator.validateInit(init, System.currentTimeMillis())?.let { failure ->
+                AppLogger.w(
+                    "MainViewModel",
+                    "connection_code_init_validation_failed",
+                    "Fetched init payload validation failed",
+                    context = mapOf(
+                        "sessionId" to init.sessionId,
+                        "failureCode" to failure.code.name,
+                        "reason" to failure.message
+                    )
+                )
+                recoverToEntry(failure, payloadRole = PayloadRole.INIT)
+                return
+            }
+
+            val answerResult = peerController.createAnswerForOffer(init.offerSdp)
+            answerResult.onSuccess { local ->
+                val confirmPayload = PairingConfirmPayload(
+                    sessionId = init.sessionId,
+                    receiverDeviceName = Build.MODEL ?: "android",
+                    receiverPubKeyFingerprint = local.localFingerprint,
+                    answerSdp = local.answerSdp,
+                    expiresAtUnixMs = System.currentTimeMillis() + PAYLOAD_TTL_MS
+                )
+                val encodedConfirmPayload = QrPayloadCodec.encodeConfirm(confirmPayload)
+                val verificationCode = VerificationCode.fromSessionAndFingerprints(
+                    sessionId = init.sessionId,
+                    senderFingerprint = init.senderPubKeyFingerprint,
+                    receiverFingerprint = local.localFingerprint
+                )
+
+                try {
+                    ConnectionCodeClient.submitConfirmPayload(connectionCode, encodedConfirmPayload)
+                } catch (error: Exception) {
+                    val failure = if (error is ConnectionCodeClientException) {
+                        error.failure
+                    } else {
+                        SessionFailure(FailureCode.INVALID_PAYLOAD, text(R.string.error_invalid_connection_code))
+                    }
                     AppLogger.w(
                         "MainViewModel",
-                        "init_validation_failed",
-                        "Init payload validation failed",
+                        "connection_code_submit_failed",
+                        "Failed to submit confirm payload via connection code",
                         context = mapOf(
                             "sessionId" to init.sessionId,
                             "failureCode" to failure.code.name,
                             "reason" to failure.message
                         )
                     )
-                    recoverToEntry(failure, payloadRole = PayloadRole.INIT)
-                    return@launch
+                    recoverToEntry(failure)
+                    return
                 }
 
-                val answerResult = peerController.createAnswerForOffer(init.offerSdp)
-                answerResult.onSuccess { local ->
-                    val confirmPayload = PairingConfirmPayload(
-                        sessionId = init.sessionId,
-                        receiverDeviceName = Build.MODEL ?: "android",
-                        receiverPubKeyFingerprint = local.localFingerprint,
-                        answerSdp = local.answerSdp,
-                        expiresAtUnixMs = System.currentTimeMillis() + PAYLOAD_TTL_MS
-                    )
-                    val verificationCode = VerificationCode.fromSessionAndFingerprints(
-                        sessionId = init.sessionId,
-                        senderFingerprint = init.senderPubKeyFingerprint,
-                        receiverFingerprint = local.localFingerprint
-                    )
-                    _uiState.update {
-                        it.copy(
-                            setupMode = SetupMode.LISTENER,
-                            setupStep = SetupStep.LISTENER_SHOW_CONFIRM,
-                            payloadExpiresAtUnixMs = confirmPayload.expiresAtUnixMs,
-                            activeSessionId = init.sessionId,
-                            confirmPayload = QrPayloadCodec.encodeConfirm(confirmPayload),
-                            verificationCode = verificationCode,
-                            statusMessage = text(R.string.status_confirm_generated),
-                            failure = null
-                        )
-                    }
-                    AppLogger.i(
-                        "MainViewModel",
-                        "confirm_generation_success",
-                        "Confirm payload generated",
-                        context = mapOf(
-                            "sessionId" to init.sessionId,
-                            "answerLength" to confirmPayload.answerSdp.length,
-                            "fingerprintHead" to local.localFingerprint.take(16)
-                        )
-                    )
-                }.onFailure {
-                    AppLogger.e(
-                        "MainViewModel",
-                        "confirm_generation_failed",
-                        "Confirm payload generation failed",
-                        context = mapOf("reason" to (it.message ?: "unknown")),
-                        throwable = it
-                    )
-                    recoverToEntry(
-                        negotiationFailure(it, text(R.string.error_create_answer_failed))
+                _uiState.update {
+                    it.copy(
+                        streamState = AudioStreamState.CONNECTING,
+                        setupMode = SetupMode.LISTENER,
+                        setupStep = SetupStep.LISTENER_WAIT_FOR_CONNECTION,
+                        payloadExpiresAtUnixMs = connectionCode.expiresAtUnixMs,
+                        activeSessionId = init.sessionId,
+                        confirmPayload = "",
+                        verificationCode = verificationCode,
+                        statusMessage = text(R.string.status_connection_code_connecting),
+                        failure = null
                     )
                 }
-            }.onFailure {
-                AppLogger.w(
+                AppLogger.i(
                     "MainViewModel",
-                    "init_decode_failed",
-                    "Init payload decode failed",
-                    context = mapOf("reason" to (it.message ?: "unknown"))
+                    "connection_code_confirm_submitted",
+                    "Confirm payload submitted to Windows peer via connection code",
+                    context = mapOf(
+                        "sessionId" to init.sessionId,
+                        "host" to connectionCode.host,
+                        "port" to connectionCode.port
+                    )
+                )
+            }.onFailure {
+                AppLogger.e(
+                    "MainViewModel",
+                    "connection_code_answer_failed",
+                    "Confirm payload generation failed for connection code flow",
+                    context = mapOf("reason" to (it.message ?: "unknown")),
+                    throwable = it
                 )
                 recoverToEntry(
-                    SessionFailure(FailureCode.INVALID_PAYLOAD, text(R.string.error_invalid_init_payload)),
-                    payloadRole = PayloadRole.INIT
+                    negotiationFailure(it, text(R.string.error_create_answer_failed))
                 )
             }
+        }.onFailure {
+            AppLogger.w(
+                "MainViewModel",
+                "connection_code_init_decode_failed",
+                "Fetched init payload decode failed",
+                context = mapOf("reason" to (it.message ?: "unknown"))
+            )
+            recoverToEntry(
+                SessionFailure(FailureCode.INVALID_PAYLOAD, text(R.string.error_invalid_init_payload)),
+                payloadRole = PayloadRole.INIT
+            )
         }
     }
 
@@ -717,7 +879,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     companion object {
-        private const val PAYLOAD_TTL_MS = 60_000L
+        private const val PAYLOAD_TTL_MS = 600_000L
     }
 }
 

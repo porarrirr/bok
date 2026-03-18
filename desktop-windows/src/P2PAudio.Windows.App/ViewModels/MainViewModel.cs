@@ -9,8 +9,11 @@ namespace P2PAudio.Windows.App.ViewModels;
 
 public sealed partial class MainViewModel : ObservableObject
 {
+    private const long PayloadTtlMs = 600_000;
+
     private IWebRtcBridge _bridge;
     private readonly Func<IWebRtcBridge>? _startupBridgeFactory;
+    private readonly IConnectionCodeSessionFactory _connectionCodeSessionFactory;
     private readonly LoopbackPcmSender _loopbackSender;
     private readonly PcmPlaybackService _playbackService;
     private readonly CancellationTokenSource _receiveLoopCts = new();
@@ -23,6 +26,8 @@ public sealed partial class MainViewModel : ObservableObject
     private string _localSenderFingerprint = string.Empty;
     private string _pendingAnswerSdp = string.Empty;
     private int _receiveIdleTicks;
+    private IConnectionCodeSession? _connectionCodeSession;
+    private CancellationTokenSource? _connectionCodeWaitCts;
 
     public MainViewModel() : this(initializeImmediately: true)
     {
@@ -32,19 +37,37 @@ public sealed partial class MainViewModel : ObservableObject
         : this(
             initialBridge: initializeImmediately ? CreateBridge() : CreateStartupPlaceholderBridge(),
             startupBridgeFactory: initializeImmediately ? null : CreateBridge,
+            connectionCodeSessionFactory: null,
             initializeImmediately: initializeImmediately
         )
     {
     }
 
-    public MainViewModel(IWebRtcBridge bridge) : this(bridge, initializeImmediately: true)
+    public MainViewModel(IWebRtcBridge bridge) : this(
+        bridge,
+        connectionCodeSessionFactory: null,
+        initializeImmediately: true
+    )
     {
     }
 
     public MainViewModel(IWebRtcBridge bridge, bool initializeImmediately)
         : this(
+            bridge,
+            connectionCodeSessionFactory: null,
+            initializeImmediately: initializeImmediately
+        )
+    {
+    }
+
+    public MainViewModel(
+        IWebRtcBridge bridge,
+        IConnectionCodeSessionFactory? connectionCodeSessionFactory,
+        bool initializeImmediately)
+        : this(
             initialBridge: initializeImmediately ? bridge : CreateStartupPlaceholderBridge(),
             startupBridgeFactory: initializeImmediately ? null : () => bridge,
+            connectionCodeSessionFactory: connectionCodeSessionFactory,
             initializeImmediately: initializeImmediately
         )
     {
@@ -53,10 +76,12 @@ public sealed partial class MainViewModel : ObservableObject
     private MainViewModel(
         IWebRtcBridge initialBridge,
         Func<IWebRtcBridge>? startupBridgeFactory,
+        IConnectionCodeSessionFactory? connectionCodeSessionFactory,
         bool initializeImmediately)
     {
         _bridge = initialBridge;
         _startupBridgeFactory = startupBridgeFactory;
+        _connectionCodeSessionFactory = connectionCodeSessionFactory ?? new ConnectionCodeSessionFactory();
         _loopbackSender = new LoopbackPcmSender(packet => _bridge.SendPcmPacket(packet));
         _playbackService = new PcmPlaybackService();
         _backendHealth = CreatePendingBackendHealth();
@@ -76,6 +101,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     private string currentPayload = string.Empty;
+
+    [ObservableProperty]
+    private string currentConnectionCode = string.Empty;
 
     [ObservableProperty]
     private string networkPathLabel = "接続経路: 判定前";
@@ -178,6 +206,7 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        ResetConnectionCodeSession();
         StopLoopbackIfRunning();
         SetStreamState(StreamState.Capturing);
         SetFailureCode(null, clearWhenNull: true);
@@ -201,16 +230,33 @@ public sealed partial class MainViewModel : ObservableObject
 
         _localSenderFingerprint = localOffer.Fingerprint;
         ActiveSessionId = localOffer.SessionId;
+        var expiresAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + PayloadTtlMs;
         var payload = PairingInitPayload.Create(
             sessionId: localOffer.SessionId,
             senderDeviceName: Environment.MachineName,
             senderPubKeyFingerprint: localOffer.Fingerprint,
             offerSdp: localOffer.OfferSdp,
-            expiresAtUnixMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60_000
+            expiresAtUnixMs: expiresAtUnixMs
         );
         CurrentPayload = QrPayloadCodec.EncodeInit(payload);
+
+        try
+        {
+            StartConnectionCodeSession(CurrentPayload, localOffer.OfferSdp, expiresAtUnixMs);
+        }
+        catch (SessionFailure failure)
+        {
+            SetFailureState(failure.Message, failure.Code);
+            return;
+        }
+        catch (Exception ex)
+        {
+            SetFailureState($"接続コードの作成に失敗しました: {ex.Message}", FailureCode.NetworkInterfaceNotUsable);
+            return;
+        }
+
         CurrentSetupStep = SetupStep.SenderShowInit;
-        StatusMessage = "開始データを作成しました。コピーして受信側へ共有してください。";
+        StatusMessage = "接続コードを作成しました。コピーして Android 側に貼り付けてください。";
         FlowStateLabel = "案内: 開始データを共有";
     }
 
@@ -221,12 +267,14 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        ResetConnectionCodeSession();
         _bridge.Close();
         StopLoopbackIfRunning();
         _playbackService.Stop();
         _pendingAnswerSdp = string.Empty;
         _localSenderFingerprint = string.Empty;
         CurrentPayload = string.Empty;
+        CurrentConnectionCode = string.Empty;
         VerificationCode = string.Empty;
         ActiveSessionId = string.Empty;
         IsVerificationPending = false;
@@ -337,6 +385,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     public void Stop()
     {
+        ResetConnectionCodeSession();
         _bridge.Close();
         StopLoopbackIfRunning();
         _playbackService.Stop();
@@ -344,6 +393,7 @@ public sealed partial class MainViewModel : ObservableObject
         _pendingAnswerSdp = string.Empty;
         _localSenderFingerprint = string.Empty;
         CurrentPayload = string.Empty;
+        CurrentConnectionCode = string.Empty;
         VerificationCode = string.Empty;
         ActiveSessionId = string.Empty;
         IsVerificationPending = false;
@@ -472,7 +522,7 @@ public sealed partial class MainViewModel : ObservableObject
                 receiverDeviceName: Environment.MachineName,
                 receiverPubKeyFingerprint: answer.Fingerprint,
                 answerSdp: answer.AnswerSdp,
-                expiresAtUnixMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60_000
+                expiresAtUnixMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + PayloadTtlMs
             );
             CurrentPayload = QrPayloadCodec.EncodeConfirm(confirmPayload);
             VerificationCode = P2PAudio.Windows.Core.Protocol.VerificationCode.FromSessionAndFingerprints(
@@ -501,30 +551,10 @@ public sealed partial class MainViewModel : ObservableObject
     {
         try
         {
-            var confirmPayload = QrPayloadCodec.DecodeConfirm(confirmPayloadRaw);
-            var failure = PairingPayloadValidator.ValidateConfirm(
-                confirmPayload,
-                expectedSessionId: ActiveSessionId,
-                nowUnixMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-            );
-            if (failure is not null)
-            {
-                RestartSetup(failure.Message, failure.Code);
-                return Task.CompletedTask;
-            }
-
-            if (string.IsNullOrWhiteSpace(_localSenderFingerprint))
-            {
-                RestartSetup("送信側の情報が不足しています。", FailureCode.InvalidPayload);
-                return Task.CompletedTask;
-            }
-
-            VerificationCode = P2PAudio.Windows.Core.Protocol.VerificationCode.FromSessionAndFingerprints(
-                sessionId: ActiveSessionId,
-                senderFingerprint: _localSenderFingerprint,
-                receiverFingerprint: confirmPayload.ReceiverPubKeyFingerprint
-            );
-            _pendingAnswerSdp = confirmPayload.AnswerSdp;
+            var preparedConfirm = DecodeConfirmPayload(confirmPayloadRaw);
+            ResetConnectionCodeSession();
+            VerificationCode = preparedConfirm.VerificationCode;
+            _pendingAnswerSdp = preparedConfirm.Payload.AnswerSdp;
             CurrentSetupStep = SetupStep.SenderVerifyCode;
             IsVerificationPending = true;
             FlowStateLabel = "案内: 6桁コードを確認";
@@ -543,6 +573,166 @@ public sealed partial class MainViewModel : ObservableObject
         return Task.CompletedTask;
     }
 
+    private void StartConnectionCodeSession(string initPayload, string offerSdp, long expiresAtUnixMs)
+    {
+        var session = _connectionCodeSessionFactory.Create(initPayload, offerSdp, expiresAtUnixMs);
+        _connectionCodeSession = session;
+        CurrentConnectionCode = session.ConnectionCode;
+        _connectionCodeWaitCts = new CancellationTokenSource();
+        _ = AwaitConnectionCodeConfirmAsync(session, _connectionCodeWaitCts.Token);
+        _ = MonitorConnectionCodeExpiryAsync(session.ExpiresAtUnixMs, _connectionCodeWaitCts.Token);
+    }
+
+    private async Task AwaitConnectionCodeConfirmAsync(
+        IConnectionCodeSession session,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var confirmPayloadRaw = await session.WaitForConfirmPayloadAsync(cancellationToken);
+            RunOnUiThread(() => DisposeConnectionCodeSession(clearCode: true));
+            await ApplyConfirmFromConnectionCodeAsync(confirmPayloadRaw, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (SessionFailure failure)
+        {
+            RunOnUiThread(() => RestartSetup(failure.Message, failure.Code));
+        }
+        catch (Exception ex)
+        {
+            RunOnUiThread(() => RestartSetup($"接続コードの受信に失敗しました: {ex.Message}", FailureCode.PeerUnreachable));
+        }
+        finally
+        {
+            RunOnUiThread(CancelConnectionCodeWait);
+        }
+    }
+
+    private async Task MonitorConnectionCodeExpiryAsync(long expiresAtUnixMs, CancellationToken cancellationToken)
+    {
+        var remainingMs = Math.Max(0, expiresAtUnixMs - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(remainingMs), cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        RunOnUiThread(() =>
+        {
+            if (CurrentSetupStep == SetupStep.SenderShowInit && !string.IsNullOrWhiteSpace(CurrentConnectionCode))
+            {
+                RestartSetup("接続コードの有効期限が切れました。", FailureCode.SessionExpired);
+            }
+        });
+    }
+
+    private async Task ApplyConfirmFromConnectionCodeAsync(
+        string confirmPayloadRaw,
+        CancellationToken cancellationToken)
+    {
+        var preparedConfirm = DecodeConfirmPayload(confirmPayloadRaw);
+
+        RunOnUiThread(() =>
+        {
+            VerificationCode = preparedConfirm.VerificationCode;
+            _pendingAnswerSdp = preparedConfirm.Payload.AnswerSdp;
+            IsVerificationPending = false;
+            FlowStateLabel = "案内: 接続中";
+            SetStreamState(StreamState.Connecting);
+            SetFailureCode(null, clearWhenNull: true);
+            StatusMessage = "Android から応答データを受信しました。接続しています。";
+        });
+
+        var applyResult = await _bridge.ApplyAnswerAsync(preparedConfirm.Payload.AnswerSdp);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        RunOnUiThread(() =>
+        {
+            UpdateDiagnosticsFromBridgeOr(applyResult.Diagnostics);
+            if (!applyResult.Success)
+            {
+                SetFailureState(
+                    $"応答データの適用に失敗しました: {applyResult.ErrorMessage}",
+                    applyResult.Diagnostics.NormalizedFailureCode ?? FailureCode.WebRtcNegotiationFailed
+                );
+                return;
+            }
+
+            IsVerificationPending = false;
+            FlowStateLabel = "案内: 接続中";
+            SetStreamState(StreamState.Streaming);
+            StatusMessage = "接続しました。このPCの音声送信を開始します。";
+            RefreshDiagnosticsFromBridge();
+
+            try
+            {
+                _loopbackSender.Start();
+            }
+            catch (Exception ex)
+            {
+                SetFailureState($"音声取得に失敗しました: {ex.Message}", FailureCode.AudioCaptureNotSupported);
+            }
+        });
+    }
+
+    private PreparedConfirm DecodeConfirmPayload(string confirmPayloadRaw)
+    {
+        var confirmPayload = QrPayloadCodec.DecodeConfirm(confirmPayloadRaw);
+        var failure = PairingPayloadValidator.ValidateConfirm(
+            confirmPayload,
+            expectedSessionId: ActiveSessionId,
+            nowUnixMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+        );
+        if (failure is not null)
+        {
+            throw failure;
+        }
+
+        if (string.IsNullOrWhiteSpace(_localSenderFingerprint))
+        {
+            throw new SessionFailure(FailureCode.InvalidPayload, "送信側の情報が不足しています。");
+        }
+
+        return new PreparedConfirm(
+            Payload: confirmPayload,
+            VerificationCode: P2PAudio.Windows.Core.Protocol.VerificationCode.FromSessionAndFingerprints(
+                sessionId: ActiveSessionId,
+                senderFingerprint: _localSenderFingerprint,
+                receiverFingerprint: confirmPayload.ReceiverPubKeyFingerprint
+            )
+        );
+    }
+
+    private void ResetConnectionCodeSession()
+    {
+        CancelConnectionCodeWait();
+        DisposeConnectionCodeSession(clearCode: true);
+    }
+
+    private void CancelConnectionCodeWait()
+    {
+        _connectionCodeWaitCts?.Cancel();
+        _connectionCodeWaitCts?.Dispose();
+        _connectionCodeWaitCts = null;
+    }
+
+    private void DisposeConnectionCodeSession(bool clearCode)
+    {
+        _connectionCodeSession?.Dispose();
+        _connectionCodeSession = null;
+
+        if (clearCode)
+        {
+            CurrentConnectionCode = string.Empty;
+        }
+    }
+
     private bool EnsureBackendReady()
     {
         if (_backendHealth.IsReady)
@@ -559,12 +749,14 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void RestartSetup(string message, FailureCode code)
     {
+        ResetConnectionCodeSession();
         _bridge.Close();
         StopLoopbackIfRunning();
         _playbackService.Stop();
         _pendingAnswerSdp = string.Empty;
         _localSenderFingerprint = string.Empty;
         CurrentPayload = string.Empty;
+        CurrentConnectionCode = string.Empty;
         VerificationCode = string.Empty;
         ActiveSessionId = string.Empty;
         IsVerificationPending = false;
@@ -577,6 +769,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void SetFailureState(string message, FailureCode code)
     {
+        ResetConnectionCodeSession();
         CurrentSetupStep = SetupStep.Entry;
         FlowStateLabel = "案内: 最初からやり直し";
         IsVerificationPending = false;
@@ -938,7 +1131,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             SetupStep.Entry => "送信側か受信側を選ぶと、画面の案内に沿って進められます。",
             SetupStep.PathDiagnosing => "同じネットワーク上で直接つなぐための準備をしています。",
-            SetupStep.SenderShowInit => "開始データをコピーして受信側へ共有してください。受け取った応答データを貼り付けると照合へ進みます。",
+            SetupStep.SenderShowInit => "接続コードをコピーして Android 側に貼り付けてください。従来どおり開始データの手動共有も使えます。",
             SetupStep.SenderVerifyCode => "両端末の6桁コードが同じなら接続してください。",
             SetupStep.ListenerScanInit => "送信側から受け取った開始データを貼り付けてください。",
             SetupStep.ListenerShowConfirm => "応答データと6桁コードを送信側へ共有して接続を待ってください。",
@@ -986,6 +1179,8 @@ public sealed partial class MainViewModel : ObservableObject
             _ => failureHint
         };
     }
+
+    private sealed record PreparedConfirm(PairingConfirmPayload Payload, string VerificationCode);
 
     private sealed record StartupState(IWebRtcBridge Bridge, BridgeBackendHealth BackendHealth);
 }

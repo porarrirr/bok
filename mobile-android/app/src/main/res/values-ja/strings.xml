@@ -21,11 +21,12 @@
     <string name="status_ready">送信側か受信側を選んでください。</string>
     <string name="status_sender_prepare">この端末の音を送る準備をします。案内を確認してから開始してください。</string>
     <string name="status_path_diagnosing">ローカル接続を確認し、接続データ交換の準備をしています。</string>
-    <string name="status_listener_ready_to_scan">送信側から受け取った開始データを貼り付けてください。</string>
+    <string name="status_listener_ready_to_scan">Windows の接続コードまたは送信側の開始データを貼り付けてください。</string>
     <string name="status_receiving_remote_audio">相手の音声を受信しています。</string>
     <string name="status_capturing">音声共有の準備をしています。</string>
     <string name="status_init_generated">開始データを作成しました。コピーまたは共有して受信側へ渡してください。</string>
     <string name="status_confirm_generated">応答データを作成しました。コピーまたは共有して送信側へ渡してください。</string>
+    <string name="status_connection_code_connecting">Windows へ応答を自動送信しました。接続を待っています。</string>
     <string name="status_verification_ready">両端末の6桁コードが一致しているか確認してください。</string>
     <string name="status_verification_mismatch">照合コードが一致しませんでした。もう一度やり直してください。</string>
     <string name="status_answer_applied">照合が完了しました。接続を開始しています。</string>
@@ -33,8 +34,8 @@
     <string name="status_streaming_captured_audio">この端末の音を送信しています。</string>
     <string name="status_peer_disconnected">相手端末との接続が切れました。</string>
     <string name="status_ice_connection_failed">直接接続を確立できませんでした。</string>
-    <string name="status_qr_expiry_remaining">接続データの有効期限: あと %1$d 秒</string>
-    <string name="status_qr_expiry_expired">接続データの有効期限が切れました。最初からやり直してください。</string>
+    <string name="status_qr_expiry_remaining">接続情報の有効期限: あと %1$d 秒</string>
+    <string name="status_qr_expiry_expired">接続情報の有効期限が切れました。最初からやり直してください。</string>
 
     <string name="status_next_action_entry">役割を選ぶと、画面の案内に沿って接続できます。</string>
     <string name="status_next_action_sender_prepare">案内を読んだら「権限を確認して開始する」を押してください。</string>
@@ -42,8 +43,9 @@
     <string name="status_next_action_connecting">両端末を同じネットワークに置いたまま、接続完了を待ってください。</string>
     <string name="status_next_action_recovering">接続の復旧を待っています。両端末のWi-FiまたはUSB接続を確認してください。</string>
     <string name="status_next_action_show_init">開始データを受信側へ共有してください。受け取った応答データを貼り付けると照合へ進みます。</string>
-    <string name="status_next_action_scan_init">送信側から受け取った開始データを、この端末に貼り付けてください。</string>
+    <string name="status_next_action_scan_init">Windows の接続コードまたは送信側の開始データを、この端末に貼り付けてください。</string>
     <string name="status_next_action_show_confirm">この端末の応答データと照合コードを送信側へ共有してください。</string>
+    <string name="status_next_action_wait_connection_code">このまま接続完了を待ってください。必要なら表示された6桁コードを Windows 側と見比べられます。</string>
     <string name="status_next_action_verify">両端末の6桁コードが同じなら「一致している」を押してください。</string>
     <string name="status_next_action_connected">接続中です。音声共有が終わるまでこの画面を開いたままにしてください。</string>
     <string name="status_next_action_restart">もう一度最初から接続をやり直してください。</string>
@@ -88,19 +90,22 @@
     <string name="flow_sender_received_payload_placeholder">相手から受け取った応答データを貼り付ける</string>
     <string name="flow_sender_apply_received_payload">この応答データで進める</string>
 
-    <string name="flow_receiver_step_title">開始データを取り込む</string>
-    <string name="flow_receiver_step_description">送信側から受け取った開始データを、この端末に貼り付けます。</string>
-    <string name="flow_receiver_waiting_code">開始データを受け取ったら、下の入力欄に貼り付けてください。</string>
+    <string name="flow_receiver_step_title">接続コードまたは開始データを取り込む</string>
+    <string name="flow_receiver_step_description">Windows の接続コードなら自動接続、従来の開始データもそのまま使えます。</string>
+    <string name="flow_receiver_waiting_code">Windows の接続コードまたは開始データを受け取ったら、下の入力欄に貼り付けてください。</string>
     <string name="flow_receiver_scan_button">開始データを入力する</string>
-    <string name="flow_receiver_scan_tip">共有クリップボードが使える場合は「クリップボードから貼り付ける」を使えます。</string>
+    <string name="flow_receiver_scan_tip">Windows の接続コードなら応答は自動送信されます。従来の開始データも引き続き使えます。</string>
     <string name="flow_receiver_confirm_title">応答データを送信側へ共有する</string>
     <string name="flow_receiver_confirm_description">応答データと6桁コードを送信側へ渡すと、接続が完了します。</string>
     <string name="flow_receiver_payload_title">応答データ</string>
     <string name="flow_receiver_qr_description">受信側の応答データ</string>
     <string name="flow_receiver_payload_copied">応答データをコピーしました。</string>
-    <string name="flow_receiver_payload_entry_title">受け取った開始データ</string>
-    <string name="flow_receiver_payload_entry_placeholder">送信側から受け取った開始データを貼り付ける</string>
-    <string name="flow_receiver_apply_init_payload">この開始データで進める</string>
+    <string name="flow_receiver_payload_entry_title">接続コードまたは開始データ</string>
+    <string name="flow_receiver_payload_entry_placeholder">Windows の接続コードまたは送信側の開始データを貼り付ける</string>
+    <string name="flow_receiver_apply_init_payload">この内容で接続を始める</string>
+    <string name="flow_receiver_auto_connect_title">Windows へ応答を自動送信しました</string>
+    <string name="flow_receiver_auto_connect_description">この端末は接続待ちです。Windows 側が応答を取り込むと、そのまま接続が始まります。</string>
+    <string name="flow_receiver_auto_connect_hint">必要なら6桁コードを Windows 側と見比べられます。通常はそのまま待つだけで大丈夫です。</string>
 
     <string name="flow_verification_title">6桁コードを確認する</string>
     <string name="flow_verification_description">両端末で同じ番号が表示されるときだけ接続してください。</string>
@@ -119,8 +124,8 @@
     <string name="flow_tips_sender_step_1">権限を許可する</string>
     <string name="flow_tips_sender_step_2">開始データを共有する</string>
     <string name="flow_tips_sender_step_3">応答データを貼り付けて照合する</string>
-    <string name="flow_tips_listener_step_1">開始データを貼り付ける</string>
-    <string name="flow_tips_listener_step_2">応答データを共有する</string>
+    <string name="flow_tips_listener_step_1">接続コードを貼り付ける</string>
+    <string name="flow_tips_listener_step_2">応答を自動送信する</string>
     <string name="flow_tips_listener_step_3">接続を待つ</string>
     <string name="flow_tips_default_step_1">役割を選ぶ</string>
     <string name="flow_tips_default_step_2">接続データを共有する</string>
@@ -153,6 +158,7 @@
     <string name="error_apply_answer_failed">応答データを適用できませんでした。</string>
     <string name="error_invalid_init_payload">開始データの内容が正しくありません。</string>
     <string name="error_invalid_confirm_payload">応答データの内容が正しくありません。</string>
+    <string name="error_invalid_connection_code">接続コードの内容が正しくありません。</string>
     <string name="error_audio_capture_not_supported">この端末は内部音声共有に対応していません。</string>
     <string name="error_webrtc_negotiation_failed">直接接続を確立できませんでした。</string>
     <string name="error_peer_unreachable">相手端末に接続できませんでした。</string>

@@ -1,6 +1,8 @@
 # Protocol
 
-## Pairing Flow (out-of-band payload exchange)
+## Pairing Flow
+
+### Fallback transport: out-of-band payload exchange
 
 1. Sender starts capture and gathers host ICE candidates, then creates an SDP offer.
 2. Sender encodes `PairingInitPayload` as a transport string and shares it out-of-band.
@@ -14,7 +16,17 @@
 7. User confirms the 6-digit match on sender side.
 8. Sender applies remote answer; WebRTC DataChannel `audio-pcm` carries PCM audio.
 
-Windows and Android exchange these transport strings as text (copy/share/paste). Other clients may render the same transport string as QR if their UI still supports it.
+Windows and Android still accept these transport strings as text (copy/share/paste). Other clients may render the same transport string as QR if their UI still supports it.
+
+### Primary Windows -> Android transport: connection code
+
+1. Windows sender creates the usual `PairingInitPayload`, then starts a temporary LAN listener on a local host address.
+2. Windows encodes that listener endpoint and a one-time token as a `p2paudio-c1:` connection code.
+3. Android listener pastes the connection code, fetches the init payload directly from Windows, and validates it.
+4. Android creates the SDP answer, computes the same 6-digit verification code, and posts the confirm payload back to Windows automatically.
+5. Windows validates the confirm payload, applies the answer, and begins streaming without requiring the confirm payload to be pasted manually.
+
+This connection code flow does not use any external relay or signaling server: the temporary listener runs on the Windows sender itself and is reachable only on the local network.
 
 ## Init Payload (`PairingInitPayload`)
 
@@ -76,11 +88,12 @@ Binary packet format (little-endian):
 
 ## Rules
 
-- Payload expires after 60 seconds.
+- Windows and Android currently use a 10-minute payload / connection-code TTL.
+- Receivers must reject expired payloads and expired connection codes.
 - `sessionId` must match between init and confirm payloads.
 - Reject invalid version, phase, and expired payload.
 - Use host ICE candidates only (LAN scope, including USB tethering IP links).
-- Audio transport uses DataChannel only; no relay/signaling server.
+- Audio transport uses DataChannel only; no external relay/signaling server.
 
 ## USB Tethering Path (Windows <-> Mobile)
 
