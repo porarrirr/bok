@@ -18,6 +18,8 @@ internal class AdaptivePcmBufferController(
     maxQueueFrames: Int
 ) {
     private val maxTargetFrames = (maxQueueFrames - 1).coerceAtLeast(steadyPrebufferFrames)
+    private val maxStartupFrames = (startupPrebufferFrames + STARTUP_RECOVERY_EXTRA_FRAMES)
+        .coerceAtMost(maxTargetFrames)
     private var frameDurationMs: Long = 20L
     private var currentTargetFrames: Int = steadyPrebufferFrames
     private var estimatedJitterMs: Double = 0.0
@@ -25,6 +27,7 @@ internal class AdaptivePcmBufferController(
     private var lastSenderTimestampMs: Long? = null
     private var stablePlaybackFrames: Int = 0
     private var pressureBoostFrames: Int = 0
+    private var consecutivePlaybackWaits: Int = 0
 
     fun reset(frameDurationMs: Long) {
         this.frameDurationMs = frameDurationMs.coerceAtLeast(1L)
@@ -34,6 +37,7 @@ internal class AdaptivePcmBufferController(
         lastSenderTimestampMs = null
         stablePlaybackFrames = 0
         pressureBoostFrames = 0
+        consecutivePlaybackWaits = 0
     }
 
     fun onFrameArrived(frame: PcmFrame, arrivalRealtimeMs: Long) {
@@ -71,10 +75,16 @@ internal class AdaptivePcmBufferController(
     }
 
     fun onPlaybackWait() {
+        consecutivePlaybackWaits++
+        if (consecutivePlaybackWaits < PLAYBACK_WAIT_PRESSURE_THRESHOLD) {
+            return
+        }
+        consecutivePlaybackWaits = 0
         registerPressure(extraFrames = 1)
     }
 
     fun onFramePlayed(queueDepthFrames: Int) {
+        consecutivePlaybackWaits = 0
         val stableEnough = queueDepthFrames >= (currentTargetFrames - 1).coerceAtLeast(0)
         stablePlaybackFrames = if (stableEnough) stablePlaybackFrames + 1 else 0
         if (stablePlaybackFrames < STABLE_PLAYBACK_THRESHOLD_FRAMES) {
@@ -94,7 +104,9 @@ internal class AdaptivePcmBufferController(
 
     fun snapshot(): AdaptivePcmBufferSnapshot {
         return AdaptivePcmBufferSnapshot(
-            startupTargetFrames = max(startupPrebufferFrames, currentTargetFrames),
+            startupTargetFrames = currentTargetFrames
+                .coerceAtMost(maxStartupFrames)
+                .coerceAtLeast(startupPrebufferFrames),
             targetPrebufferFrames = currentTargetFrames,
             basePrebufferFrames = steadyPrebufferFrames,
             estimatedJitterMs = estimatedJitterMs.roundToInt()
@@ -102,6 +114,7 @@ internal class AdaptivePcmBufferController(
     }
 
     private fun registerPressure(extraFrames: Int) {
+        consecutivePlaybackWaits = 0
         pressureBoostFrames = (pressureBoostFrames + extraFrames)
             .coerceAtMost(maxTargetFrames - steadyPrebufferFrames)
         stablePlaybackFrames = 0
@@ -123,5 +136,7 @@ internal class AdaptivePcmBufferController(
 
     private companion object {
         private const val STABLE_PLAYBACK_THRESHOLD_FRAMES = 32
+        private const val PLAYBACK_WAIT_PRESSURE_THRESHOLD = 3
+        private const val STARTUP_RECOVERY_EXTRA_FRAMES = 4
     }
 }

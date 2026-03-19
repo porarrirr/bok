@@ -63,6 +63,7 @@ class AndroidPcmPlayer(
         steadyPrebufferFrames = steadyPrebufferFrames,
         maxQueueFrames = maxQueueFrames
     )
+    private val lateFrameRecoveryController = LateFrameRecoveryController()
 
     private var playbackThread: Thread? = null
     private var audioTrack: AudioTrack? = null
@@ -81,6 +82,8 @@ class AndroidPcmPlayer(
     private var currentBitsPerSample: Int = 0
     private var currentFrameSamplesPerChannel: Int = 0
     private var audioTrackBufferFrames: Int = 0
+    private var bytesPerAudioFrame: Int = 0
+    private var totalTrackFramesWritten: Long = 0L
     private var lastStatsLogAtMs: Long = System.currentTimeMillis()
     private var lastWarningLogAtMs: Long = 0L
     private var lastDiagnosticsDispatchAtMs: Long = 0L
@@ -111,7 +114,10 @@ class AndroidPcmPlayer(
                 currentChannels = frame.channels
                 currentBitsPerSample = frame.bitsPerSample
                 currentFrameSamplesPerChannel = frame.frameSamplesPerChannel
+                bytesPerAudioFrame = (frame.channels * (frame.bitsPerSample / 8)).coerceAtLeast(1)
+                totalTrackFramesWritten = 0L
                 adaptiveBufferController.reset(frameDurationMs)
+                lateFrameRecoveryController.reset()
                 lastObservedTrackUnderrunCount = audioTrack?.underrunCount ?: 0
                 audioTrackBufferFrames = audioTrack?.bufferSizeInFrames ?: 0
             }
@@ -209,7 +215,6 @@ class AndroidPcmPlayer(
                     var trackToWrite: AudioTrack? = null
                     var bytesToWrite: ByteArray? = null
                     var shouldContinue = false
-                    var queueDepthAfterWrite = 0
 
                     synchronized(lock) {
                         val track = audioTrack
@@ -224,7 +229,6 @@ class AndroidPcmPlayer(
                             } else {
                                 trackToWrite = track
                                 bytesToWrite = nextBytes
-                                queueDepthAfterWrite = pendingFrames.size
                             }
                         }
                     }
@@ -261,8 +265,13 @@ class AndroidPcmPlayer(
                     }
 
                     synchronized(lock) {
+                        if (bytesPerAudioFrame > 0) {
+                            totalTrackFramesWritten += writeResult.toLong() / bytesPerAudioFrame
+                        }
                         playedFrames++
-                        adaptiveBufferController.onFramePlayed(queueDepthAfterWrite)
+                        adaptiveBufferController.onFramePlayed(
+                            bufferedPacketCountForControllerUnsafe(track)
+                        )
                     }
                     updateTrackUnderruns(track)
                     publishDiagnosticsIfNeeded()
@@ -304,6 +313,7 @@ class AndroidPcmPlayer(
                 return null
             }
             val first = pendingFrames.poll() ?: return null
+            lateFrameRecoveryController.reset()
             expectedSequence = first.sequence + 1
             return first.pcmBytes
         }
@@ -320,16 +330,20 @@ class AndroidPcmPlayer(
 
         val head = pendingFrames.peek()
         if (head != null && head.sequence == expected) {
+            lateFrameRecoveryController.reset()
             expectedSequence = expected + 1
             val frame = pendingFrames.poll() ?: return null
             return frame.pcmBytes
         }
 
-        if (pendingFrames.size < adaptiveSnapshot.targetPrebufferFrames) {
+        val shouldWaitForQueueRecovery = pendingFrames.size < adaptiveSnapshot.targetPrebufferFrames
+        val shouldWaitForLateFrame = shouldKeepWaitingForMissingFrameUnsafe(expected)
+        if (shouldWaitForQueueRecovery || shouldWaitForLateFrame) {
             adaptiveBufferController.onPlaybackWait()
             return null
         }
 
+        lateFrameRecoveryController.reset()
         expectedSequence = expected + 1
         insertedSilenceFrames++
         adaptiveBufferController.onGapConcealed()
@@ -452,8 +466,11 @@ class AndroidPcmPlayer(
         currentBitsPerSample = 0
         currentFrameSamplesPerChannel = 0
         audioTrackBufferFrames = 0
+        bytesPerAudioFrame = 0
+        totalTrackFramesWritten = 0L
         lastObservedTrackUnderrunCount = 0
         rebuffering = false
+        lateFrameRecoveryController.reset()
         audioTrack?.runCatching {
             pause()
             flush()
@@ -511,6 +528,7 @@ class AndroidPcmPlayer(
 
         rebuffering = true
         expectedSequence = null
+        lateFrameRecoveryController.reset()
         logPlaybackWarning(
             event = "player_rebuffer_start",
             message = "Entering adaptive rebuffering after playback pressure",
@@ -519,6 +537,41 @@ class AndroidPcmPlayer(
                 "audioTrackUnderruns" to audioTrackUnderruns
             )
         )
+    }
+
+    private fun shouldKeepWaitingForMissingFrameUnsafe(expectedSequence: Int): Boolean {
+        val track = audioTrack ?: return false
+        if (currentFrameSamplesPerChannel <= 0) {
+            return false
+        }
+        return lateFrameRecoveryController.shouldKeepWaiting(
+            expectedSequence = expectedSequence,
+            frameDurationMs = frameDurationMs,
+            queuedTrackFrames = estimateQueuedTrackFramesUnsafe(track),
+            frameSamplesPerChannel = currentFrameSamplesPerChannel,
+            nowRealtimeMs = SystemClock.elapsedRealtime()
+        )
+    }
+
+    private fun bufferedPacketCountForControllerUnsafe(track: AudioTrack): Int {
+        val trackPackets = if (currentFrameSamplesPerChannel <= 0) {
+            0
+        } else {
+            val queuedTrackFrames = estimateQueuedTrackFramesUnsafe(track)
+            (queuedTrackFrames + currentFrameSamplesPerChannel - 1) / currentFrameSamplesPerChannel
+        }
+        return pendingFrames.size + trackPackets
+    }
+
+    private fun estimateQueuedTrackFramesUnsafe(track: AudioTrack): Int {
+        if (bytesPerAudioFrame <= 0 || totalTrackFramesWritten <= 0L || audioTrackBufferFrames <= 0) {
+            return 0
+        }
+        val playbackHeadFrames = track.playbackHeadPosition.toLong() and 0xFFFF_FFFFL
+        val queuedTrackFrames = (totalTrackFramesWritten - playbackHeadFrames).coerceAtLeast(0L)
+        return queuedTrackFrames
+            .coerceAtMost(audioTrackBufferFrames.toLong())
+            .toInt()
     }
 
     companion object {

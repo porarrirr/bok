@@ -69,6 +69,56 @@ class AdaptivePcmBufferControllerTest {
         assertTrue(controller.snapshot().targetPrebufferFrames > 2)
     }
 
+    @Test
+    fun transientPlaybackWaitDoesNotImmediatelyRaiseTarget() {
+        val controller = AdaptivePcmBufferController(
+            startupPrebufferFrames = 2,
+            steadyPrebufferFrames = 2,
+            maxQueueFrames = 12
+        )
+        controller.reset(frameDurationMs = 20)
+
+        repeat(2) {
+            controller.onPlaybackWait()
+        }
+
+        assertEquals(2, controller.snapshot().targetPrebufferFrames)
+    }
+
+    @Test
+    fun sustainedPlaybackWaitRaisesTarget() {
+        val controller = AdaptivePcmBufferController(
+            startupPrebufferFrames = 2,
+            steadyPrebufferFrames = 2,
+            maxQueueFrames = 12
+        )
+        controller.reset(frameDurationMs = 20)
+
+        repeat(3) {
+            controller.onPlaybackWait()
+        }
+
+        assertTrue(controller.snapshot().targetPrebufferFrames > 2)
+    }
+
+    @Test
+    fun startupTargetRemainsCappedAfterHeavyPressure() {
+        val controller = AdaptivePcmBufferController(
+            startupPrebufferFrames = 6,
+            steadyPrebufferFrames = 6,
+            maxQueueFrames = 32
+        )
+        controller.reset(frameDurationMs = 20)
+
+        repeat(10) {
+            controller.onAudioTrackUnderrun(underrunDelta = 3)
+        }
+
+        val snapshot = controller.snapshot()
+        assertEquals(31, snapshot.targetPrebufferFrames)
+        assertEquals(10, snapshot.startupTargetFrames)
+    }
+
     private fun frame(sequence: Int, timestampMs: Long): PcmFrame {
         return PcmFrame(
             sequence = sequence,

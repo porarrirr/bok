@@ -2,6 +2,7 @@ package com.example.p2paudio.ui
 
 import android.Manifest
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
@@ -13,6 +14,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.p2paudio.R
 import com.example.p2paudio.audio.AndroidPcmPlayer
 import com.example.p2paudio.audio.AndroidPcmSender
+import com.example.p2paudio.audio.PlaybackBufferConfig
+import com.example.p2paudio.audio.PlaybackLatencyPreset
 import com.example.p2paudio.capture.AndroidAudioCaptureManager
 import com.example.p2paudio.capture.AudioCaptureRuntime
 import com.example.p2paudio.logging.AppLogger
@@ -52,24 +55,22 @@ import kotlinx.coroutines.launch
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val captureRuntime = AudioCaptureRuntime
-    private val pcmPlayer = AndroidPcmPlayer(
-        source = AudioStreamSource.WEBRTC_RECEIVE,
-        diagnosticsListener = ::onAudioStreamDiagnosticsChanged
+    private val receiverLatencyPreferences = application.getSharedPreferences(
+        RECEIVER_LATENCY_PREFERENCES_NAME,
+        Context.MODE_PRIVATE
     )
-    private val udpPcmPlayer = AndroidPcmPlayer(
-        source = AudioStreamSource.UDP_OPUS_RECEIVE,
-        startupPrebufferFrames = 4,
-        steadyPrebufferFrames = 4,
-        maxQueueFrames = 24,
-        minTrackBufferFrames = 12,
-        diagnosticsListener = ::onAudioStreamDiagnosticsChanged
-    )
+    private val initialReceiverLatencyPreset = loadReceiverLatencyPreset()
+    private var pcmPlayer = createWebRtcPcmPlayer(initialReceiverLatencyPreset)
+    private var udpPcmPlayer = createUdpPcmPlayer(initialReceiverLatencyPreset)
     private var pcmSender: AndroidPcmSender? = null
     private var playbackMessageShown = false
     private var waitingForCaptureServiceStart = false
 
     private val _uiState = MutableStateFlow(
-        MainUiState(statusMessage = text(R.string.status_ready))
+        MainUiState(
+            statusMessage = text(R.string.status_ready),
+            receiverLatencyPreset = initialReceiverLatencyPreset
+        )
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
@@ -420,6 +421,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     negotiationFailure(it, text(R.string.error_create_offer_failed))
                 )
             }
+        }
+    }
+
+    fun selectReceiverLatencyPreset(preset: PlaybackLatencyPreset) {
+        val current = _uiState.value
+        if (current.receiverLatencyPreset == preset) {
+            return
+        }
+        if (current.setupStep != SetupStep.ENTRY || current.streamState != AudioStreamState.IDLE) {
+            return
+        }
+
+        AppLogger.i(
+            "MainViewModel",
+            "receiver_latency_preset_changed",
+            "Updated Android receiver latency preset",
+            context = mapOf(
+                "from" to current.receiverLatencyPreset.name,
+                "to" to preset.name
+            )
+        )
+
+        pcmPlayer.stop()
+        udpPcmPlayer.stop()
+        playbackMessageShown = false
+        pcmPlayer = createWebRtcPcmPlayer(preset)
+        udpPcmPlayer = createUdpPcmPlayer(preset)
+        saveReceiverLatencyPreset(preset)
+        _uiState.update {
+            it.copy(
+                receiverLatencyPreset = preset,
+                audioStreamDiagnostics = AudioStreamDiagnostics()
+            )
         }
     }
 
@@ -1202,8 +1236,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return MainUiState(
             statusMessage = statusMessage,
             failure = failure,
-            transportMode = _uiState.value.transportMode
+            transportMode = _uiState.value.transportMode,
+            receiverLatencyPreset = _uiState.value.receiverLatencyPreset
         )
+    }
+
+    private fun createWebRtcPcmPlayer(preset: PlaybackLatencyPreset): AndroidPcmPlayer {
+        return createPcmPlayer(
+            source = AudioStreamSource.WEBRTC_RECEIVE,
+            config = preset.webrtcConfig
+        )
+    }
+
+    private fun createUdpPcmPlayer(preset: PlaybackLatencyPreset): AndroidPcmPlayer {
+        return createPcmPlayer(
+            source = AudioStreamSource.UDP_OPUS_RECEIVE,
+            config = preset.udpOpusConfig
+        )
+    }
+
+    private fun createPcmPlayer(
+        source: AudioStreamSource,
+        config: PlaybackBufferConfig
+    ): AndroidPcmPlayer {
+        return AndroidPcmPlayer(
+            source = source,
+            startupPrebufferFrames = config.startupPrebufferFrames,
+            steadyPrebufferFrames = config.steadyPrebufferFrames,
+            maxQueueFrames = config.maxQueueFrames,
+            minTrackBufferFrames = config.minTrackBufferFrames,
+            diagnosticsListener = ::onAudioStreamDiagnosticsChanged
+        )
+    }
+
+    private fun loadReceiverLatencyPreset(): PlaybackLatencyPreset {
+        return PlaybackLatencyPreset.fromStorageValue(
+            receiverLatencyPreferences.getString(RECEIVER_LATENCY_PREFERENCE_KEY, null)
+        )
+    }
+
+    private fun saveReceiverLatencyPreset(preset: PlaybackLatencyPreset) {
+        receiverLatencyPreferences
+            .edit()
+            .putString(RECEIVER_LATENCY_PREFERENCE_KEY, preset.name)
+            .apply()
     }
 
     sealed interface UiCommand {
@@ -1222,6 +1298,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
         private const val PAYLOAD_TTL_MS = 600_000L
+        private const val RECEIVER_LATENCY_PREFERENCES_NAME = "playback_preferences"
+        private const val RECEIVER_LATENCY_PREFERENCE_KEY = "receiver_latency_preset"
     }
 }
 

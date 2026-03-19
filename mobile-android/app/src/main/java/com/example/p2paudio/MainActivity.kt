@@ -56,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.example.p2paudio.logging.AppLogger
+import com.example.p2paudio.audio.PlaybackLatencyPreset
 import com.example.p2paudio.model.AudioStreamDiagnostics
 import com.example.p2paudio.model.AudioStreamSource
 import com.example.p2paudio.model.AudioStreamState
@@ -147,6 +148,7 @@ class MainActivity : ComponentActivity() {
                     MainScreen(
                         uiState = uiState,
                         onSelectTransportMode = viewModel::selectTransportMode,
+                        onSelectReceiverLatencyPreset = viewModel::selectReceiverLatencyPreset,
                         onChooseSender = viewModel::beginSenderFlow,
                         onContinueSender = viewModel::startSenderFlowRequested,
                         onChooseListener = viewModel::beginListenerFlow,
@@ -211,6 +213,7 @@ class MainActivity : ComponentActivity() {
 private fun MainScreen(
     uiState: MainUiState,
     onSelectTransportMode: (TransportMode) -> Unit,
+    onSelectReceiverLatencyPreset: (PlaybackLatencyPreset) -> Unit,
     onChooseSender: () -> Unit,
     onContinueSender: () -> Unit,
     onChooseListener: () -> Unit,
@@ -275,7 +278,10 @@ private fun MainScreen(
                 expirySeconds = expirySeconds
             )
 
-            AudioStreamCard(uiState.audioStreamDiagnostics)
+            AudioStreamCard(
+                diagnostics = uiState.audioStreamDiagnostics,
+                receiverLatencyPreset = uiState.receiverLatencyPreset
+            )
 
             if (transientMessage.isNotBlank()) {
                 Text(
@@ -292,7 +298,9 @@ private fun MainScreen(
                 when (uiState.setupStep) {
                     SetupStep.ENTRY -> EntryActionsCard(
                         transportMode = uiState.transportMode,
+                        receiverLatencyPreset = uiState.receiverLatencyPreset,
                         onSelectTransportMode = onSelectTransportMode,
+                        onSelectReceiverLatencyPreset = onSelectReceiverLatencyPreset,
                         onChooseSender = onChooseSender,
                         onChooseListener = onChooseListener,
                         canStartNewFlow = canStartNewFlow
@@ -357,7 +365,10 @@ private fun MainScreen(
 }
 
 @Composable
-private fun AudioStreamCard(diagnostics: AudioStreamDiagnostics) {
+private fun AudioStreamCard(
+    diagnostics: AudioStreamDiagnostics,
+    receiverLatencyPreset: PlaybackLatencyPreset
+) {
     if (!diagnostics.hasContent()) {
         return
     }
@@ -376,6 +387,14 @@ private fun AudioStreamCard(diagnostics: AudioStreamDiagnostics) {
                 text = audioSourceLabel(diagnostics),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = stringResource(
+                    R.string.audio_stream_latency_format,
+                    stringResource(receiverLatencyPreset.labelResId)
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 text = "形式: ${diagnostics.sampleRate} Hz / ${channelLabel(diagnostics.channels)} / ${diagnostics.bitsPerSample}bit / ${diagnostics.frameDurationMs}ms (${diagnostics.frameSamplesPerChannel} samples)",
@@ -626,7 +645,9 @@ private fun ConnectionOverviewCard(
 @Composable
 private fun EntryActionsCard(
     transportMode: TransportMode,
+    receiverLatencyPreset: PlaybackLatencyPreset,
     onSelectTransportMode: (TransportMode) -> Unit,
+    onSelectReceiverLatencyPreset: (PlaybackLatencyPreset) -> Unit,
     onChooseSender: () -> Unit,
     onChooseListener: () -> Unit,
     canStartNewFlow: Boolean
@@ -652,6 +673,12 @@ private fun EntryActionsCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+
+        ReceiverLatencySelector(
+            selectedPreset = receiverLatencyPreset,
+            enabled = canStartNewFlow,
+            onSelectPreset = onSelectReceiverLatencyPreset
+        )
 
         ChecklistBlock(
             items = listOf(
@@ -717,6 +744,59 @@ private fun TransportModeSelector(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ReceiverLatencySelector(
+    selectedPreset: PlaybackLatencyPreset,
+    enabled: Boolean,
+    onSelectPreset: (PlaybackLatencyPreset) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(R.string.receiver_latency_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = stringResource(R.string.receiver_latency_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        PlaybackLatencyPreset.entries.forEach { preset ->
+            val buttonText = stringResource(preset.labelResId)
+            if (selectedPreset == preset) {
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onSelectPreset(preset) },
+                    enabled = enabled
+                ) {
+                    Text(buttonText)
+                }
+            } else {
+                OutlinedButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onSelectPreset(preset) },
+                    enabled = enabled
+                ) {
+                    Text(buttonText)
+                }
+            }
+        }
+        Text(
+            text = stringResource(
+                R.string.receiver_latency_selected_format,
+                stringResource(selectedPreset.labelResId)
+            ),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = stringResource(selectedPreset.descriptionResId),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
