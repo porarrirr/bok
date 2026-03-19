@@ -1,0 +1,86 @@
+name: P2PAudio
+options:
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+
+packages:
+  WebRTCSPM:
+    url: https://github.com/stasel/WebRTC.git
+    from: 137.0.0
+
+settings:
+  base:
+    SWIFT_VERSION: 5.0
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  P2PAudio:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: App
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: P2PAudio
+        UILaunchScreen: {}
+        NSCameraUsageDescription: QR code scanning for P2P pairing.
+        NSMicrophoneUsageDescription: Optional microphone permission for ReplayKit capture flows.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+    dependencies:
+      - package: WebRTCSPM
+        product: WebRTC
+      - target: AudioBroadcastExtension
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.p2paudio
+        PRODUCT_NAME: P2PAudio
+        CODE_SIGN_ENTITLEMENTS: App/P2PAudio.entitlements
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: true
+    scheme:
+      gatherCoverageData: false
+
+  AudioBroadcastExtension:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: AudioBroadcastExtension
+    info:
+      path: AudioBroadcastExtension/Info.plist
+      properties:
+        CFBundleDisplayName: AudioBroadcastExtension
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.broadcast-services-upload
+          NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).SampleHandler"
+          NSExtensionAttributes:
+            RPBroadcastProcessMode: RPBroadcastProcessModeSampleBuffer
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.p2paudio.AudioBroadcastExtension
+        PRODUCT_NAME: AudioBroadcastExtension
+        CODE_SIGN_ENTITLEMENTS: AudioBroadcastExtension/AudioBroadcastExtension.entitlements
+
+  P2PAudioTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Tests
+    dependencies:
+      - target: P2PAudio
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.p2paudio.tests
+        PRODUCT_NAME: P2PAudioTests

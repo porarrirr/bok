@@ -1,0 +1,109 @@
+"main.title" = "Audio Link";
+"main.subtitle" = "Connect two nearby devices with QR-only pairing.";
+"main.capture_hint" = "On iOS, only app audio captured through Screen Broadcast can be shared.";
+
+"action.start_sender" = "Start Sharing";
+"action.start_listener_scan" = "Scan Sender QR";
+"action.stop_session" = "Stop";
+"action.copy_payload" = "Copy payload";
+"action.close" = "Close";
+"action.open_logs" = "Logs";
+
+"status.connection_title" = "Connection Status";
+"status.session_id" = "Session ID";
+"status.network_path_title" = "Network path";
+"status.network_path_wifi" = "Wi-Fi / LAN";
+"status.network_path_usb" = "USB tethering";
+"status.network_path_unknown" = "Unknown";
+"status.local_candidates_format" = "Local host ICE candidates: %d";
+"status.selected_pair_format" = "Selected candidate pair: %@";
+"status.failure_hint_format" = "Hint: %@";
+"status.ready" = "Choose one start action below.";
+"status.receiving_remote_audio" = "Receiving audio from the other device";
+"status.start_broadcast_first" = "Start Screen Broadcast first, then tap Start Sharing.";
+"status.capturing_replaykit_audio" = "Preparing audio sharing";
+"status.listener_ready_to_scan" = "Scan the sender init QR.";
+"status.init_generated" = "Init QR is ready. Ask the listener to scan it.";
+"status.confirm_generated" = "Confirm QR is ready. Show it to the sender.";
+"status.verification_ready" = "Check that both devices show the same 6-digit code.";
+"status.verification_mismatch" = "Verification mismatch. Start again from Step 1.";
+"status.answer_applied" = "Verification accepted. Finishing connection.";
+"status.session_ended" = "Connection stopped";
+"status.peer_disconnected" = "The other device disconnected";
+"status.ice_connection_failed" = "Could not establish a direct connection";
+"status.next_action_title" = "Next step";
+"status.next_action_entry" = "Tap either Start Sharing or Scan Sender QR.";
+"status.next_action_show_init" = "Show the init QR and ask the listener to scan it.";
+"status.next_action_scan_init" = "Scan the sender init QR.";
+"status.next_action_show_confirm" = "Show your confirm QR and 6-digit code to the sender.";
+"status.next_action_verify" = "Confirm both devices show the same 6-digit code.";
+"status.next_action_connected" = "You're connected. Keep this screen open while sharing audio.";
+"status.next_action_start_broadcast" = "Start Screen Broadcast from Control Center, then tap Start Sharing.";
+"status.next_action_restart" = "Restart from Step 1.";
+"status.next_action_usb_enable_tethering" = "Enable USB tethering and reconnect the cable, then restart from Step 1.";
+"status.next_action_usb_replug" = "USB tethering was detected but unreachable. Reconnect cable and verify trust/tethering settings.";
+"status.next_action_check_interface" = "No usable host network interface. Check Wi-Fi or USB tethering settings.";
+"status.hint_usb_tether_check" = "Check USB cable, trust dialog, and USB tethering toggle.";
+"status.hint_wifi_check" = "Check that both devices are on the same local network.";
+"status.hint_network_interface_check" = "No usable host network interface was found.";
+
+"stream_state.idle" = "Idle";
+"stream_state.capturing" = "Preparing";
+"stream_state.connecting" = "Connecting";
+"stream_state.streaming" = "Connected";
+"stream_state.interrupted" = "Interrupted";
+"stream_state.failed" = "Needs attention";
+"stream_state.ended" = "Stopped";
+
+"flow.entry.title" = "Step 1: Choose start action";
+"flow.entry.description" = "Manual code input is removed. Use QR scan only.";
+
+"flow.sender.step_title" = "Step 2: Show init QR";
+"flow.sender.step_description" = "After listener scans this QR, scan their confirm QR.";
+"flow.sender.scan_button" = "Scan Confirm QR";
+"flow.sender.payload_title" = "Your init QR payload";
+"flow.sender.qr_description" = "Init QR for sender";
+"flow.sender.waiting_code" = "Init QR appears here after sharing starts.";
+
+"flow.receiver.step_title" = "Step 2: Scan sender init QR";
+"flow.receiver.step_description" = "Use the entry action to scan sender init QR.";
+"flow.receiver.waiting_code" = "Waiting for sender init QR scan.";
+"flow.receiver.confirm_title" = "Step 3: Show confirm QR";
+"flow.receiver.confirm_description" = "Show this QR and 6-digit code to the sender.";
+"flow.receiver.payload_title" = "Your confirm QR payload";
+"flow.receiver.qr_description" = "Confirm QR for listener";
+
+"flow.verification.title" = "Step 3: Verify 6-digit code";
+"flow.verification.description" = "Connect only if both devices show the same code.";
+"flow.verification.code_label" = "Verification code";
+"flow.verification.match" = "Codes Match";
+"flow.verification.mismatch" = "Codes Differ";
+
+"toast.init_payload_copied" = "Init payload copied.";
+"toast.confirm_payload_copied" = "Confirm payload copied.";
+
+"common.char_count_format" = "%d chars";
+
+"log.title" = "Logs";
+"log.empty" = "No logs yet.";
+"log.copy_all" = "Copy All";
+"log.clear" = "Clear";
+
+"error.failed_encode_offer" = "Could not create an init QR payload";
+"error.failed_encode_answer" = "Could not create a confirm QR payload";
+"error.webrtc_negotiation_failed" = "Could not establish a direct connection.";
+"error.invalid_init_payload" = "The init QR payload is invalid";
+"error.invalid_confirm_payload" = "The confirm QR payload is invalid";
+"error.apply_answer_failed" = "Could not apply the confirm payload";
+"error.session_expired" = "The QR payload expired";
+"error.invalid_payload" = "The QR payload is invalid";
+"error.offer_nil" = "Init payload is missing";
+"error.local_offer_missing" = "Local init SDP is missing";
+"error.ice_gather_timeout" = "Connection setup timed out";
+"error.answer_nil" = "Confirm payload is missing";
+"error.local_answer_missing" = "Local confirm SDP is missing";
+"error.peer_connection_unavailable" = "Connection engine unavailable";
+"error.data_channel_create_failed" = "Could not create audio channel";
+"error.usb_tether_unavailable" = "USB tethering path is unavailable. Enable USB tethering and reconnect.";
+"error.usb_tether_not_reachable" = "USB tethering path was detected but connection failed. Reconnect and verify trust settings.";
+"error.network_interface_not_usable" = "No usable local network interface was found for host ICE candidates.";
