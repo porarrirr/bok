@@ -31,6 +31,8 @@ targets:
         UILaunchScreen: {}
         NSCameraUsageDescription: QR code scanning for P2P pairing.
         NSMicrophoneUsageDescription: Optional microphone permission for ReplayKit capture flows.
+        UIBackgroundModes:
+          - audio
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
