@@ -178,6 +178,9 @@ public sealed partial class MainWindow : Window
         {
             0 => 5,
             1 => 10,
+            2 => 20,
+            3 => 40,
+            4 => 60,
             _ => 20
         };
         ViewModel.SelectUdpOpusFrameDuration(frameDurationMs);

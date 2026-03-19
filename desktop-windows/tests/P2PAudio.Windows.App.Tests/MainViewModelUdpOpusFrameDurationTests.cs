@@ -33,6 +33,23 @@ public sealed class MainViewModelUdpOpusFrameDurationTests
     }
 
     [Fact]
+    public void SelectUdpOpusFrameDuration_AllowsFortyAndSixtyMilliseconds()
+    {
+        var viewModel = CreateViewModel();
+        viewModel.SelectTransportMode(TransportMode.UdpOpus);
+
+        viewModel.SelectUdpOpusFrameDuration(40);
+        Assert.Equal(40, viewModel.SelectedUdpOpusFrameDurationMs);
+        Assert.Equal(3, viewModel.SelectedUdpOpusFrameDurationIndex);
+
+        viewModel.SelectUdpOpusFrameDuration(60);
+        Assert.Equal(60, viewModel.SelectedUdpOpusFrameDurationMs);
+        Assert.Equal(4, viewModel.SelectedUdpOpusFrameDurationIndex);
+        Assert.Contains("最大", viewModel.UdpOpusFrameDurationDescription);
+        viewModel.Shutdown();
+    }
+
+    [Fact]
     public async Task SelectUdpOpusFrameDuration_WhenFlowActive_DoesNotChangeSelection()
     {
         var viewModel = CreateViewModel();

@@ -17,6 +17,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private const int DefaultUdpOpusFrameDurationMs = 20;
     private const int ShortUdpOpusFrameDurationMs = 5;
     private const int MediumUdpOpusFrameDurationMs = 10;
+    private const int LongUdpOpusFrameDurationMs = 40;
+    private const int MaxUdpOpusFrameDurationMs = 60;
 
     private IWebRtcBridge _bridge;
     private readonly Func<IWebRtcBridge>? _startupBridgeFactory;
@@ -226,6 +228,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         ShortUdpOpusFrameDurationMs => 0,
         MediumUdpOpusFrameDurationMs => 1,
+        DefaultUdpOpusFrameDurationMs => 2,
+        LongUdpOpusFrameDurationMs => 3,
+        MaxUdpOpusFrameDurationMs => 4,
         _ => 2
     };
 
@@ -247,6 +252,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         ShortUdpOpusFrameDurationMs => "5 ms: 低遅延寄りです。ネットワークやCPU負荷にはやや敏感です。",
         MediumUdpOpusFrameDurationMs => "10 ms: 遅延と安定性のバランスが取りやすい設定です。",
+        DefaultUdpOpusFrameDurationMs => "20 ms: 既定値です。最も安定しやすく、Android受信側とも合わせやすい設定です。",
+        LongUdpOpusFrameDurationMs => "40 ms: パケット数を減らしやすい一方、遅延は大きくなります。",
+        MaxUdpOpusFrameDurationMs => "60 ms: 1フレームとして使える最大です。遅延はかなり増えますが、最も余裕を持たせやすい設定です。",
         _ => "20 ms: 既定値です。最も安定しやすく、Android受信側とも合わせやすい設定です。"
     };
 
@@ -1998,7 +2006,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private static bool IsSupportedUdpOpusFrameDuration(int frameDurationMs)
     {
-        return frameDurationMs is ShortUdpOpusFrameDurationMs or MediumUdpOpusFrameDurationMs or DefaultUdpOpusFrameDurationMs;
+        return frameDurationMs is ShortUdpOpusFrameDurationMs or MediumUdpOpusFrameDurationMs or DefaultUdpOpusFrameDurationMs or LongUdpOpusFrameDurationMs or MaxUdpOpusFrameDurationMs;
     }
 
     private static string LocalizeFailureHint(string failureHint)

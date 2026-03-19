@@ -189,6 +189,8 @@
                                 <ComboBoxItem Content="5 ms" />
                                 <ComboBoxItem Content="10 ms" />
                                 <ComboBoxItem Content="20 ms" />
+                                <ComboBoxItem Content="40 ms" />
+                                <ComboBoxItem Content="60 ms" />
                             </ComboBox>
                             <TextBlock
                                 Text="{x:Bind ViewModel.UdpOpusFrameDurationDescription, Mode=OneWay}"
