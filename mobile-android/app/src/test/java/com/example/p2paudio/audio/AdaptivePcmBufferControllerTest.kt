@@ -55,6 +55,20 @@ class AdaptivePcmBufferControllerTest {
         assertEquals(2, controller.snapshot().targetPrebufferFrames)
     }
 
+    @Test
+    fun queueOverflowDoesNotIncreaseTargetPrebuffer() {
+        val controller = AdaptivePcmBufferController(
+            startupPrebufferFrames = 2,
+            steadyPrebufferFrames = 2,
+            maxQueueFrames = 12
+        )
+        controller.reset(frameDurationMs = 20)
+
+        controller.onQueueOverflow()
+
+        assertEquals(2, controller.snapshot().targetPrebufferFrames)
+    }
+
     private fun frame(sequence: Int, timestampMs: Long): PcmFrame {
         return PcmFrame(
             sequence = sequence,

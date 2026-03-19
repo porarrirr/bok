@@ -60,7 +60,7 @@ internal class AdaptivePcmBufferController(
     }
 
     fun onQueueOverflow() {
-        registerPressure(extraFrames = 1)
+        stablePlaybackFrames = 0
     }
 
     fun onAudioTrackUnderrun(underrunDelta: Int) {

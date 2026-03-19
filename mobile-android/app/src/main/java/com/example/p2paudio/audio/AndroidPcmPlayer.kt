@@ -12,6 +12,41 @@ import java.util.PriorityQueue
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 
+internal data class QueueOverflowTrimResult(
+    val droppedFrameCount: Int,
+    val firstDroppedSequence: Int?,
+    val lastDroppedSequence: Int?,
+    val nextExpectedSequence: Int?
+)
+
+internal fun trimOverflowFramesForRealtimePlayback(
+    pendingFrames: PriorityQueue<PcmFrame>,
+    maxQueueFrames: Int,
+    expectedSequence: Int?
+): QueueOverflowTrimResult {
+    var nextExpectedSequence = expectedSequence
+    var droppedFrameCount = 0
+    var firstDroppedSequence: Int? = null
+    var lastDroppedSequence: Int? = null
+    while (pendingFrames.size > maxQueueFrames) {
+        val droppedFrame = pendingFrames.poll() ?: break
+        if (firstDroppedSequence == null) {
+            firstDroppedSequence = droppedFrame.sequence
+        }
+        lastDroppedSequence = droppedFrame.sequence
+        droppedFrameCount++
+        if (nextExpectedSequence != null && droppedFrame.sequence >= nextExpectedSequence) {
+            nextExpectedSequence = droppedFrame.sequence + 1
+        }
+    }
+    return QueueOverflowTrimResult(
+        droppedFrameCount = droppedFrameCount,
+        firstDroppedSequence = firstDroppedSequence,
+        lastDroppedSequence = lastDroppedSequence,
+        nextExpectedSequence = nextExpectedSequence
+    )
+}
+
 class AndroidPcmPlayer(
     private val source: AudioStreamSource,
     private val startupPrebufferFrames: Int = 3,
@@ -83,15 +118,24 @@ class AndroidPcmPlayer(
 
             adaptiveBufferController.onFrameArrived(frame, arrivalRealtimeMs)
             pendingFrames.add(frame)
-            if (pendingFrames.size > maxQueueFrames) {
-                pendingFrames.poll()
-                queueOverflowDrops++
+            val overflowTrimResult = trimOverflowFramesForRealtimePlayback(
+                pendingFrames = pendingFrames,
+                maxQueueFrames = maxQueueFrames,
+                expectedSequence = expectedSequence
+            )
+            if (overflowTrimResult.droppedFrameCount > 0) {
+                expectedSequence = overflowTrimResult.nextExpectedSequence
+                queueOverflowDrops += overflowTrimResult.droppedFrameCount
                 adaptiveBufferController.onQueueOverflow()
                 logPlaybackWarning(
                     event = "player_queue_overflow",
-                    message = "Dropped the oldest queued frame to cap playback latency",
+                    message = "Dropped queued PCM frames and resynchronized playback to cap latency",
                     context = mapOf(
                         "queueSize" to pendingFrames.size,
+                        "droppedFrames" to overflowTrimResult.droppedFrameCount,
+                        "firstDroppedSequence" to overflowTrimResult.firstDroppedSequence,
+                        "lastDroppedSequence" to overflowTrimResult.lastDroppedSequence,
+                        "expectedSequence" to expectedSequence,
                         "queueOverflowDrops" to queueOverflowDrops
                     )
                 )
