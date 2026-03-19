@@ -278,17 +278,40 @@ public sealed class NativeWebRtcBridge : IWebRtcBridge, IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
-        AppLogger.I("NativeWebRtcBridge", "bridge_dispose", "Disposing native WebRTC bridge");
-        NativeMethods.core_webrtc_close(_handle);
-        NativeMethods.core_webrtc_destroy(_handle);
-        _disposed = true;
+        Dispose(disposing: true);
         GC.SuppressFinalize(this);
     }
 
     ~NativeWebRtcBridge()
     {
-        Dispose();
+        Dispose(disposing: false);
+    }
+
+    private void Dispose(bool disposing)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        try
+        {
+            if (disposing)
+            {
+                AppLogger.I("NativeWebRtcBridge", "bridge_dispose", "Disposing native WebRTC bridge");
+            }
+
+            NativeMethods.core_webrtc_close(_handle);
+            NativeMethods.core_webrtc_destroy(_handle);
+        }
+        catch when (!disposing)
+        {
+            // Finalizer-thread teardown must never terminate the process.
+        }
+        finally
+        {
+            _disposed = true;
+        }
     }
 }
 

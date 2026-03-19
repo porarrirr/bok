@@ -8,7 +8,7 @@ using P2PAudio.Windows.Core.Protocol;
 
 namespace P2PAudio.Windows.App.ViewModels;
 
-public sealed partial class MainViewModel : ObservableObject
+public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
     private const long PayloadTtlMs = 600_000;
     private const int ReceiveLoopIdleDelayMs = 5;
@@ -30,6 +30,7 @@ public sealed partial class MainViewModel : ObservableObject
     private Task? _startupTask;
     private bool _isStartupComplete;
     private bool _receiveLoopStarted;
+    private bool _shutdownCompleted;
 
     private string _localSenderFingerprint = string.Empty;
     private string _pendingAnswerSdp = string.Empty;
@@ -287,20 +288,24 @@ public sealed partial class MainViewModel : ObservableObject
                 _ => string.Empty
             };
 
-    public bool CanStartSender => GetSelectedBackendHealth().IsReady &&
+    public bool CanStartSender => _isStartupComplete &&
+        GetSelectedBackendHealth().IsReady &&
         (CurrentSetupStep == SetupStep.Entry || CurrentStreamState == StreamState.Failed) &&
         CurrentStreamState is StreamState.Idle or StreamState.Ended or StreamState.Failed;
 
-    public bool CanStartListener => SelectedTransportMode == TransportMode.WebRtc &&
+    public bool CanStartListener => _isStartupComplete &&
+        SelectedTransportMode == TransportMode.WebRtc &&
         _backendHealth.IsReady &&
         (CurrentSetupStep == SetupStep.Entry || CurrentStreamState == StreamState.Failed) &&
         CurrentStreamState is StreamState.Idle or StreamState.Ended or StreamState.Failed;
 
-    public bool CanProcessPayload => SelectedTransportMode == TransportMode.WebRtc &&
+    public bool CanProcessPayload => _isStartupComplete &&
+        SelectedTransportMode == TransportMode.WebRtc &&
         _backendHealth.IsReady &&
         CurrentSetupStep is SetupStep.ListenerScanInit or SetupStep.SenderShowInit or SetupStep.SenderVerifyCode;
 
-    public bool CanApproveCode => SelectedTransportMode == TransportMode.WebRtc &&
+    public bool CanApproveCode => _isStartupComplete &&
+        SelectedTransportMode == TransportMode.WebRtc &&
         _backendHealth.IsReady && IsVerificationPending;
 
     public bool CanRejectCode => IsVerificationPending;
@@ -350,14 +355,14 @@ public sealed partial class MainViewModel : ObservableObject
 
     public async Task StartSenderAsync()
     {
-        if (SelectedTransportMode == TransportMode.UdpOpus)
+        if (!EnsureBackendReady())
         {
-            await StartUdpSenderAsync();
             return;
         }
 
-        if (!EnsureBackendReady())
+        if (SelectedTransportMode == TransportMode.UdpOpus)
         {
+            await StartUdpSenderAsync();
             return;
         }
 
@@ -457,11 +462,6 @@ public sealed partial class MainViewModel : ObservableObject
 
     private async Task StartUdpSenderAsync()
     {
-        if (!EnsureBackendReady())
-        {
-            return;
-        }
-
         ResetConnectionCodeSession();
         _bridge.Close();
         _udpBridge.StopStreaming();
@@ -639,11 +639,30 @@ public sealed partial class MainViewModel : ObservableObject
 
     public void Shutdown()
     {
+        if (_shutdownCompleted)
+        {
+            return;
+        }
+
         if (!_receiveLoopCts.IsCancellationRequested)
         {
             _receiveLoopCts.Cancel();
         }
-        Stop();
+
+        ResetConnectionCodeSession();
+        StopLoopbackIfRunning();
+        _playbackService.Stop();
+        DisposeBackend(_bridge);
+        DisposeBackend(_udpBridge);
+        DisposeLoopbackSenderInstance(ref _webRtcLoopbackSender);
+        DisposeLoopbackSenderInstance(ref _udpLoopbackSender);
+        DisposeIfPossible(_playbackService);
+        _shutdownCompleted = true;
+    }
+
+    public void Dispose()
+    {
+        Shutdown();
     }
 
     public async Task InitializeAsync()
@@ -675,7 +694,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             if (_receiveLoopCts.IsCancellationRequested)
             {
-                startupState.Bridge.Close();
+                DisposeBackend(startupState.Bridge);
                 return;
             }
 
@@ -687,25 +706,14 @@ public sealed partial class MainViewModel : ObservableObject
     {
         _bridge = startupState.Bridge;
         _backendHealth = startupState.BackendHealth;
+        _isStartupComplete = true;
         UpdateBackendLabel();
 
         UpdateDiagnostics(new ConnectionDiagnostics(PathType: UsbTetheringDetector.ClassifyPrimaryPath()));
-
-        if (_backendHealth.IsReady)
-        {
-            SetFailureCode(null, clearWhenNull: true);
-            StatusMessage = _backendHealth.Message;
-            SetStreamState(StreamState.Idle);
-        }
-        else
-        {
-            SetStreamState(StreamState.Idle);
-            SetFailureCode(_backendHealth.BlockingFailureCode ?? FailureCode.WebRtcNegotiationFailed);
-            StatusMessage = $"接続モジュールが利用できません。{_backendHealth.Message}";
-        }
+        SetStreamState(StreamState.Idle);
+        ApplySelectedBackendHealthStatus();
 
         EnsureReceiveLoopStarted();
-        _isStartupComplete = true;
         NotifyComputedProperties();
     }
 
@@ -1051,6 +1059,13 @@ public sealed partial class MainViewModel : ObservableObject
 
     private bool EnsureBackendReady()
     {
+        if (!_isStartupComplete)
+        {
+            StatusMessage = "起動準備が完了するまでお待ちください。";
+            NotifyComputedProperties();
+            return false;
+        }
+
         var health = GetSelectedBackendHealth();
         if (health.IsReady)
         {
@@ -1058,7 +1073,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         SetFailureState(
-            $"接続モジュールが利用できません。{health.Message}",
+            FormatBackendUnavailableMessage(health, SelectedTransportMode),
             health.BlockingFailureCode ?? FailureCode.WebRtcNegotiationFailed
         );
         return false;
@@ -1381,6 +1396,20 @@ public sealed partial class MainViewModel : ObservableObject
         };
     }
 
+    private void ApplySelectedBackendHealthStatus()
+    {
+        var health = GetSelectedBackendHealth();
+        if (health.IsReady)
+        {
+            SetFailureCode(null, clearWhenNull: true);
+            StatusMessage = health.Message;
+            return;
+        }
+
+        SetFailureCode(health.BlockingFailureCode ?? FailureCode.WebRtcNegotiationFailed);
+        StatusMessage = FormatBackendUnavailableMessage(health, SelectedTransportMode);
+    }
+
     private static ConnectionDiagnostics ToUdpDiagnostics(ConnectionDiagnostics diagnostics, UdpReceiverEndpoint endpoint)
     {
         var pathType = diagnostics.PathType != NetworkPathType.Unknown
@@ -1510,6 +1539,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            DisposeBackend(bridge);
             var fallbackBridge = new StubWebRtcBridge(
                 enabledForDevelopment: false,
                 startupReason: FormatBridgeStartupReason(ex)
@@ -1549,6 +1579,112 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    private static string FormatBackendUnavailableMessage(BridgeBackendHealth health, TransportMode mode)
+    {
+        var prefix = mode == TransportMode.UdpOpus
+            ? "UDP + Opus 送信モジュールが利用できません。"
+            : "接続モジュールが利用できません。";
+        return $"{prefix}{health.Message}";
+    }
+
+    private static void DisposeBackend(IAudioTransportBackend backend)
+    {
+        try
+        {
+            backend.Close();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.W(
+                "MainViewModel",
+                "backend_close_failed",
+                "Backend close failed during cleanup",
+                new Dictionary<string, object?>
+                {
+                    ["backendType"] = backend.GetType().Name,
+                    ["message"] = ex.Message
+                }
+            );
+        }
+
+        if (backend is IDisposable disposable)
+        {
+            try
+            {
+                disposable.Dispose();
+            }
+            catch (Exception ex)
+            {
+                AppLogger.W(
+                    "MainViewModel",
+                    "backend_dispose_failed",
+                    "Backend dispose failed during cleanup",
+                    new Dictionary<string, object?>
+                    {
+                        ["backendType"] = backend.GetType().Name,
+                        ["message"] = ex.Message
+                    }
+                );
+            }
+        }
+    }
+
+    private static void DisposeLoopbackSenderInstance(ref ILoopbackAudioSender? sender)
+    {
+        if (sender is null)
+        {
+            return;
+        }
+
+        try
+        {
+            sender.Dispose();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.W(
+                "MainViewModel",
+                "loopback_dispose_failed",
+                "Loopback sender dispose failed during cleanup",
+                new Dictionary<string, object?>
+                {
+                    ["senderType"] = sender.GetType().Name,
+                    ["message"] = ex.Message
+                }
+            );
+        }
+        finally
+        {
+            sender = null;
+        }
+    }
+
+    private static void DisposeIfPossible(object instance)
+    {
+        if (instance is not IDisposable disposable)
+        {
+            return;
+        }
+
+        try
+        {
+            disposable.Dispose();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.W(
+                "MainViewModel",
+                "instance_dispose_failed",
+                "Disposable instance cleanup failed",
+                new Dictionary<string, object?>
+                {
+                    ["instanceType"] = instance.GetType().Name,
+                    ["message"] = ex.Message
+                }
+            );
+        }
+    }
+
     partial void OnCurrentSetupStepChanged(SetupStep value)
     {
         NotifyComputedProperties();
@@ -1558,6 +1694,12 @@ public sealed partial class MainViewModel : ObservableObject
     {
         _ = value;
         UpdateBackendLabel();
+        if (_isStartupComplete &&
+            CurrentSetupStep == SetupStep.Entry &&
+            CurrentStreamState is StreamState.Idle or StreamState.Ended or StreamState.Failed)
+        {
+            ApplySelectedBackendHealthStatus();
+        }
         NotifyComputedProperties();
         OnPropertyChanged(nameof(SelectedTransportModeIndex));
         OnPropertyChanged(nameof(TransportModeLabel));
@@ -1596,8 +1738,12 @@ public sealed partial class MainViewModel : ObservableObject
     private string GetRecommendedAction()
     {
         var selectedHealth = GetSelectedBackendHealth();
+        if (!_isStartupComplete)
+            return "内部処理の初期化が完了するまでお待ちください。";
         if (!selectedHealth.IsReady && CurrentSetupStep == SetupStep.Entry)
-            return "ネイティブ接続モジュールが見つかりません。必要なランタイムを入れてから再起動してください。";
+            return SelectedTransportMode == TransportMode.UdpOpus
+                ? "UDP + Opus 送信モジュールが見つかりません。必要なランタイムを入れてから再起動してください。"
+                : "ネイティブ接続モジュールが見つかりません。必要なランタイムを入れてから再起動してください。";
         if (CurrentStreamState == StreamState.Streaming)
             return "音声共有中です。終了するときは「接続を終了する」を押してください。";
         if (CurrentStreamState == StreamState.Failed)

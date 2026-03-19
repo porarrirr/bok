@@ -202,10 +202,12 @@ void udp_sender::initialize_encoder_locked(int sample_rate, int channels) {
         throw std::runtime_error(std::string("Opus encoder initialization failed: ") + opus_strerror(error));
     }
 
-    opus_encoder_ctl(encoder_, OPUS_SET_BITRATE(64'000));
+opus_encoder_ctl(encoder_, OPUS_SET_BITRATE(128'000));
     opus_encoder_ctl(encoder_, OPUS_SET_SIGNAL(OPUS_SIGNAL_MUSIC));
-    opus_encoder_ctl(encoder_, OPUS_SET_COMPLEXITY(5));
-    opus_encoder_ctl(encoder_, OPUS_SET_INBAND_FEC(0));
+    opus_encoder_ctl(encoder_, OPUS_SET_COMPLEXITY(10));
+    opus_encoder_ctl(encoder_, OPUS_SET_INBAND_FEC(1));
+    opus_encoder_ctl(encoder_, OPUS_SET_PACKET_LOSS_PERC(10));
+    opus_encoder_ctl(encoder_, OPUS_SET_BANDWIDTH(OPUS_BANDWIDTH_FULLBAND));
     encoder_sample_rate_ = sample_rate;
     encoder_channels_ = channels;
 }

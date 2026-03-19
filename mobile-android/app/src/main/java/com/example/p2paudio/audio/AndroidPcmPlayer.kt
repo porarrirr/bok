@@ -10,10 +10,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 
 class AndroidPcmPlayer(
-    private val startupPrebufferFrames: Int = 4,
-    private val steadyPrebufferFrames: Int = 4,
-    private val maxQueueFrames: Int = 24,
-    private val minTrackBufferFrames: Int = 12
+    private val startupPrebufferFrames: Int = 3,
+    private val steadyPrebufferFrames: Int = 3,
+    private val maxQueueFrames: Int = 20,
+    private val minTrackBufferFrames: Int = 8
 ) {
     private val running = AtomicBoolean(false)
     private val lock = Object()

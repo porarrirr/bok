@@ -140,21 +140,13 @@ public sealed class NativeUdpAudioSenderBridge : IUdpAudioSenderBridge, IDisposa
 
     public void Dispose()
     {
-        if (_disposed)
-        {
-            return;
-        }
-
-        AppLogger.I("NativeUdpAudioSenderBridge", "bridge_dispose", "Disposing native UDP Opus sender bridge");
-        NativeUdpOpusNativeMethods.core_udp_opus_stop_streaming(_handle);
-        NativeUdpOpusNativeMethods.core_udp_opus_destroy(_handle);
-        _disposed = true;
+        Dispose(disposing: true);
         GC.SuppressFinalize(this);
     }
 
     ~NativeUdpAudioSenderBridge()
     {
-        Dispose();
+        Dispose(disposing: false);
     }
 
     private void EnsureNotDisposed()
@@ -162,6 +154,33 @@ public sealed class NativeUdpAudioSenderBridge : IUdpAudioSenderBridge, IDisposa
         if (_disposed)
         {
             throw new ObjectDisposedException(nameof(NativeUdpAudioSenderBridge));
+        }
+    }
+
+    private void Dispose(bool disposing)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        try
+        {
+            if (disposing)
+            {
+                AppLogger.I("NativeUdpAudioSenderBridge", "bridge_dispose", "Disposing native UDP Opus sender bridge");
+            }
+
+            NativeUdpOpusNativeMethods.core_udp_opus_stop_streaming(_handle);
+            NativeUdpOpusNativeMethods.core_udp_opus_destroy(_handle);
+        }
+        catch when (!disposing)
+        {
+            // Finalizer-thread teardown must never terminate the process.
+        }
+        finally
+        {
+            _disposed = true;
         }
     }
 

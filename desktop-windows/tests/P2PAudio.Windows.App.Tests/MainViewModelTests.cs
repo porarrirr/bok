@@ -135,6 +135,32 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task StartSender_WhenDeferredStartupIncomplete_RemainsBlocked()
+    {
+        var bridge = new FakeWebRtcBridge();
+        var udpBridge = new FakeUdpAudioSenderBridge();
+        var viewModel = new MainViewModel(
+            bridge,
+            udpBridge,
+            new FakeUdpReceiverDiscoveryService(),
+            new FakeConnectionCodeSessionFactory(),
+            initializeImmediately: false
+        );
+        viewModel.SelectTransportMode(TransportMode.UdpOpus);
+
+        Assert.False(viewModel.CanStartSender);
+        Assert.Contains("初期化", viewModel.RecommendedAction);
+
+        await viewModel.StartSenderAsync();
+
+        Assert.Equal(StreamState.Idle, viewModel.CurrentStreamState);
+        Assert.Equal(SetupStep.Entry, viewModel.CurrentSetupStep);
+        Assert.Empty(viewModel.CurrentConnectionCode);
+        Assert.Contains("起動準備", viewModel.StatusMessage);
+        viewModel.Shutdown();
+    }
+
+    [Fact]
     public async Task InitializeAsync_WhenBackendProbeThrows_LeavesStartupBlockedState()
     {
         var bridge = new FakeWebRtcBridge
@@ -154,7 +180,41 @@ public sealed class MainViewModelTests
         Assert.Contains("probe_failed", viewModel.StatusMessage);
         Assert.Contains("webrtc_negotiation_failed", viewModel.FailureCodeLabel);
         Assert.Contains("必要なランタイム", viewModel.RecommendedAction);
+        Assert.Equal(1, bridge.DisposeCalls);
         Assert.False(viewModel.CanStartSender);
+        Assert.False(viewModel.CanStartListener);
+        viewModel.Shutdown();
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WhenUdpSelectedAndWebRtcUnavailable_UsesUdpHealthMessaging()
+    {
+        var webRtcBridge = new FakeWebRtcBridge
+        {
+            BackendHealth = new BridgeBackendHealth(
+                IsReady: false,
+                IsDevelopmentStub: false,
+                Message: "Native runtime missing.",
+                BlockingFailureCode: FailureCode.WebRtcNegotiationFailed
+            )
+        };
+        var udpBridge = new FakeUdpAudioSenderBridge();
+        var viewModel = new MainViewModel(
+            webRtcBridge,
+            udpBridge,
+            new FakeUdpReceiverDiscoveryService(),
+            new FakeConnectionCodeSessionFactory(),
+            initializeImmediately: false
+        );
+        viewModel.SelectTransportMode(TransportMode.UdpOpus);
+
+        await viewModel.InitializeAsync();
+
+        Assert.Equal("内部処理: UDP + Opus ネイティブ送信モジュール", viewModel.BackendLabel);
+        Assert.Equal("UDP + Opus 送信モジュールを利用できます。", viewModel.StatusMessage);
+        Assert.DoesNotContain("接続モジュールが利用できません", viewModel.StatusMessage);
+        Assert.Contains("Windows のメディア音声送信", viewModel.RecommendedAction);
+        Assert.True(viewModel.CanStartSender);
         Assert.False(viewModel.CanStartListener);
         viewModel.Shutdown();
     }
@@ -852,6 +912,45 @@ public sealed class MainViewModelTests
         viewModel.Shutdown();
     }
 
+    [Fact]
+    public void Shutdown_DisposesOwnedBridges()
+    {
+        var bridge = new FakeWebRtcBridge();
+        var udpBridge = new FakeUdpAudioSenderBridge();
+        var viewModel = CreateViewModel(bridge: bridge, udpBridge: udpBridge);
+
+        viewModel.Shutdown();
+
+        Assert.Equal(1, bridge.CloseCalls);
+        Assert.Equal(1, udpBridge.CloseCalls);
+        Assert.Equal(1, bridge.DisposeCalls);
+        Assert.Equal(1, udpBridge.DisposeCalls);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WhenShutdownBeforeDeferredStartupCompletes_DisposesStartupBridge()
+    {
+        var startupGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var bridge = new FakeWebRtcBridge
+        {
+            BackendHealthGate = startupGate
+        };
+        var viewModel = new MainViewModel(
+            bridge,
+            new FakeConnectionCodeSessionFactory(),
+            initializeImmediately: false
+        );
+
+        var initializeTask = viewModel.InitializeAsync();
+        await bridge.BackendHealthRequested.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        viewModel.Shutdown();
+        startupGate.SetResult();
+        await initializeTask;
+
+        Assert.Equal(1, bridge.DisposeCalls);
+    }
+
     // --- Helpers ---
 
     private static async Task WaitUntilAsync(Func<bool> predicate, TimeSpan timeout)
@@ -870,7 +969,7 @@ public sealed class MainViewModelTests
         Assert.True(predicate());
     }
 
-    private sealed class FakeWebRtcBridge : IWebRtcBridge
+    private sealed class FakeWebRtcBridge : IWebRtcBridge, IDisposable
     {
         private readonly Queue<byte[]> _incomingPackets = new();
         private readonly object _sync = new();
@@ -910,9 +1009,18 @@ public sealed class MainViewModelTests
 
         public Exception? BackendHealthException { get; set; }
 
+        public TaskCompletionSource BackendHealthRequested { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource? BackendHealthGate { get; set; }
+
         public ConnectionDiagnostics Diagnostics { get; set; } = new();
 
         public bool IsNativeBackend => true;
+
+        public int CloseCalls { get; private set; }
+
+        public int DisposeCalls { get; private set; }
 
         public Task<WebRtcOfferResult> CreateOfferAsync() => Task.FromResult(OfferResult);
 
@@ -953,6 +1061,8 @@ public sealed class MainViewModelTests
 
         public BridgeBackendHealth GetBackendHealth()
         {
+            BackendHealthRequested.TrySetResult();
+            BackendHealthGate?.Task.GetAwaiter().GetResult();
             if (BackendHealthException is not null)
             {
                 throw BackendHealthException;
@@ -963,6 +1073,7 @@ public sealed class MainViewModelTests
 
         public void Close()
         {
+            CloseCalls++;
         }
 
         public void EnqueueIncomingPacket(byte[] packet)
@@ -972,9 +1083,14 @@ public sealed class MainViewModelTests
                 _incomingPackets.Enqueue(packet);
             }
         }
+
+        public void Dispose()
+        {
+            DisposeCalls++;
+        }
     }
 
-    private sealed class FakeUdpAudioSenderBridge : IUdpAudioSenderBridge
+    private sealed class FakeUdpAudioSenderBridge : IUdpAudioSenderBridge, IDisposable
     {
         public TransportMode Mode => TransportMode.UdpOpus;
 
@@ -1034,9 +1150,19 @@ public sealed class MainViewModelTests
 
         public BridgeBackendHealth GetBackendHealth() => BackendHealth;
 
+        public int CloseCalls { get; private set; }
+
+        public int DisposeCalls { get; private set; }
+
         public void Close()
         {
+            CloseCalls++;
             StopStreaming();
+        }
+
+        public void Dispose()
+        {
+            DisposeCalls++;
         }
     }
 

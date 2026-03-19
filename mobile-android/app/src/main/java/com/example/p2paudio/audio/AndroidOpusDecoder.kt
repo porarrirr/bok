@@ -130,10 +130,10 @@ class AndroidOpusDecoder(
         return ByteBuffer.allocate(19)
             .order(ByteOrder.LITTLE_ENDIAN)
             .apply {
-                put("OpusHead".toByteArray())
+put("OpusHead".toByteArray())
                 put(1)
                 put(channels.toByte())
-                putShort(0)
+                putShort(312)
                 putInt(sampleRate)
                 putShort(0)
                 put(0)
@@ -151,7 +151,7 @@ class AndroidOpusDecoder(
     }
 
     companion object {
-        private const val CODEC_TIMEOUT_US = 2_000L
+        private const val CODEC_TIMEOUT_US = 10_000L
         private const val WARNING_LOG_INTERVAL_MS = 1_000L
     }
 }
