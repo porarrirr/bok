@@ -270,7 +270,7 @@ final class PcmPlayer {
                         self.drainQueueUnsafe(format: format)
                     }
                 }
-            })
+            }
         }
 
         let startThresholdFrames = playbackStartThresholdFrames(

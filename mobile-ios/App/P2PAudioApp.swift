@@ -25,7 +25,7 @@ struct P2PAudioApp: App {
                         )
                     }
                 }
-                .onChange(of: scenePhase) { _, newValue in
+                .onChange(of: scenePhase) { newValue in
                     guard newValue == .active else { return }
                     do {
                         try AudioPlaybackSession.shared.activateForPlayback()
