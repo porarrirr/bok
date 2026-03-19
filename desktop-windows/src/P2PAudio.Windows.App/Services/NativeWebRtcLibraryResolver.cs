@@ -7,21 +7,36 @@ internal static class NativeWebRtcLibraryResolver
 {
     private const string DllBaseName = "p2paudio_core_webrtc";
     private const string DllFileName = $"{DllBaseName}.dll";
-    private static readonly string[] RequiredRuntimeFiles =
-    [
-        "p2paudio_core_webrtc.dll",
-        "datachannel.dll",
-        "juice.dll",
-        "legacy.dll",
-        "libcrypto-3-x64.dll",
-        "libssl-3-x64.dll",
-        "srtp2.dll",
-        "zlib1.dll"
-    ];
+    private static readonly NativeLibrarySpec WebRtcLibrary = new(
+        BaseName: DllBaseName,
+        FileName: DllFileName,
+        RequiredRuntimeFiles:
+        [
+            "p2paudio_core_webrtc.dll",
+            "datachannel.dll",
+            "juice.dll",
+            "legacy.dll",
+            "libcrypto-3-x64.dll",
+            "libssl-3-x64.dll",
+            "srtp2.dll",
+            "zlib1.dll"
+        ]
+    );
+    private static readonly NativeLibrarySpec UdpOpusLibrary = new(
+        BaseName: NativeUdpOpusLibraryResolver.DllBaseName,
+        FileName: NativeUdpOpusLibraryResolver.DllFileName,
+        RequiredRuntimeFiles:
+        [
+            NativeUdpOpusLibraryResolver.DllFileName,
+            "opus.dll",
+            "portaudio.dll"
+        ]
+    );
+    private static readonly NativeLibrarySpec[] Libraries = [WebRtcLibrary, UdpOpusLibrary];
 
     private static readonly object Sync = new();
     private static bool _resolverRegistered;
-    private static nint _resolvedHandle;
+    private static readonly Dictionary<string, nint> ResolvedHandles = new(StringComparer.OrdinalIgnoreCase);
 
     public static void EnsureRegistered()
     {
@@ -46,12 +61,16 @@ internal static class NativeWebRtcLibraryResolver
     {
         var unwrapped = Unwrap(exception);
         return unwrapped is DllNotFoundException or BadImageFormatException ||
-               unwrapped.Message.Contains(DllBaseName, StringComparison.OrdinalIgnoreCase);
+               Libraries.Any(spec => unwrapped.Message.Contains(spec.BaseName, StringComparison.OrdinalIgnoreCase));
     }
 
     internal static string DescribeStartupFailure(Exception exception, string? baseDirectory = null)
+        => DescribeStartupFailure(WebRtcLibrary.BaseName, exception, baseDirectory);
+
+    internal static string DescribeStartupFailure(string dllBaseName, Exception exception, string? baseDirectory = null)
     {
         var unwrapped = Unwrap(exception);
+        var library = GetLibrarySpec(dllBaseName);
         var root = baseDirectory ?? AppContext.BaseDirectory;
         var runtimeDirectory = Path.Combine(root, "runtimes", "win-x64", "native");
 
@@ -60,7 +79,7 @@ internal static class NativeWebRtcLibraryResolver
             return $"ネイティブ DLL フォルダーが見つかりません: {runtimeDirectory}。{unwrapped.Message}";
         }
 
-        var missingFiles = RequiredRuntimeFiles
+        var missingFiles = library.RequiredRuntimeFiles
             .Where(fileName => !File.Exists(Path.Combine(runtimeDirectory, fileName)))
             .ToArray();
 
@@ -73,12 +92,16 @@ internal static class NativeWebRtcLibraryResolver
     }
 
     internal static string? ResolveLibraryPath(string? baseDirectory = null)
+        => ResolveLibraryPath(WebRtcLibrary.BaseName, baseDirectory);
+
+    internal static string? ResolveLibraryPath(string dllBaseName, string? baseDirectory = null)
     {
+        var library = GetLibrarySpec(dllBaseName);
         var root = baseDirectory ?? AppContext.BaseDirectory;
         var candidates = new[]
         {
-            Path.Combine(root, "runtimes", "win-x64", "native", DllFileName),
-            Path.Combine(root, DllFileName)
+            Path.Combine(root, "runtimes", "win-x64", "native", library.FileName),
+            Path.Combine(root, library.FileName)
         };
 
         return candidates.FirstOrDefault(File.Exists);
@@ -89,20 +112,22 @@ internal static class NativeWebRtcLibraryResolver
         _ = assembly;
         _ = searchPath;
 
-        if (!string.Equals(libraryName, DllBaseName, StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(libraryName, DllFileName, StringComparison.OrdinalIgnoreCase))
+        var library = Libraries.FirstOrDefault(spec =>
+            string.Equals(libraryName, spec.BaseName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(libraryName, spec.FileName, StringComparison.OrdinalIgnoreCase));
+        if (library is null)
         {
             return 0;
         }
 
         lock (Sync)
         {
-            if (_resolvedHandle != 0)
+            if (ResolvedHandles.TryGetValue(library.BaseName, out var resolvedHandle) && resolvedHandle != 0)
             {
-                return _resolvedHandle;
+                return resolvedHandle;
             }
 
-            var libraryPath = ResolveLibraryPath();
+            var libraryPath = ResolveLibraryPath(library.BaseName);
             if (string.IsNullOrWhiteSpace(libraryPath))
             {
                 return 0;
@@ -110,14 +135,20 @@ internal static class NativeWebRtcLibraryResolver
 
             try
             {
-                _resolvedHandle = NativeLibrary.Load(libraryPath);
-                return _resolvedHandle;
+                resolvedHandle = NativeLibrary.Load(libraryPath);
+                ResolvedHandles[library.BaseName] = resolvedHandle;
+                return resolvedHandle;
             }
             catch
             {
                 return 0;
             }
         }
+    }
+
+    private static NativeLibrarySpec GetLibrarySpec(string dllBaseName)
+    {
+        return Libraries.First(spec => string.Equals(spec.BaseName, dllBaseName, StringComparison.OrdinalIgnoreCase));
     }
 
     private static Exception Unwrap(Exception exception)
@@ -133,4 +164,10 @@ internal static class NativeWebRtcLibraryResolver
 
         return exception;
     }
+
+    private sealed record NativeLibrarySpec(
+        string BaseName,
+        string FileName,
+        IReadOnlyList<string> RequiredRuntimeFiles
+    );
 }

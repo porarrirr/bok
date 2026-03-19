@@ -2,6 +2,8 @@ package com.example.p2paudio.protocol
 
 import com.example.p2paudio.model.PairingConfirmPayload
 import com.example.p2paudio.model.PairingInitPayload
+import com.example.p2paudio.model.UdpConfirmPayload
+import com.example.p2paudio.model.UdpInitPayload
 import java.io.ByteArrayOutputStream
 import java.util.Base64
 import java.util.zip.Deflater
@@ -33,6 +35,26 @@ object QrPayloadCodec {
     fun decodeConfirm(raw: String): PairingConfirmPayload {
         val decoded = decodeTransportString(raw)
         return json.decodeFromString(PairingConfirmPayload.serializer(), decoded)
+    }
+
+    fun encodeUdpInit(payload: UdpInitPayload): String {
+        val raw = json.encodeToString(UdpInitPayload.serializer(), payload)
+        return encodeTransportString(raw)
+    }
+
+    fun encodeUdpConfirm(payload: UdpConfirmPayload): String {
+        val raw = json.encodeToString(UdpConfirmPayload.serializer(), payload)
+        return encodeTransportString(raw)
+    }
+
+    fun decodeUdpInit(raw: String): UdpInitPayload {
+        val decoded = decodeTransportString(raw)
+        return json.decodeFromString(UdpInitPayload.serializer(), decoded)
+    }
+
+    fun decodeUdpConfirm(raw: String): UdpConfirmPayload {
+        val decoded = decodeTransportString(raw)
+        return json.decodeFromString(UdpConfirmPayload.serializer(), decoded)
     }
 
     private fun encodeTransportString(raw: String): String {

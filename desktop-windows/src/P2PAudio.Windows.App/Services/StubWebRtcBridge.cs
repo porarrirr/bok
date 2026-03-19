@@ -17,6 +17,8 @@ public sealed class StubWebRtcBridge : IWebRtcBridge
 
     public bool IsNativeBackend => false;
 
+    public TransportMode Mode => TransportMode.WebRtc;
+
     public Task<WebRtcOfferResult> CreateOfferAsync()
     {
         if (!_enabledForDevelopment)

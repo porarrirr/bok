@@ -2,6 +2,8 @@ package com.example.p2paudio.protocol
 
 import com.example.p2paudio.model.PairingConfirmPayload
 import com.example.p2paudio.model.PairingInitPayload
+import com.example.p2paudio.model.UdpConfirmPayload
+import com.example.p2paudio.model.UdpInitPayload
 import java.io.ByteArrayOutputStream
 import java.util.Base64
 import java.util.zip.Deflater
@@ -90,6 +92,35 @@ class QrPayloadCodecTest {
         assertThrows(IllegalArgumentException::class.java) {
             QrPayloadCodec.decodeInit("p2paudio-z1:$encoded")
         }
+    }
+
+    @Test
+    fun `encodeUdpInit and decodeUdpInit round trip`() {
+        val payload = UdpInitPayload(
+            sessionId = "udp-session-1",
+            senderDeviceName = "windows",
+            expiresAtUnixMs = 1_760_000_000_000L
+        )
+
+        val encoded = QrPayloadCodec.encodeUdpInit(payload)
+        val decoded = QrPayloadCodec.decodeUdpInit(encoded)
+
+        assertEquals(payload, decoded)
+    }
+
+    @Test
+    fun `encodeUdpConfirm and decodeUdpConfirm round trip`() {
+        val payload = UdpConfirmPayload(
+            sessionId = "udp-session-1",
+            receiverDeviceName = "pixel",
+            receiverPort = 49_152,
+            expiresAtUnixMs = 1_760_000_000_000L
+        )
+
+        val encoded = QrPayloadCodec.encodeUdpConfirm(payload)
+        val decoded = QrPayloadCodec.decodeUdpConfirm(encoded)
+
+        assertEquals(payload, decoded)
     }
 
     private fun zlibCompress(input: ByteArray): ByteArray {

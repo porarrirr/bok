@@ -13,11 +13,11 @@ This module contains the Windows implementation for the shared v2 pairing/audio 
   - USB tethering interface classifier
 - `src/P2PAudio.Windows.App/`
   - WinUI shell with sender/listener payload text flow (copy, paste, manual entry)
-  - native bridge loading (`p2paudio_core_webrtc.dll`) with native-required default
+  - native bridge loading (`p2paudio_core_webrtc.dll`, `p2paudio_core_udp_opus.dll`) with native-required default
   - WASAPI loopback sender to `audio-pcm` packet pipeline
   - DataChannel receive polling + PCM playback (NAudio)
 - `src/core-webrtc/`
-  - C++ bridge library + C ABI exports for session control and PCM receive queue access
+  - C++ bridge libraries + C ABI exports for WebRTC control and UDP + Opus media-audio sending
 - `tests/P2PAudio.Windows.Core.Tests/`
   - codec, validator, and failure-mapper tests
 
@@ -36,19 +36,18 @@ This module contains the Windows implementation for the shared v2 pairing/audio 
 1. Bootstrap `vcpkg`.
    - `vcpkg install --x-manifest-root=. --triplet x64-windows`
 2. Build native bridge:
-   - `cmake -S src/core-webrtc -B out/core-webrtc -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake -DVCPKG_MANIFEST_MODE=ON -DVCPKG_MANIFEST_DIR=. -DVCPKG_INSTALLED_DIR=.\vcpkg_installed -DVCPKG_TARGET_TRIPLET=x64-windows -DP2PAUDIO_USE_LIBDATACHANNEL=ON`
-   - `cmake --build out/core-webrtc`
-3. Copy native bridge runtime:
-   - copy `out/core-webrtc/p2paudio_core_webrtc.dll` to `src/P2PAudio.Windows.App/runtimes/win-x64/native/`
-   - copy `vcpkg_installed/x64-windows/bin/*.dll` to `src/P2PAudio.Windows.App/runtimes/win-x64/native/`
-4. Build managed app:
-   - `dotnet build src/P2PAudio.Windows.App/P2PAudio.Windows.App.csproj -c Release -r win10-x64 -p:Platform=x64`
+    - `cmake -S src/core-webrtc -B out/core-webrtc -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake -DVCPKG_MANIFEST_MODE=OFF -DVCPKG_INSTALLED_DIR=<repo>\desktop-windows\vcpkg_installed -DVCPKG_TARGET_TRIPLET=x64-windows -DP2PAUDIO_USE_LIBDATACHANNEL=ON`
+    - `cmake --build out/core-webrtc --config Release`
+3. Build managed app:
+    - `dotnet build src/P2PAudio.Windows.App/P2PAudio.Windows.App.csproj -c Release -r win10-x64 -p:Platform=x64`
+    - The app project includes `out/core-webrtc/p2paudio_core_udp_opus.dll`, `vcpkg_installed/x64-windows/bin/opus.dll`, and `vcpkg_installed/x64-windows/bin/portaudio.dll` in the app output when those files exist.
 
 ## Runtime behavior
 
 - Native backend is required by default.
 - If native bridge load fails, app enters failed state and blocks connection flow.
 - Development-only stub can be enabled with `ALLOW_STUB_FOR_DEV=1`.
+- UDP + Opus mode requires the native UDP sender DLL and Opus runtime from `vcpkg_installed/x64-windows/bin/` to be copied beside the app.
 
 ## Notes
 

@@ -11,14 +11,13 @@ namespace P2PAudio.Windows.App.Services;
 
 public sealed class ConnectionCodeSessionFactory : IConnectionCodeSessionFactory
 {
-    public IConnectionCodeSession Create(string initPayload, string offerSdp, long expiresAtUnixMs)
+    public IConnectionCodeSession Create(string initPayload, string localAddressHintSource, long expiresAtUnixMs)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(initPayload);
-        ArgumentException.ThrowIfNullOrWhiteSpace(offerSdp);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expiresAtUnixMs);
 
         var token = CreateRandomToken();
-        foreach (var address in ResolveCandidateAddresses(offerSdp))
+        foreach (var address in ResolveCandidateAddresses(localAddressHintSource))
         {
             try
             {
@@ -108,7 +107,7 @@ public sealed class ConnectionCodeSessionFactory : IConnectionCodeSessionFactory
         private readonly string _initPayload;
         private readonly string _token;
         private readonly CancellationTokenSource _disposeCts = new();
-        private readonly TaskCompletionSource<string> _confirmPayloadTcs =
+        private readonly TaskCompletionSource<ConnectionCodeSubmission> _confirmPayloadTcs =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly Task _acceptLoopTask;
         private bool _disposed;
@@ -127,7 +126,7 @@ public sealed class ConnectionCodeSessionFactory : IConnectionCodeSessionFactory
 
         public long ExpiresAtUnixMs { get; }
 
-        public Task<string> WaitForConfirmPayloadAsync(CancellationToken cancellationToken)
+        public Task<ConnectionCodeSubmission> WaitForConfirmPayloadAsync(CancellationToken cancellationToken)
         {
             return _confirmPayloadTcs.Task.WaitAsync(cancellationToken);
         }
@@ -214,7 +213,11 @@ public sealed class ConnectionCodeSessionFactory : IConnectionCodeSessionFactory
                             return;
                         }
 
-                        if (!_confirmPayloadTcs.TrySetResult(request.Body))
+                        var remoteAddress = (client.Client.RemoteEndPoint as IPEndPoint)?.Address.ToString() ?? string.Empty;
+                        if (!_confirmPayloadTcs.TrySetResult(new ConnectionCodeSubmission(
+                            Payload: request.Body,
+                            RemoteAddress: remoteAddress
+                        )))
                         {
                             await WriteResponseAsync(stream, 409, "Conflict", "already_confirmed", cancellationToken);
                             return;

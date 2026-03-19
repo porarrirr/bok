@@ -6,6 +6,8 @@ import com.example.p2paudio.logging.AppLogger
 import com.example.p2paudio.model.AudioStreamState
 import com.example.p2paudio.model.ConnectionDiagnostics
 import com.example.p2paudio.model.NetworkPathType
+import com.example.p2paudio.transport.PairingAudioTransport
+import com.example.p2paudio.transport.TransportMode
 import java.nio.ByteBuffer
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
@@ -27,7 +29,9 @@ class PeerConnectionController(
     private val stateListener: (AudioStreamState, String?) -> Unit,
     private val pcmFrameListener: (PcmFrame) -> Unit,
     private val diagnosticsListener: (ConnectionDiagnostics) -> Unit = {}
-) {
+) : PairingAudioTransport {
+
+    override val mode: TransportMode = TransportMode.WEBRTC
 
     private val lock = Any()
     private var peerConnection: PeerConnection? = null
@@ -37,7 +41,7 @@ class PeerConnectionController(
     private var lastBufferPressureLogAtMs = 0L
     private var connectionDiagnostics = ConnectionDiagnostics()
 
-    suspend fun createOfferSession(): Result<LocalOfferResult> = withContext(Dispatchers.IO) {
+    override suspend fun createOfferSession(): Result<LocalOfferResult> = withContext(Dispatchers.IO) {
         AppLogger.i("PeerConnection", "create_offer_start", "Creating local offer session")
         resetDiagnostics()
         stateListener(AudioStreamState.CONNECTING, null)
@@ -84,7 +88,7 @@ class PeerConnectionController(
         }
     }
 
-    suspend fun createAnswerForOffer(offerSdp: String): Result<LocalAnswerResult> = withContext(Dispatchers.IO) {
+    override suspend fun createAnswerForOffer(offerSdp: String): Result<LocalAnswerResult> = withContext(Dispatchers.IO) {
         AppLogger.i(
             "PeerConnection",
             "create_answer_start",
@@ -133,7 +137,7 @@ class PeerConnectionController(
         }
     }
 
-    suspend fun applyRemoteAnswer(answerSdp: String): Result<Unit> = withContext(Dispatchers.IO) {
+    override suspend fun applyRemoteAnswer(answerSdp: String): Result<Unit> = withContext(Dispatchers.IO) {
         AppLogger.i(
             "PeerConnection",
             "apply_answer_start",
@@ -161,7 +165,7 @@ class PeerConnectionController(
         }
     }
 
-    fun sendPcmFrame(frame: PcmFrame): Boolean {
+    override fun sendPcmFrame(frame: PcmFrame): Boolean {
         val packet = PcmPacketCodec.encode(frame)
         val channel = synchronized(lock) { audioDataChannel } ?: return false
         if (channel.state() != DataChannel.State.OPEN) {
@@ -188,7 +192,7 @@ class PeerConnectionController(
         return sent
     }
 
-    fun close() {
+    override fun close() {
         AppLogger.i(
             "PeerConnection",
             "peer_close",

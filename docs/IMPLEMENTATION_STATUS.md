@@ -13,6 +13,7 @@
 - DataChannel-based PCM transport (`audio-pcm`) on Android and iOS.
 - Android device-audio capture (`AudioPlaybackCapture`) to PCM sender pipeline.
 - Android receiver PCM playback pipeline (`AudioTrack`).
+- Windows -> Android UDP + Opus connection-code flow (Windows code generation, Android auto-confirm, automatic sender start without mDNS discovery).
 - iOS ReplayKit extension PCM bridge into app process via App Group shared file.
 - iOS receiver PCM playback pipeline (`AVAudioEngine`).
 - iOS QR camera scanner UI integration (AVFoundation).

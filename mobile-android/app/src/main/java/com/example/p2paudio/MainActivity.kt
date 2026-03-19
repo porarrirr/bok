@@ -61,6 +61,7 @@ import com.example.p2paudio.model.ConnectionDiagnostics
 import com.example.p2paudio.model.FailureCode
 import com.example.p2paudio.model.NetworkPathType
 import com.example.p2paudio.service.AudioSendService
+import com.example.p2paudio.transport.TransportMode
 import com.example.p2paudio.ui.MainUiState
 import com.example.p2paudio.ui.MainViewModel
 import com.example.p2paudio.ui.SetupMode
@@ -130,6 +131,7 @@ class MainActivity : ComponentActivity() {
                     val uiState by viewModel.uiState.collectAsState(initial = MainUiState())
                     MainScreen(
                         uiState = uiState,
+                        onSelectTransportMode = viewModel::selectTransportMode,
                         onChooseSender = viewModel::beginSenderFlow,
                         onContinueSender = viewModel::startSenderFlowRequested,
                         onChooseListener = viewModel::beginListenerFlow,
@@ -180,6 +182,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun MainScreen(
     uiState: MainUiState,
+    onSelectTransportMode: (TransportMode) -> Unit,
     onChooseSender: () -> Unit,
     onContinueSender: () -> Unit,
     onChooseListener: () -> Unit,
@@ -233,7 +236,8 @@ private fun MainScreen(
             HeroCard(
                 canStopSession = canStopSession,
                 onStop = onStop,
-                setupMode = uiState.setupMode
+                setupMode = uiState.setupMode,
+                transportMode = uiState.transportMode
             )
 
             JourneyCard(uiState = uiState)
@@ -257,6 +261,8 @@ private fun MainScreen(
             if (!hideSetupCards) {
                 when (uiState.setupStep) {
                     SetupStep.ENTRY -> EntryActionsCard(
+                        transportMode = uiState.transportMode,
+                        onSelectTransportMode = onSelectTransportMode,
                         onChooseSender = onChooseSender,
                         onChooseListener = onChooseListener,
                         canStartNewFlow = canStartNewFlow
@@ -287,6 +293,7 @@ private fun MainScreen(
                     )
 
                     SetupStep.LISTENER_SCAN_INIT -> ListenerScanCard(
+                        transportMode = uiState.transportMode,
                         onProcessInitPayload = onProcessInitPayload,
                         onStop = onStop
                     )
@@ -304,8 +311,11 @@ private fun MainScreen(
                     SetupStep.LISTENER_WAIT_FOR_CONNECTION -> ListenerWaitingForConnectionCard(
                         code = uiState.verificationCode,
                         expirySeconds = expirySeconds,
+                        transportMode = uiState.transportMode,
                         onStop = onStop
                     )
+
+                    SetupStep.LISTENER_UDP_WAITING -> UdpListenerWaitingCard(onStop = onStop)
                 }
             } else if (uiState.streamState != AudioStreamState.FAILED) {
                 ConnectedTipsCard(uiState = uiState)
@@ -320,7 +330,8 @@ private fun MainScreen(
 private fun HeroCard(
     canStopSession: Boolean,
     onStop: () -> Unit,
-    setupMode: SetupMode
+    setupMode: SetupMode,
+    transportMode: TransportMode
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -361,13 +372,20 @@ private fun HeroCard(
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.SemiBold
             )
+            Text(
+                text = currentTransportLabel(transportMode),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
 
 @Composable
 private fun JourneyCard(uiState: MainUiState) {
-    val steps = remember(uiState.setupMode) { journeyLabels(uiState.setupMode) }
+    val steps = remember(uiState.setupMode, uiState.transportMode) {
+        journeyLabels(uiState.setupMode, uiState.transportMode)
+    }
     val activeStepIndex = journeyActiveIndex(uiState)
 
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -534,6 +552,8 @@ private fun ConnectionOverviewCard(
 
 @Composable
 private fun EntryActionsCard(
+    transportMode: TransportMode,
+    onSelectTransportMode: (TransportMode) -> Unit,
     onChooseSender: () -> Unit,
     onChooseListener: () -> Unit,
     canStartNewFlow: Boolean
@@ -546,6 +566,20 @@ private fun EntryActionsCard(
         title = stringResource(R.string.flow_entry_title),
         description = stringResource(R.string.flow_entry_description)
     ) {
+        TransportModeSelector(
+            selectedMode = transportMode,
+            enabled = canStartNewFlow,
+            onSelectMode = onSelectTransportMode
+        )
+
+        if (transportMode == TransportMode.UDP_OPUS) {
+            Text(
+                text = stringResource(R.string.transport_mode_udp_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         ChecklistBlock(
             items = listOf(
                 stringResource(R.string.flow_checklist_item_network),
@@ -555,7 +589,10 @@ private fun EntryActionsCard(
 
         RoleActionCard(
             title = stringResource(R.string.action_start_sender),
-            description = stringResource(R.string.flow_entry_sender_description),
+            description = when (transportMode) {
+                TransportMode.WEBRTC -> stringResource(R.string.flow_entry_sender_description)
+                TransportMode.UDP_OPUS -> stringResource(R.string.transport_mode_udp_sender_unavailable)
+            },
             enabled = canStartNewFlow,
             onClick = onChooseSender,
             testTag = "entry_start_sender_button"
@@ -563,11 +600,50 @@ private fun EntryActionsCard(
 
         RoleActionCard(
             title = stringResource(R.string.action_start_listener_scan),
-            description = stringResource(R.string.flow_entry_listener_description),
+            description = when (transportMode) {
+                TransportMode.WEBRTC -> stringResource(R.string.flow_entry_listener_description)
+                TransportMode.UDP_OPUS -> stringResource(R.string.transport_mode_udp_listener_description)
+            },
             enabled = canStartNewFlow,
             onClick = onChooseListener,
             testTag = "entry_start_listener_button"
         )
+    }
+}
+
+@Composable
+private fun TransportModeSelector(
+    selectedMode: TransportMode,
+    enabled: Boolean,
+    onSelectMode: (TransportMode) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(R.string.transport_mode_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (selectedMode == TransportMode.WEBRTC) {
+                Button(onClick = { onSelectMode(TransportMode.WEBRTC) }, enabled = enabled) {
+                    Text(stringResource(R.string.transport_mode_webrtc))
+                }
+            } else {
+                OutlinedButton(onClick = { onSelectMode(TransportMode.WEBRTC) }, enabled = enabled) {
+                    Text(stringResource(R.string.transport_mode_webrtc))
+                }
+            }
+
+            if (selectedMode == TransportMode.UDP_OPUS) {
+                Button(onClick = { onSelectMode(TransportMode.UDP_OPUS) }, enabled = enabled) {
+                    Text(stringResource(R.string.transport_mode_udp))
+                }
+            } else {
+                OutlinedButton(onClick = { onSelectMode(TransportMode.UDP_OPUS) }, enabled = enabled) {
+                    Text(stringResource(R.string.transport_mode_udp))
+                }
+            }
+        }
     }
 }
 
@@ -681,31 +757,60 @@ private fun SenderShowInitCard(
 
 @Composable
 private fun ListenerScanCard(
+    transportMode: TransportMode,
     onProcessInitPayload: (String) -> Unit,
     onStop: () -> Unit
 ) {
+    val titleRes = when (transportMode) {
+        TransportMode.WEBRTC -> R.string.flow_receiver_step_title
+        TransportMode.UDP_OPUS -> R.string.flow_udp_receiver_step_title
+    }
+    val descriptionRes = when (transportMode) {
+        TransportMode.WEBRTC -> R.string.flow_receiver_step_description
+        TransportMode.UDP_OPUS -> R.string.flow_udp_receiver_step_description
+    }
+    val waitingRes = when (transportMode) {
+        TransportMode.WEBRTC -> R.string.flow_receiver_waiting_code
+        TransportMode.UDP_OPUS -> R.string.flow_udp_receiver_waiting_code
+    }
+    val payloadTitleRes = when (transportMode) {
+        TransportMode.WEBRTC -> R.string.flow_receiver_payload_entry_title
+        TransportMode.UDP_OPUS -> R.string.flow_udp_receiver_payload_entry_title
+    }
+    val payloadPlaceholderRes = when (transportMode) {
+        TransportMode.WEBRTC -> R.string.flow_receiver_payload_entry_placeholder
+        TransportMode.UDP_OPUS -> R.string.flow_udp_receiver_payload_entry_placeholder
+    }
+    val submitLabelRes = when (transportMode) {
+        TransportMode.WEBRTC -> R.string.flow_receiver_apply_init_payload
+        TransportMode.UDP_OPUS -> R.string.flow_udp_receiver_apply_connection_code
+    }
+    val tipRes = when (transportMode) {
+        TransportMode.WEBRTC -> R.string.flow_receiver_scan_tip
+        TransportMode.UDP_OPUS -> R.string.flow_udp_receiver_scan_tip
+    }
     StepCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("listener_scan_step_card"),
         number = 2,
-        title = stringResource(R.string.flow_receiver_step_title),
-        description = stringResource(R.string.flow_receiver_step_description)
+        title = stringResource(titleRes),
+        description = stringResource(descriptionRes)
     ) {
         Text(
-            text = stringResource(R.string.flow_receiver_waiting_code),
+            text = stringResource(waitingRes),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         PayloadInputSection(
-            title = stringResource(R.string.flow_receiver_payload_entry_title),
-            placeholder = stringResource(R.string.flow_receiver_payload_entry_placeholder),
-            submitLabel = stringResource(R.string.flow_receiver_apply_init_payload),
+            title = stringResource(payloadTitleRes),
+            placeholder = stringResource(payloadPlaceholderRes),
+            submitLabel = stringResource(submitLabelRes),
             textFieldTag = "listener_payload_input",
             onSubmit = onProcessInitPayload
         )
         Text(
-            text = stringResource(R.string.flow_receiver_scan_tip),
+            text = stringResource(tipRes),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -754,15 +859,28 @@ private fun ListenerShowConfirmCard(
 private fun ListenerWaitingForConnectionCard(
     code: String,
     expirySeconds: Int,
+    transportMode: TransportMode,
     onStop: () -> Unit
 ) {
+    val titleRes = when (transportMode) {
+        TransportMode.WEBRTC -> R.string.flow_receiver_auto_connect_title
+        TransportMode.UDP_OPUS -> R.string.flow_udp_receiver_auto_connect_title
+    }
+    val descriptionRes = when (transportMode) {
+        TransportMode.WEBRTC -> R.string.flow_receiver_auto_connect_description
+        TransportMode.UDP_OPUS -> R.string.flow_udp_receiver_auto_connect_description
+    }
+    val hintRes = when (transportMode) {
+        TransportMode.WEBRTC -> R.string.flow_receiver_auto_connect_hint
+        TransportMode.UDP_OPUS -> R.string.flow_udp_receiver_auto_connect_hint
+    }
     StepCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("listener_wait_connection_card"),
         number = 3,
-        title = stringResource(R.string.flow_receiver_auto_connect_title),
-        description = stringResource(R.string.flow_receiver_auto_connect_description)
+        title = stringResource(titleRes),
+        description = stringResource(descriptionRes)
     ) {
         if (expirySeconds > 0) {
             Text(
@@ -774,7 +892,32 @@ private fun ListenerWaitingForConnectionCard(
         }
         VerificationCodeBlock(code = code)
         Text(
-            text = stringResource(R.string.flow_receiver_auto_connect_hint),
+            text = stringResource(hintRes),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedButton(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onStop
+        ) {
+            Text(stringResource(R.string.action_stop_session))
+        }
+    }
+}
+
+@Composable
+private fun UdpListenerWaitingCard(onStop: () -> Unit) {
+    StepCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("udp_listener_waiting_card"),
+        number = 2,
+        title = stringResource(R.string.flow_udp_listener_title),
+        description = stringResource(R.string.flow_udp_listener_description)
+    ) {
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        Text(
+            text = stringResource(R.string.flow_udp_listener_waiting_tip),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1226,22 +1369,36 @@ private fun currentRoleLabel(setupMode: SetupMode): String = when (setupMode) {
     SetupMode.NONE -> "まずは送信側か受信側を選ぶだけで始められます"
 }
 
-private fun journeyLabels(setupMode: SetupMode): List<Int> = when (setupMode) {
-    SetupMode.SENDER -> listOf(
-        R.string.flow_tips_sender_step_1,
-        R.string.flow_tips_sender_step_2,
-        R.string.flow_tips_sender_step_3
-    )
-    SetupMode.LISTENER -> listOf(
-        R.string.flow_tips_listener_step_1,
-        R.string.flow_tips_listener_step_2,
-        R.string.flow_tips_listener_step_3
-    )
-    SetupMode.NONE -> listOf(
-        R.string.flow_tips_default_step_1,
-        R.string.flow_tips_default_step_2,
-        R.string.flow_tips_default_step_3
-    )
+private fun currentTransportLabel(transportMode: TransportMode): String = when (transportMode) {
+    TransportMode.WEBRTC -> "現在の転送モード: WebRTC"
+    TransportMode.UDP_OPUS -> "現在の転送モード: UDP + Opus"
+}
+
+private fun journeyLabels(setupMode: SetupMode, transportMode: TransportMode): List<Int> {
+    if (transportMode == TransportMode.UDP_OPUS && setupMode == SetupMode.LISTENER) {
+        return listOf(
+            R.string.flow_tips_udp_listener_step_1,
+            R.string.flow_tips_udp_listener_step_2,
+            R.string.flow_tips_udp_listener_step_3
+        )
+    }
+    return when (setupMode) {
+        SetupMode.SENDER -> listOf(
+            R.string.flow_tips_sender_step_1,
+            R.string.flow_tips_sender_step_2,
+            R.string.flow_tips_sender_step_3
+        )
+        SetupMode.LISTENER -> listOf(
+            R.string.flow_tips_listener_step_1,
+            R.string.flow_tips_listener_step_2,
+            R.string.flow_tips_listener_step_3
+        )
+        SetupMode.NONE -> listOf(
+            R.string.flow_tips_default_step_1,
+            R.string.flow_tips_default_step_2,
+            R.string.flow_tips_default_step_3
+        )
+    }
 }
 
 private fun journeyActiveIndex(uiState: MainUiState): Int = when (uiState.setupStep) {
@@ -1253,9 +1410,13 @@ private fun journeyActiveIndex(uiState: MainUiState): Int = when (uiState.setupS
     SetupStep.SENDER_VERIFY_CODE,
     SetupStep.LISTENER_SHOW_CONFIRM,
     SetupStep.LISTENER_WAIT_FOR_CONNECTION -> 2
+    SetupStep.LISTENER_UDP_WAITING -> 1
 }
 
 private fun connectedTipRes(uiState: MainUiState): Int = when {
+    uiState.streamState == AudioStreamState.STREAMING &&
+        uiState.setupMode == SetupMode.LISTENER &&
+        uiState.transportMode == TransportMode.UDP_OPUS -> R.string.flow_connected_udp_listener_tip
     uiState.streamState == AudioStreamState.STREAMING && uiState.setupMode == SetupMode.SENDER -> R.string.flow_connected_sender_tip
     uiState.streamState == AudioStreamState.STREAMING && uiState.setupMode == SetupMode.LISTENER -> R.string.flow_connected_listener_tip
     else -> R.string.flow_connected_generic_tip
@@ -1287,9 +1448,16 @@ private fun recommendedActionRes(uiState: MainUiState): Int {
         SetupStep.PATH_DIAGNOSING -> R.string.status_next_action_diagnosing
         SetupStep.SENDER_SHOW_INIT -> R.string.status_next_action_show_init
         SetupStep.SENDER_VERIFY_CODE -> R.string.status_next_action_verify
-        SetupStep.LISTENER_SCAN_INIT -> R.string.status_next_action_scan_init
+        SetupStep.LISTENER_SCAN_INIT -> when (uiState.transportMode) {
+            TransportMode.WEBRTC -> R.string.status_next_action_scan_init
+            TransportMode.UDP_OPUS -> R.string.status_next_action_udp_scan_init
+        }
         SetupStep.LISTENER_SHOW_CONFIRM -> R.string.status_next_action_show_confirm
-        SetupStep.LISTENER_WAIT_FOR_CONNECTION -> R.string.status_next_action_wait_connection_code
+        SetupStep.LISTENER_WAIT_FOR_CONNECTION -> when (uiState.transportMode) {
+            TransportMode.WEBRTC -> R.string.status_next_action_wait_connection_code
+            TransportMode.UDP_OPUS -> R.string.status_next_action_udp_wait_connection_code
+        }
+        SetupStep.LISTENER_UDP_WAITING -> R.string.status_next_action_udp_waiting
     }
 }
 

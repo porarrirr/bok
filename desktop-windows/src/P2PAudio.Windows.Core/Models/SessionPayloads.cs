@@ -55,3 +55,52 @@ public sealed record PairingConfirmPayload(
         ExpiresAtUnixMs: expiresAtUnixMs
     );
 }
+
+public sealed record UdpInitPayload(
+    [property: JsonPropertyName("version")] string Version,
+    [property: JsonPropertyName("phase")] string Phase,
+    [property: JsonPropertyName("transport")] string Transport,
+    [property: JsonPropertyName("sessionId")] string SessionId,
+    [property: JsonPropertyName("senderDeviceName")] string SenderDeviceName,
+    [property: JsonPropertyName("expiresAtUnixMs")] long ExpiresAtUnixMs
+)
+{
+    public static UdpInitPayload Create(
+        string sessionId,
+        string senderDeviceName,
+        long expiresAtUnixMs
+    ) => new(
+        Version: "2",
+        Phase: "udp_init",
+        Transport: "udp_opus",
+        SessionId: sessionId,
+        SenderDeviceName: senderDeviceName,
+        ExpiresAtUnixMs: expiresAtUnixMs
+    );
+}
+
+public sealed record UdpConfirmPayload(
+    [property: JsonPropertyName("version")] string Version,
+    [property: JsonPropertyName("phase")] string Phase,
+    [property: JsonPropertyName("transport")] string Transport,
+    [property: JsonPropertyName("sessionId")] string SessionId,
+    [property: JsonPropertyName("receiverDeviceName")] string ReceiverDeviceName,
+    [property: JsonPropertyName("receiverPort")] int ReceiverPort,
+    [property: JsonPropertyName("expiresAtUnixMs")] long ExpiresAtUnixMs
+)
+{
+    public static UdpConfirmPayload Create(
+        string sessionId,
+        string receiverDeviceName,
+        int receiverPort,
+        long expiresAtUnixMs
+    ) => new(
+        Version: "2",
+        Phase: "udp_confirm",
+        Transport: "udp_opus",
+        SessionId: sessionId,
+        ReceiverDeviceName: receiverDeviceName,
+        ReceiverPort: receiverPort,
+        ExpiresAtUnixMs: expiresAtUnixMs
+    );
+}

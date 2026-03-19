@@ -29,6 +29,14 @@ public sealed class MainViewModelTests
             expiresAtUnixMs: expiresAtUnixMs ?? FutureExpiry
         ));
 
+    private static string MakeUdpConfirmPayload(string sessionId, int receiverPort = 49_152, long? expiresAtUnixMs = null) =>
+        QrPayloadCodec.EncodeUdpConfirm(UdpConfirmPayload.Create(
+            sessionId: sessionId,
+            receiverDeviceName: "android-receiver",
+            receiverPort: receiverPort,
+            expiresAtUnixMs: expiresAtUnixMs ?? FutureExpiry
+        ));
+
     private static byte[] MakeValidPcmPacket(int sequence = 0) =>
         PcmPacketCodec.Encode(new PcmFrame(
             Sequence: sequence,
@@ -42,11 +50,19 @@ public sealed class MainViewModelTests
 
     private static MainViewModel CreateViewModel(
         FakeWebRtcBridge? bridge = null,
-        FakeConnectionCodeSessionFactory? connectionCodeSessionFactory = null) =>
+        FakeConnectionCodeSessionFactory? connectionCodeSessionFactory = null,
+        FakeUdpAudioSenderBridge? udpBridge = null,
+        FakeUdpReceiverDiscoveryService? udpReceiverDiscoveryService = null,
+        FakeLoopbackAudioSender? webRtcLoopbackSender = null,
+        FakeLoopbackAudioSender? udpLoopbackSender = null) =>
         new(
             bridge ?? new FakeWebRtcBridge(),
+            udpBridge ?? new FakeUdpAudioSenderBridge(),
+            udpReceiverDiscoveryService ?? new FakeUdpReceiverDiscoveryService(),
             connectionCodeSessionFactory ?? new FakeConnectionCodeSessionFactory(),
-            initializeImmediately: true
+            initializeImmediately: true,
+            webRtcLoopbackSenderFactory: () => webRtcLoopbackSender ?? new FakeLoopbackAudioSender(),
+            udpLoopbackSenderFactory: () => udpLoopbackSender ?? new FakeLoopbackAudioSender()
         );
 
     // --- Backend readiness ---
@@ -110,7 +126,7 @@ public sealed class MainViewModelTests
 
         await viewModel.InitializeAsync();
 
-        Assert.Equal("内部処理: ネイティブ接続モジュール", viewModel.BackendLabel);
+        Assert.Equal("内部処理: WebRTC ネイティブ接続モジュール", viewModel.BackendLabel);
         Assert.Equal("ネイティブ接続モジュールを利用できます。", viewModel.StatusMessage);
         Assert.Equal(StreamState.Idle, viewModel.CurrentStreamState);
         Assert.True(viewModel.CanStartSender);
@@ -499,6 +515,90 @@ public sealed class MainViewModelTests
         listener.Shutdown();
     }
 
+    [Fact]
+    public void SelectTransportMode_Udp_DisablesListenerAction()
+    {
+        var viewModel = CreateViewModel();
+
+        viewModel.SelectTransportMode(TransportMode.UdpOpus);
+
+        Assert.Equal(TransportMode.UdpOpus, viewModel.SelectedTransportMode);
+        Assert.False(viewModel.CanStartListener);
+        Assert.True(viewModel.CanStartSender);
+        Assert.Contains("メディア音声", viewModel.TransportModeDescription);
+        viewModel.Shutdown();
+    }
+
+    [Fact]
+    public async Task StartSender_UdpMode_GeneratesConnectionCode()
+    {
+        var viewModel = CreateViewModel(
+            udpBridge: new FakeUdpAudioSenderBridge(),
+            connectionCodeSessionFactory: new FakeConnectionCodeSessionFactory()
+        );
+        viewModel.SelectTransportMode(TransportMode.UdpOpus);
+
+        await viewModel.StartSenderAsync();
+
+        Assert.Equal(StreamState.Connecting, viewModel.CurrentStreamState);
+        Assert.Equal("案内: 接続コードを共有", viewModel.FlowStateLabel);
+        Assert.StartsWith(ConnectionCodeCodec.Prefix, viewModel.CurrentConnectionCode);
+        Assert.Contains("接続コード", viewModel.StatusMessage);
+        viewModel.Shutdown();
+    }
+
+    [Fact]
+    public async Task SenderFlow_UdpConnectionCodeConfirm_AutoConnects()
+    {
+        var udpBridge = new FakeUdpAudioSenderBridge();
+        var udpLoopbackSender = new FakeLoopbackAudioSender();
+        var connectionCodeFactory = new FakeConnectionCodeSessionFactory();
+        var viewModel = CreateViewModel(
+            udpBridge: udpBridge,
+            connectionCodeSessionFactory: connectionCodeFactory,
+            udpLoopbackSender: udpLoopbackSender
+        );
+        viewModel.SelectTransportMode(TransportMode.UdpOpus);
+
+        await viewModel.StartSenderAsync();
+        var sessionId = QrPayloadCodec.DecodeUdpInit(viewModel.CurrentPayload).SessionId;
+        connectionCodeFactory.ActiveSession!.CompleteConfirm(
+            MakeUdpConfirmPayload(sessionId),
+            remoteAddress: "192.168.10.42"
+        );
+
+        await WaitUntilAsync(() => viewModel.CurrentStreamState == StreamState.Streaming, TimeSpan.FromSeconds(2));
+
+        Assert.Equal(StreamState.Streaming, viewModel.CurrentStreamState);
+        Assert.Equal("案内: UDP + Opus 送信中", viewModel.FlowStateLabel);
+        Assert.Equal("192.168.10.42", udpBridge.LastHost);
+        Assert.Equal(49_152, udpBridge.LastPort);
+        Assert.Equal(1, udpLoopbackSender.StartCalls);
+        Assert.True(udpLoopbackSender.IsRunning);
+        Assert.Empty(viewModel.CurrentConnectionCode);
+        viewModel.Shutdown();
+    }
+
+    [Fact]
+    public async Task StartSender_UdpMode_ConnectionCodeFailure_Fails()
+    {
+        var connectionCodeFactory = new FakeConnectionCodeSessionFactory
+        {
+            CreateException = new SessionFailure(FailureCode.NetworkInterfaceNotUsable, "no_interface")
+        };
+        var viewModel = CreateViewModel(
+            udpBridge: new FakeUdpAudioSenderBridge(),
+            connectionCodeSessionFactory: connectionCodeFactory
+        );
+        viewModel.SelectTransportMode(TransportMode.UdpOpus);
+
+        await viewModel.StartSenderAsync();
+
+        Assert.Equal(StreamState.Failed, viewModel.CurrentStreamState);
+        Assert.Contains("no_interface", viewModel.StatusMessage);
+        viewModel.Shutdown();
+    }
+
     // --- Stream health monitoring ---
 
     [Fact]
@@ -775,6 +875,8 @@ public sealed class MainViewModelTests
         private readonly Queue<byte[]> _incomingPackets = new();
         private readonly object _sync = new();
 
+        public TransportMode Mode => TransportMode.WebRtc;
+
         public WebRtcOfferResult OfferResult { get; set; } = new(
             Success: true,
             ErrorMessage: string.Empty,
@@ -872,16 +974,137 @@ public sealed class MainViewModelTests
         }
     }
 
+    private sealed class FakeUdpAudioSenderBridge : IUdpAudioSenderBridge
+    {
+        public TransportMode Mode => TransportMode.UdpOpus;
+
+        public bool IsNativeBackend => true;
+
+        public bool IsStreaming { get; private set; }
+
+        public string LastHost { get; private set; } = string.Empty;
+
+        public int LastPort { get; private set; }
+
+        public string LastServiceName { get; private set; } = string.Empty;
+
+        public ConnectionDiagnostics Diagnostics { get; set; } = new(
+            PathType: NetworkPathType.WifiLan,
+            SelectedCandidatePairType: "udp_opus"
+        );
+
+        public BridgeBackendHealth BackendHealth { get; set; } = new(
+            IsReady: true,
+            IsDevelopmentStub: false,
+            Message: "UDP + Opus 送信モジュールを利用できます。",
+            BlockingFailureCode: null
+        );
+
+        public UdpAudioSenderResult StartResult { get; set; } = new(
+            Success: true,
+            ErrorMessage: string.Empty,
+            StatusMessage: "Android 受信機へ UDP + Opus で送信しています。",
+            Diagnostics: new ConnectionDiagnostics(
+                PathType: NetworkPathType.WifiLan,
+                SelectedCandidatePairType: "udp_opus"
+            )
+        );
+
+        public Task<UdpAudioSenderResult> StartStreamingAsync(string remoteHost, int remotePort, string remoteServiceName)
+        {
+            LastHost = remoteHost;
+            LastPort = remotePort;
+            LastServiceName = remoteServiceName;
+            IsStreaming = StartResult.Success;
+            return Task.FromResult(StartResult);
+        }
+
+        public bool SendPcmFrame(PcmFrame frame)
+        {
+            _ = frame;
+            return IsStreaming;
+        }
+
+        public void StopStreaming()
+        {
+            IsStreaming = false;
+        }
+
+        public ConnectionDiagnostics GetDiagnostics() => Diagnostics;
+
+        public BridgeBackendHealth GetBackendHealth() => BackendHealth;
+
+        public void Close()
+        {
+            StopStreaming();
+        }
+    }
+
+    private sealed class FakeLoopbackAudioSender : ILoopbackAudioSender
+    {
+        public bool IsRunning { get; private set; }
+
+        public int StartCalls { get; private set; }
+
+        public int StopCalls { get; private set; }
+
+        public Exception? StartException { get; set; }
+
+        public void Start()
+        {
+            StartCalls++;
+            if (StartException is not null)
+            {
+                throw StartException;
+            }
+
+            IsRunning = true;
+        }
+
+        public void Stop()
+        {
+            if (IsRunning)
+            {
+                StopCalls++;
+            }
+
+            IsRunning = false;
+        }
+
+        public void Dispose()
+        {
+            Stop();
+        }
+    }
+
+    private sealed class FakeUdpReceiverDiscoveryService : IUdpReceiverDiscoveryService
+    {
+        public IReadOnlyList<UdpReceiverEndpoint> Endpoints { get; set; } = [];
+
+        public Exception? DiscoverException { get; set; }
+
+        public Task<IReadOnlyList<UdpReceiverEndpoint>> DiscoverAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (DiscoverException is not null)
+            {
+                throw DiscoverException;
+            }
+
+            return Task.FromResult(Endpoints);
+        }
+    }
+
     private sealed class FakeConnectionCodeSessionFactory : IConnectionCodeSessionFactory
     {
         public FakeConnectionCodeSession? ActiveSession { get; private set; }
 
         public Exception? CreateException { get; set; }
 
-        public IConnectionCodeSession Create(string initPayload, string offerSdp, long expiresAtUnixMs)
+        public IConnectionCodeSession Create(string initPayload, string localAddressHintSource, long expiresAtUnixMs)
         {
             _ = initPayload;
-            _ = offerSdp;
+            _ = localAddressHintSource;
 
             if (CreateException is not null)
             {
@@ -901,7 +1124,7 @@ public sealed class MainViewModelTests
 
     private sealed class FakeConnectionCodeSession : IConnectionCodeSession
     {
-        private readonly TaskCompletionSource<string> _confirmPayloadTcs =
+        private readonly TaskCompletionSource<ConnectionCodeSubmission> _confirmPayloadTcs =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public FakeConnectionCodeSession(string connectionCode, long expiresAtUnixMs)
@@ -914,14 +1137,14 @@ public sealed class MainViewModelTests
 
         public long ExpiresAtUnixMs { get; }
 
-        public Task<string> WaitForConfirmPayloadAsync(CancellationToken cancellationToken)
+        public Task<ConnectionCodeSubmission> WaitForConfirmPayloadAsync(CancellationToken cancellationToken)
         {
             return _confirmPayloadTcs.Task.WaitAsync(cancellationToken);
         }
 
-        public void CompleteConfirm(string confirmPayload)
+        public void CompleteConfirm(string confirmPayload, string remoteAddress = "192.168.0.42")
         {
-            _confirmPayloadTcs.TrySetResult(confirmPayload);
+            _confirmPayloadTcs.TrySetResult(new ConnectionCodeSubmission(confirmPayload, remoteAddress));
         }
 
         public void Dispose()

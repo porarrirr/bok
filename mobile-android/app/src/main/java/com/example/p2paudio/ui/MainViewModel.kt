@@ -23,6 +23,7 @@ import com.example.p2paudio.model.NetworkPathType
 import com.example.p2paudio.model.PairingConfirmPayload
 import com.example.p2paudio.model.PairingInitPayload
 import com.example.p2paudio.model.SessionFailure
+import com.example.p2paudio.model.UdpConfirmPayload
 import com.example.p2paudio.protocol.ConnectionCodeClient
 import com.example.p2paudio.protocol.ConnectionCodeClientException
 import com.example.p2paudio.protocol.ConnectionCodeCodec
@@ -30,6 +31,10 @@ import com.example.p2paudio.protocol.PairingPayloadValidator
 import com.example.p2paudio.protocol.QrPayloadCodec
 import com.example.p2paudio.protocol.VerificationCode
 import com.example.p2paudio.service.AudioSendService
+import com.example.p2paudio.transport.PairingAudioTransport
+import com.example.p2paudio.transport.TransportMode
+import com.example.p2paudio.transport.UdpListenerTransportException
+import com.example.p2paudio.transport.UdpOpusListenerTransport
 import com.example.p2paudio.webrtc.PeerConnectionController
 import com.example.p2paudio.webrtc.WebRtcFactoryProvider
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -45,6 +50,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val captureRuntime = AudioCaptureRuntime
     private val pcmPlayer = AndroidPcmPlayer()
+    private val udpPcmPlayer = AndroidPcmPlayer(
+        startupPrebufferFrames = 2,
+        steadyPrebufferFrames = 1,
+        maxQueueFrames = 8,
+        minTrackBufferFrames = 4
+    )
     private var pcmSender: AndroidPcmSender? = null
     private var playbackMessageShown = false
     private var waitingForCaptureServiceStart = false
@@ -57,7 +68,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _commands = MutableSharedFlow<UiCommand>()
     val commands: SharedFlow<UiCommand> = _commands.asSharedFlow()
 
-    private val peerController = PeerConnectionController(
+    private val peerController: PairingAudioTransport = PeerConnectionController(
         factory = WebRtcFactoryProvider.create(application),
         stateListener = { state, message ->
             AppLogger.i(
@@ -78,28 +89,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 it.copy(streamState = state, statusMessage = nextMessage)
             }
             when (state) {
-                AudioStreamState.STREAMING -> startPcmSenderIfReady()
+                AudioStreamState.STREAMING -> {
+                    if (_uiState.value.transportMode == TransportMode.WEBRTC &&
+                        _uiState.value.setupMode == SetupMode.SENDER
+                    ) {
+                        startPcmSenderIfReady()
+                    }
+                }
                 AudioStreamState.FAILED,
                 AudioStreamState.ENDED -> stopPcmSender()
                 else -> Unit
             }
         },
         pcmFrameListener = { frame ->
-            pcmPlayer.enqueue(frame)
-            if (!playbackMessageShown) {
-                playbackMessageShown = true
-                AppLogger.i(
-                    "MainViewModel",
-                    "receiver_first_frame",
-                    "First remote audio frame received",
-                    context = mapOf(
-                        "sampleRate" to frame.sampleRate,
-                        "channels" to frame.channels,
-                        "bitsPerSample" to frame.bitsPerSample
-                    )
-                )
-                _uiState.update { it.copy(statusMessage = text(R.string.status_receiving_remote_audio)) }
-            }
+            onRemoteFrameReceived(frame, pcmPlayer, text(R.string.status_receiving_remote_audio))
         },
         diagnosticsListener = { diagnostics ->
             _uiState.update { it.copy(connectionDiagnostics = diagnostics) }
@@ -116,6 +119,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
     )
+    private val udpListenerTransport = UdpOpusListenerTransport(
+        context = application,
+        stateListener = { state, message ->
+            _uiState.update {
+                it.copy(
+                    streamState = state,
+                    statusMessage = message ?: stateToStatusLabel(state)
+                )
+            }
+        },
+        pcmFrameListener = { frame ->
+            onRemoteFrameReceived(frame, udpPcmPlayer, text(R.string.status_udp_receiving_audio))
+        },
+        diagnosticsListener = { diagnostics ->
+            _uiState.update { it.copy(connectionDiagnostics = diagnostics) }
+        }
+    )
 
     init {
         viewModelScope.launch {
@@ -130,6 +150,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun beginSenderFlow() {
+        if (_uiState.value.transportMode == TransportMode.UDP_OPUS) {
+            val message = text(R.string.status_udp_android_sender_unavailable)
+            resetToEntry(
+                statusMessage = message,
+                failure = null
+            )
+            return
+        }
         AppLogger.i("MainViewModel", "sender_flow_guidance", "Sender guidance selected")
         _uiState.update {
             it.copy(
@@ -149,6 +177,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun beginListenerFlow() {
+        if (_uiState.value.transportMode == TransportMode.UDP_OPUS) {
+            beginUdpListenerFlow()
+            return
+        }
         AppLogger.i("MainViewModel", "listener_flow_start", "Listener flow selected")
         _uiState.update {
             it.copy(
@@ -168,6 +200,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startSenderFlowRequested() {
+        if (_uiState.value.transportMode == TransportMode.UDP_OPUS) {
+            beginSenderFlow()
+            return
+        }
         AppLogger.i("MainViewModel", "sender_flow_start", "Sender flow requested")
         if (!captureRuntime.isSupported()) {
             recoverToEntry(
@@ -200,6 +236,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         AppLogger.i("MainViewModel", "request_record_audio_permission", "Requesting RECORD_AUDIO permission")
         viewModelScope.launch { _commands.emit(UiCommand.RequestRecordAudioPermission) }
+    }
+
+    fun selectTransportMode(mode: TransportMode) {
+        val current = _uiState.value
+        if (current.transportMode == mode) {
+            return
+        }
+        if (current.streamState !in setOf(AudioStreamState.IDLE, AudioStreamState.ENDED, AudioStreamState.FAILED)) {
+            return
+        }
+        if (current.setupStep != SetupStep.ENTRY) {
+            return
+        }
+        _uiState.update {
+            it.copy(
+                transportMode = mode,
+                statusMessage = when (mode) {
+                    TransportMode.WEBRTC -> text(R.string.status_ready)
+                    TransportMode.UDP_OPUS -> text(R.string.status_udp_ready)
+                },
+                failure = null
+            )
+        }
     }
 
     fun requestProjectionPermission() {
@@ -333,6 +392,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun createConfirmFromInit(initRaw: String) {
+        val transportMode = _uiState.value.transportMode
         AppLogger.i(
             "MainViewModel",
             "confirm_generation_start",
@@ -344,12 +404,173 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         beginListenerFlow()
         viewModelScope.launch {
+            if (transportMode == TransportMode.UDP_OPUS) {
+                createUdpConfirmFromConnectionCode(initRaw)
+                return@launch
+            }
+
             if (ConnectionCodeCodec.looksLikeConnectionCode(initRaw)) {
                 createConfirmFromConnectionCode(initRaw)
             } else {
                 createConfirmFromInitPayload(initRaw)
             }
         }
+    }
+
+    private suspend fun createUdpConfirmFromConnectionCode(connectionCodeRaw: String) {
+        if (!ConnectionCodeCodec.looksLikeConnectionCode(connectionCodeRaw)) {
+            val message = text(R.string.error_udp_connection_code_required)
+            resetToEntry(
+                statusMessage = message,
+                failure = SessionFailure(FailureCode.INVALID_PAYLOAD, message)
+            )
+            return
+        }
+
+        val connectionCode = try {
+            ConnectionCodeCodec.decode(connectionCodeRaw)
+        } catch (error: IllegalArgumentException) {
+            AppLogger.w(
+                "MainViewModel",
+                "udp_connection_code_decode_failed",
+                "UDP connection code decode failed",
+                context = mapOf("reason" to (error.message ?: "unknown"))
+            )
+            val message = text(R.string.error_invalid_connection_code)
+            resetToEntry(
+                statusMessage = message,
+                failure = SessionFailure(FailureCode.INVALID_PAYLOAD, message)
+            )
+            return
+        }
+
+        if (connectionCode.expiresAtUnixMs <= System.currentTimeMillis()) {
+            recoverToEntry(SessionFailure(FailureCode.SESSION_EXPIRED, text(R.string.error_session_expired)))
+            return
+        }
+
+        val initRaw = try {
+            ConnectionCodeClient.fetchInitPayload(connectionCode)
+        } catch (error: Exception) {
+            val failure = if (error is ConnectionCodeClientException) {
+                error.failure
+            } else {
+                SessionFailure(FailureCode.INVALID_PAYLOAD, text(R.string.error_invalid_connection_code))
+            }
+            AppLogger.w(
+                "MainViewModel",
+                "udp_connection_code_fetch_failed",
+                "Failed to fetch UDP init payload via connection code",
+                context = mapOf(
+                    "failureCode" to failure.code.name,
+                    "reason" to failure.message
+                )
+            )
+            recoverToEntry(failure)
+            return
+        }
+
+        val init = try {
+            QrPayloadCodec.decodeUdpInit(initRaw)
+        } catch (error: Exception) {
+            AppLogger.w(
+                "MainViewModel",
+                "udp_init_decode_failed",
+                "Fetched UDP init payload decode failed",
+                context = mapOf("reason" to (error.message ?: "unknown"))
+            )
+            recoverToEntry(
+                SessionFailure(FailureCode.INVALID_PAYLOAD, text(R.string.error_invalid_connection_code))
+            )
+            return
+        }
+
+        PairingPayloadValidator.validateUdpInit(init, System.currentTimeMillis())?.let { failure ->
+            AppLogger.w(
+                "MainViewModel",
+                "udp_init_validation_failed",
+                "Fetched UDP init payload validation failed",
+                context = mapOf(
+                    "sessionId" to init.sessionId,
+                    "failureCode" to failure.code.name,
+                    "reason" to failure.message
+                )
+            )
+            recoverToEntry(failure)
+            return
+        }
+
+        try {
+            udpListenerTransport.startListening(advertiseService = false)
+        } catch (error: UdpListenerTransportException) {
+            recoverToEntry(error.failure)
+            return
+        } catch (error: Exception) {
+            recoverToEntry(
+                SessionFailure(
+                    FailureCode.PEER_UNREACHABLE,
+                    error.message ?: text(R.string.error_peer_unreachable)
+                )
+            )
+            return
+        }
+
+        val confirmPayload = UdpConfirmPayload(
+            sessionId = init.sessionId,
+            receiverDeviceName = Build.MODEL ?: "android",
+            receiverPort = UdpOpusListenerTransport.UDP_PORT,
+            expiresAtUnixMs = minOf(
+                System.currentTimeMillis() + PAYLOAD_TTL_MS,
+                connectionCode.expiresAtUnixMs
+            )
+        )
+        val encodedConfirmPayload = QrPayloadCodec.encodeUdpConfirm(confirmPayload)
+
+        try {
+            ConnectionCodeClient.submitConfirmPayload(connectionCode, encodedConfirmPayload)
+        } catch (error: Exception) {
+            val failure = if (error is ConnectionCodeClientException) {
+                error.failure
+            } else {
+                SessionFailure(FailureCode.INVALID_PAYLOAD, text(R.string.error_invalid_connection_code))
+            }
+            AppLogger.w(
+                "MainViewModel",
+                "udp_connection_code_submit_failed",
+                "Failed to submit UDP confirm payload via connection code",
+                context = mapOf(
+                    "sessionId" to init.sessionId,
+                    "failureCode" to failure.code.name,
+                    "reason" to failure.message
+                )
+            )
+            recoverToEntry(failure)
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                streamState = AudioStreamState.CONNECTING,
+                setupMode = SetupMode.LISTENER,
+                setupStep = SetupStep.LISTENER_WAIT_FOR_CONNECTION,
+                payloadExpiresAtUnixMs = connectionCode.expiresAtUnixMs,
+                activeSessionId = init.sessionId,
+                confirmPayload = "",
+                verificationCode = "",
+                statusMessage = text(R.string.status_udp_connection_code_connecting),
+                failure = null
+            )
+        }
+        AppLogger.i(
+            "MainViewModel",
+            "udp_connection_code_confirm_submitted",
+            "UDP confirm payload submitted to Windows peer via connection code",
+            context = mapOf(
+                "sessionId" to init.sessionId,
+                "host" to connectionCode.host,
+                "port" to connectionCode.port
+            )
+        )
     }
 
     private suspend fun createConfirmFromInitPayload(initRaw: String) {
@@ -722,12 +943,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         waitingForCaptureServiceStart = false
         stopPcmSender()
         pcmPlayer.stop()
+        udpPcmPlayer.stop()
         playbackMessageShown = false
         captureRuntime.stop()
         peerController.close()
+        udpListenerTransport.close()
         stopProjectionServiceDirectly()
         requestStopProjectionService()
-        _uiState.value = MainUiState(statusMessage = text(R.string.status_session_ended))
+        _uiState.value = entryState(statusMessage = text(R.string.status_session_ended))
     }
 
     override fun onCleared() {
@@ -785,15 +1008,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         waitingForCaptureServiceStart = false
         stopPcmSender()
         pcmPlayer.stop()
+        udpPcmPlayer.stop()
         playbackMessageShown = false
         captureRuntime.stop()
         peerController.close()
+        udpListenerTransport.close()
         stopProjectionServiceDirectly()
         requestStopProjectionService()
-        _uiState.value = MainUiState(
-            statusMessage = statusMessage,
-            failure = failure
-        )
+        _uiState.value = entryState(statusMessage = statusMessage, failure = failure)
     }
 
     private fun stopProjectionServiceDirectly() {
@@ -808,7 +1030,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun localizePeerMessage(message: String): String = when (message) {
         "Peer disconnected" -> text(R.string.status_peer_disconnected)
         "ICE connection failed" -> text(R.string.status_ice_connection_failed)
-        else -> text(R.string.error_webrtc_negotiation_failed)
+        else -> message
     }
 
     private fun stateToStatusLabel(state: AudioStreamState): String = when (state) {
@@ -864,6 +1086,65 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             getApplication(),
             Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun beginUdpListenerFlow() {
+        AppLogger.i("MainViewModel", "udp_listener_flow_start", "UDP Opus listener guidance selected")
+        waitingForCaptureServiceStart = false
+        stopPcmSender()
+        pcmPlayer.stop()
+        udpPcmPlayer.stop()
+        playbackMessageShown = false
+        captureRuntime.stop()
+        peerController.close()
+        stopProjectionServiceDirectly()
+        requestStopProjectionService()
+        _uiState.update {
+            it.copy(
+                setupMode = SetupMode.LISTENER,
+                setupStep = SetupStep.LISTENER_SCAN_INIT,
+                payloadExpiresAtUnixMs = 0L,
+                initPayload = "",
+                confirmPayload = "",
+                localSenderFingerprint = "",
+                verificationCode = "",
+                pendingAnswerSdp = "",
+                activeSessionId = "",
+                failure = null,
+                streamState = AudioStreamState.IDLE,
+                statusMessage = text(R.string.status_udp_listener_ready_to_scan)
+            )
+        }
+    }
+
+    private fun onRemoteFrameReceived(
+        frame: com.example.p2paudio.audio.PcmFrame,
+        player: AndroidPcmPlayer,
+        statusMessage: String
+    ) {
+        player.enqueue(frame)
+        if (!playbackMessageShown) {
+            playbackMessageShown = true
+            AppLogger.i(
+                "MainViewModel",
+                "receiver_first_frame",
+                "First remote audio frame received",
+                context = mapOf(
+                    "sampleRate" to frame.sampleRate,
+                    "channels" to frame.channels,
+                    "bitsPerSample" to frame.bitsPerSample
+                )
+            )
+            _uiState.update { it.copy(statusMessage = statusMessage) }
+        }
+    }
+
+    private fun entryState(statusMessage: String, failure: SessionFailure? = null): MainUiState {
+        return MainUiState(
+            statusMessage = statusMessage,
+            failure = failure,
+            transportMode = _uiState.value.transportMode
+        )
     }
 
     sealed interface UiCommand {

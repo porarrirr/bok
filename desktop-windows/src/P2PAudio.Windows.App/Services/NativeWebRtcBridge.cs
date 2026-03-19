@@ -28,6 +28,8 @@ public sealed class NativeWebRtcBridge : IWebRtcBridge, IDisposable
 
     public bool IsNativeBackend => true;
 
+    public TransportMode Mode => TransportMode.WebRtc;
+
     public Task<WebRtcOfferResult> CreateOfferAsync()
     {
         EnsureNotDisposed();

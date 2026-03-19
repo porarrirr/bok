@@ -6,6 +6,12 @@
     <string name="action_start_sender">この端末の音を送る</string>
     <string name="action_start_listener_scan">相手の音を聞く</string>
     <string name="action_stop_session">接続を終了する</string>
+    <string name="transport_mode_title">転送モード</string>
+    <string name="transport_mode_webrtc">WebRTC</string>
+    <string name="transport_mode_udp">UDP + Opus</string>
+    <string name="transport_mode_udp_note">UDP + Opus は Windows のメディア音声送信 → Android の受信再生に最適化した片方向モードです。接続は WebRTC と同じ接続コードの流れを使います。</string>
+    <string name="transport_mode_udp_sender_unavailable">Android からの UDP + Opus 送信はまだ準備中です。送信したい場合は Windows 側アプリを使ってください。</string>
+    <string name="transport_mode_udp_listener_description">Windows の接続コードを貼り付けて、メディア音声を UDP + Opus で低遅延受信します。</string>
 
     <string name="status_connection_title">現在の状況</string>
     <string name="status_session_id">セッションID</string>
@@ -19,14 +25,21 @@
     <string name="status_failure_format">原因: %1$s</string>
     <string name="status_next_action_title">次にやること</string>
     <string name="status_ready">送信側か受信側を選んでください。</string>
+    <string name="status_udp_ready">UDP + Opus で使う役割を選んでください。Android では受信側で Windows の接続コードを貼り付けます。</string>
     <string name="status_sender_prepare">この端末の音を送る準備をします。案内を確認してから開始してください。</string>
     <string name="status_path_diagnosing">ローカル接続を確認し、接続データ交換の準備をしています。</string>
     <string name="status_listener_ready_to_scan">Windows の接続コードまたは送信側の開始データを貼り付けてください。</string>
+    <string name="status_udp_listener_ready_to_scan">Windows の UDP + Opus 接続コードを貼り付けてください。</string>
     <string name="status_receiving_remote_audio">相手の音声を受信しています。</string>
+    <string name="status_udp_receiving_audio">Windows のメディア音声を UDP + Opus で受信しています。</string>
+    <string name="status_udp_waiting_generic">Windows からの UDP + Opus 接続を待っています。</string>
+    <string name="status_udp_waiting_for_sender">Windows からの UDP + Opus 接続を待っています。サービス名: %1$s</string>
+    <string name="status_udp_android_sender_unavailable">Android からの UDP + Opus 送信はまだ準備中です。送信したい場合は Windows 側アプリを使ってください。</string>
     <string name="status_capturing">音声共有の準備をしています。</string>
     <string name="status_init_generated">開始データを作成しました。コピーまたは共有して受信側へ渡してください。</string>
     <string name="status_confirm_generated">応答データを作成しました。コピーまたは共有して送信側へ渡してください。</string>
     <string name="status_connection_code_connecting">Windows へ応答を自動送信しました。接続を待っています。</string>
+    <string name="status_udp_connection_code_connecting">Windows へ受信先情報を自動送信しました。接続を待っています。</string>
     <string name="status_verification_ready">両端末の6桁コードが一致しているか確認してください。</string>
     <string name="status_verification_mismatch">照合コードが一致しませんでした。もう一度やり直してください。</string>
     <string name="status_answer_applied">照合が完了しました。接続を開始しています。</string>
@@ -44,8 +57,11 @@
     <string name="status_next_action_recovering">接続の復旧を待っています。両端末のWi-FiまたはUSB接続を確認してください。</string>
     <string name="status_next_action_show_init">開始データを受信側へ共有してください。受け取った応答データを貼り付けると照合へ進みます。</string>
     <string name="status_next_action_scan_init">Windows の接続コードまたは送信側の開始データを、この端末に貼り付けてください。</string>
+    <string name="status_next_action_udp_scan_init">Windows の UDP + Opus 接続コードをこの端末に貼り付けてください。貼り付けると受信待機を始めて接続情報を自動送信します。</string>
     <string name="status_next_action_show_confirm">この端末の応答データと照合コードを送信側へ共有してください。</string>
     <string name="status_next_action_wait_connection_code">このまま接続完了を待ってください。必要なら表示された6桁コードを Windows 側と見比べられます。</string>
+    <string name="status_next_action_udp_wait_connection_code">このまま接続完了を待ってください。Windows 側が受信先情報を取り込むと、そのまま再生が始まります。</string>
+    <string name="status_next_action_udp_waiting">Android 側は待機できています。Windows 側で UDP + Opus を選んで送信開始してください。</string>
     <string name="status_next_action_verify">両端末の6桁コードが同じなら「一致している」を押してください。</string>
     <string name="status_next_action_connected">接続中です。音声共有が終わるまでこの画面を開いたままにしてください。</string>
     <string name="status_next_action_restart">もう一度最初から接続をやり直してください。</string>
@@ -106,6 +122,19 @@
     <string name="flow_receiver_auto_connect_title">Windows へ応答を自動送信しました</string>
     <string name="flow_receiver_auto_connect_description">この端末は接続待ちです。Windows 側が応答を取り込むと、そのまま接続が始まります。</string>
     <string name="flow_receiver_auto_connect_hint">必要なら6桁コードを Windows 側と見比べられます。通常はそのまま待つだけで大丈夫です。</string>
+    <string name="flow_udp_receiver_step_title">接続コードを取り込む</string>
+    <string name="flow_udp_receiver_step_description">Windows の接続コードを貼り付けると、この端末が UDP + Opus の受信待機を開始して接続情報を自動送信します。</string>
+    <string name="flow_udp_receiver_waiting_code">Windows の UDP + Opus 接続コードを受け取ったら、下の入力欄に貼り付けてください。</string>
+    <string name="flow_udp_receiver_payload_entry_title">接続コード</string>
+    <string name="flow_udp_receiver_payload_entry_placeholder">Windows の UDP + Opus 接続コードを貼り付ける</string>
+    <string name="flow_udp_receiver_apply_connection_code">この接続コードで接続を始める</string>
+    <string name="flow_udp_receiver_scan_tip">UDP + Opus でも WebRTC と同じ接続コードの手順を使います。貼り付けると受信先情報は自動送信されます。</string>
+    <string name="flow_udp_receiver_auto_connect_title">Windows へ受信先情報を自動送信しました</string>
+    <string name="flow_udp_receiver_auto_connect_description">この端末は受信待ちです。Windows 側が接続情報を取り込むと、そのまま UDP + Opus の再生が始まります。</string>
+    <string name="flow_udp_receiver_auto_connect_hint">通常はそのまま待つだけで大丈夫です。接続が始まるまでこの画面を開いたままにしてください。</string>
+    <string name="flow_udp_listener_title">UDP + Opus の受信待機</string>
+    <string name="flow_udp_listener_description">この端末は mDNS で待受を公開し、Windows からの UDP 音声を待ちます。</string>
+    <string name="flow_udp_listener_waiting_tip">Windows 側で UDP + Opus モードを選んで送信を始めると、そのまま再生が始まります。</string>
 
     <string name="flow_verification_title">6桁コードを確認する</string>
     <string name="flow_verification_description">両端末で同じ番号が表示されるときだけ接続してください。</string>
@@ -127,6 +156,9 @@
     <string name="flow_tips_listener_step_1">接続コードを貼り付ける</string>
     <string name="flow_tips_listener_step_2">応答を自動送信する</string>
     <string name="flow_tips_listener_step_3">接続を待つ</string>
+    <string name="flow_tips_udp_listener_step_1">UDP + Opus を選ぶ</string>
+    <string name="flow_tips_udp_listener_step_2">接続コードを貼り付ける</string>
+    <string name="flow_tips_udp_listener_step_3">Windows の音声を受け取る</string>
     <string name="flow_tips_default_step_1">役割を選ぶ</string>
     <string name="flow_tips_default_step_2">接続データを共有する</string>
     <string name="flow_tips_default_step_3">6桁コードを確認する</string>
@@ -140,6 +172,7 @@
     <string name="flow_connected_title">接続中のポイント</string>
     <string name="flow_connected_sender_tip">この端末の音を送っています。共有中はこの画面を閉じないでください。</string>
     <string name="flow_connected_listener_tip">相手の音を受信しています。音が止まったら両端末のネットワークを確認してください。</string>
+    <string name="flow_connected_udp_listener_tip">Windows のメディア音声を UDP + Opus で再生中です。止まったら Windows 側の送信状態を確認してください。</string>
     <string name="flow_connected_generic_tip">接続が終わるまで、この画面を開いたままにしてください。</string>
 
     <string name="flow_details_title">接続の詳細（困ったときだけ確認）</string>
@@ -159,6 +192,7 @@
     <string name="error_invalid_init_payload">開始データの内容が正しくありません。</string>
     <string name="error_invalid_confirm_payload">応答データの内容が正しくありません。</string>
     <string name="error_invalid_connection_code">接続コードの内容が正しくありません。</string>
+    <string name="error_udp_connection_code_required">UDP + Opus では Windows の接続コードを貼り付けてください。</string>
     <string name="error_audio_capture_not_supported">この端末は内部音声共有に対応していません。</string>
     <string name="error_webrtc_negotiation_failed">直接接続を確立できませんでした。</string>
     <string name="error_peer_unreachable">相手端末に接続できませんでした。</string>

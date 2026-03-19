@@ -23,3 +23,24 @@ data class PairingConfirmPayload(
     val answerSdp: String,
     val expiresAtUnixMs: Long
 )
+
+@Serializable
+data class UdpInitPayload(
+    val version: String = "2",
+    val phase: String = "udp_init",
+    val transport: String = "udp_opus",
+    val sessionId: String,
+    val senderDeviceName: String,
+    val expiresAtUnixMs: Long
+)
+
+@Serializable
+data class UdpConfirmPayload(
+    val version: String = "2",
+    val phase: String = "udp_confirm",
+    val transport: String = "udp_opus",
+    val sessionId: String,
+    val receiverDeviceName: String,
+    val receiverPort: Int,
+    val expiresAtUnixMs: Long
+)

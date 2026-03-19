@@ -9,7 +9,12 @@ import java.util.PriorityQueue
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 
-class AndroidPcmPlayer {
+class AndroidPcmPlayer(
+    private val startupPrebufferFrames: Int = 4,
+    private val steadyPrebufferFrames: Int = 4,
+    private val maxQueueFrames: Int = 24,
+    private val minTrackBufferFrames: Int = 12
+) {
     private val running = AtomicBoolean(false)
     private val lock = Object()
     private val pendingFrames = PriorityQueue<PcmFrame>(compareBy { it.sequence })
@@ -51,7 +56,7 @@ class AndroidPcmPlayer {
             }
 
             pendingFrames.add(frame)
-            if (pendingFrames.size > MAX_QUEUE_FRAMES) {
+            if (pendingFrames.size > maxQueueFrames) {
                 pendingFrames.poll()
                 queueOverflowDrops++
                 logPlaybackWarning(
@@ -75,9 +80,20 @@ class AndroidPcmPlayer {
         running.set(false)
         synchronized(lock) {
             lock.notifyAll()
+        }
+        val thread = playbackThread
+        thread?.interrupt()
+        thread?.join(PLAYBACK_STOP_JOIN_TIMEOUT_MS)
+        if (thread?.isAlive == true) {
+            logPlaybackWarning(
+                event = "player_stop_timeout",
+                message = "PCM playback thread did not stop before reset",
+                context = emptyMap()
+            )
+        }
+        synchronized(lock) {
             resetUnsafe()
         }
-        playbackThread?.interrupt()
         playbackThread = null
         AppLogger.i(
             "PcmPlayer",
@@ -101,48 +117,70 @@ class AndroidPcmPlayer {
     private fun startPlaybackLoop() {
         playbackThread = Thread {
             Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
-            while (running.get()) {
-                var trackToWrite: AudioTrack? = null
-                var bytesToWrite: ByteArray? = null
-                var shouldContinue = false
+            try {
+                while (running.get()) {
+                    var trackToWrite: AudioTrack? = null
+                    var bytesToWrite: ByteArray? = null
+                    var shouldContinue = false
 
-                synchronized(lock) {
-                    val track = audioTrack
-                    if (track == null) {
-                        waitForFramesUnsafe()
-                        shouldContinue = true
-                    } else {
-                        val nextBytes = dequeueFrameUnsafe()
-                        if (nextBytes == null) {
+                    synchronized(lock) {
+                        val track = audioTrack
+                        if (track == null) {
                             waitForFramesUnsafe()
                             shouldContinue = true
                         } else {
-                            trackToWrite = track
-                            bytesToWrite = nextBytes
+                            val nextBytes = dequeueFrameUnsafe()
+                            if (nextBytes == null) {
+                                waitForFramesUnsafe()
+                                shouldContinue = true
+                            } else {
+                                trackToWrite = track
+                                bytesToWrite = nextBytes
+                            }
                         }
                     }
-                }
 
-                if (shouldContinue) {
-                    continue
-                }
-                if (trackToWrite == null || bytesToWrite == null) {
-                    continue
-                }
-                val track = trackToWrite ?: continue
-                val bytes = bytesToWrite ?: continue
-                val writeResult = track.write(bytes, 0, bytes.size, AudioTrack.WRITE_BLOCKING)
-                if (writeResult < 0) {
-                    logPlaybackWarning(
-                        event = "player_write_failed",
-                        message = "AudioTrack write failed",
-                        context = mapOf("writeResult" to writeResult)
-                    )
-                    continue
-                }
+                    if (shouldContinue) {
+                        continue
+                    }
+                    if (trackToWrite == null || bytesToWrite == null) {
+                        continue
+                    }
 
-                playedFrames++
-                logStatsIfNeeded()
+                    val track = trackToWrite ?: continue
+                    val bytes = bytesToWrite ?: continue
+                    val writeResult = try {
+                        track.write(bytes, 0, bytes.size, AudioTrack.WRITE_BLOCKING)
+                    } catch (_: IllegalStateException) {
+                        if (!running.get()) {
+                            return@Thread
+                        }
+                        logPlaybackWarning(
+                            event = "player_write_interrupted",
+                            message = "AudioTrack write failed during shutdown",
+                            context = emptyMap()
+                        )
+                        continue
+                    }
+                    if (writeResult < 0) {
+                        logPlaybackWarning(
+                            event = "player_write_failed",
+                            message = "AudioTrack write failed",
+                            context = mapOf("writeResult" to writeResult)
+                        )
+                        continue
+                    }
+
+                    playedFrames++
+                    logStatsIfNeeded()
+                }
+            } catch (_: InterruptedException) {
+            } catch (error: Exception) {
+                logPlaybackWarning(
+                    event = "player_thread_failed",
+                    message = "PCM playback thread stopped after an unexpected error",
+                    context = mapOf("reason" to (error.message ?: "unknown"))
+                )
             }
         }.apply {
             name = "android-pcm-player"
@@ -158,7 +196,7 @@ class AndroidPcmPlayer {
 
         val expected = expectedSequence
         if (expected == null) {
-            if (pendingFrames.size < STARTUP_PREBUFFER_FRAMES) {
+            if (pendingFrames.size < startupPrebufferFrames) {
                 return null
             }
             val first = pendingFrames.poll() ?: return null
@@ -166,7 +204,7 @@ class AndroidPcmPlayer {
             return first.pcmBytes
         }
 
-        val prebufferReady = pendingFrames.size >= PREBUFFER_FRAMES
+        val prebufferReady = pendingFrames.size >= steadyPrebufferFrames
         while (pendingFrames.isNotEmpty()) {
             val head = pendingFrames.peek() ?: break
             if (head.sequence >= expected) {
@@ -213,7 +251,7 @@ class AndroidPcmPlayer {
             channelConfig,
             AudioFormat.ENCODING_PCM_16BIT
         )
-        val bufferSize = max(minBufferSize, frame.pcmBytes.size * MIN_TRACK_BUFFER_FRAMES)
+        val bufferSize = max(minBufferSize, frame.pcmBytes.size * minTrackBufferFrames)
         AppLogger.i(
             "PcmPlayer",
             "player_track_create",
@@ -294,10 +332,7 @@ class AndroidPcmPlayer {
     }
 
     companion object {
-        private const val STARTUP_PREBUFFER_FRAMES = 4
-        private const val PREBUFFER_FRAMES = 4
-        private const val MAX_QUEUE_FRAMES = 24
-        private const val MIN_TRACK_BUFFER_FRAMES = 12
+        private const val PLAYBACK_STOP_JOIN_TIMEOUT_MS = 500L
         private const val STATS_LOG_INTERVAL_MS = 5_000L
         private const val WARNING_LOG_INTERVAL_MS = 1_000L
     }

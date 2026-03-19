@@ -3,16 +3,13 @@ using P2PAudio.Windows.Core.Models;
 namespace P2PAudio.Windows.App.Services;
 
 public interface IWebRtcBridge
+    : IAudioTransportBackend
 {
     Task<WebRtcOfferResult> CreateOfferAsync();
     Task<WebRtcAnswerResult> CreateAnswerAsync(string offerSdp);
     Task<WebRtcOperationResult> ApplyAnswerAsync(string answerSdp);
     bool SendPcmPacket(byte[] packet);
     bool TryReceivePcmPacket(out byte[] packet);
-    ConnectionDiagnostics GetDiagnostics();
-    BridgeBackendHealth GetBackendHealth();
-    bool IsNativeBackend { get; }
-    void Close();
 }
 
 public sealed record BridgeBackendHealth(

@@ -28,6 +28,16 @@ Windows and Android still accept these transport strings as text (copy/share/pas
 
 This connection code flow does not use any external relay or signaling server: the temporary listener runs on the Windows sender itself and is reachable only on the local network.
 
+### Primary Windows -> Android transport for UDP + Opus: connection code
+
+1. Windows sender creates a `UdpInitPayload`, then starts the same temporary LAN listener pattern used by WebRTC connection codes.
+2. Windows encodes that listener endpoint and a one-time token as a `p2paudio-c1:` connection code.
+3. Android listener pastes the connection code, fetches the UDP init payload directly from Windows, validates it, and opens its local UDP receive socket.
+4. Android posts a `UdpConfirmPayload` back to Windows automatically.
+5. Windows uses the incoming POST source address together with the confirmed UDP port and begins streaming immediately.
+
+This UDP + Opus connection code flow also avoids external relay/signaling services and does not require mDNS receiver discovery.
+
 ## Init Payload (`PairingInitPayload`)
 
 ```json
@@ -56,9 +66,36 @@ This connection code flow does not use any external relay or signaling server: t
 }
 ```
 
+## UDP Init Payload (`UdpInitPayload`)
+
+```json
+{
+  "version": "2",
+  "phase": "udp_init",
+  "transport": "udp_opus",
+  "sessionId": "uuid",
+  "senderDeviceName": "windows-pc",
+  "expiresAtUnixMs": 1760000000000
+}
+```
+
+## UDP Confirm Payload (`UdpConfirmPayload`)
+
+```json
+{
+  "version": "2",
+  "phase": "udp_confirm",
+  "transport": "udp_opus",
+  "sessionId": "uuid",
+  "receiverDeviceName": "pixel-8",
+  "receiverPort": 49152,
+  "expiresAtUnixMs": 1760000000000
+}
+```
+
 ## Transport String Encoding
 
-- Canonical payload is JSON (`PairingInitPayload` / `PairingConfirmPayload`).
+- Canonical payload is JSON (`PairingInitPayload` / `PairingConfirmPayload` / `UdpInitPayload` / `UdpConfirmPayload`).
 - Implementations may emit a compressed transport string:
   - Prefix: `p2paudio-z1:`
   - Body: `zlib(json-bytes)` encoded as Base64URL without padding.
@@ -93,7 +130,7 @@ Binary packet format (little-endian):
 - `sessionId` must match between init and confirm payloads.
 - Reject invalid version, phase, and expired payload.
 - Use host ICE candidates only (LAN scope, including USB tethering IP links).
-- Audio transport uses DataChannel only; no external relay/signaling server.
+- WebRTC audio transport uses DataChannel only; Windows -> Android UDP + Opus uses direct UDP after the same connection-code setup. Neither flow uses external relay/signaling servers.
 
 ## USB Tethering Path (Windows <-> Mobile)
 

@@ -76,4 +76,37 @@ public sealed class PairingPayloadValidatorTests
         Assert.NotNull(failure);
         Assert.Equal(FailureCode.InvalidPayload, failure!.Code);
     }
+
+    [Fact]
+    public void ValidateUdpInit_Expired_ReturnsSessionExpired()
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var payload = UdpInitPayload.Create(
+            sessionId: Guid.NewGuid().ToString(),
+            senderDeviceName: "windows",
+            expiresAtUnixMs: now - 1
+        );
+
+        var failure = PairingPayloadValidator.ValidateUdpInit(payload, now);
+
+        Assert.NotNull(failure);
+        Assert.Equal(FailureCode.SessionExpired, failure!.Code);
+    }
+
+    [Fact]
+    public void ValidateUdpConfirm_SessionMismatch_ReturnsInvalidPayload()
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var payload = UdpConfirmPayload.Create(
+            sessionId: "session-a",
+            receiverDeviceName: "android",
+            receiverPort: 49_152,
+            expiresAtUnixMs: now + 60_000
+        );
+
+        var failure = PairingPayloadValidator.ValidateUdpConfirm(payload, expectedSessionId: "session-b", nowUnixMs: now);
+
+        Assert.NotNull(failure);
+        Assert.Equal(FailureCode.InvalidPayload, failure!.Code);
+    }
 }

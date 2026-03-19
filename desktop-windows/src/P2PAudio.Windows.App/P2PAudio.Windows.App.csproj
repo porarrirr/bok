@@ -15,6 +15,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <UseSystemDrawing>true</UseSystemDrawing>
+    <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\'))</RepoRoot>
+    <NativeBuildOutputDir>$(RepoRoot)out\core-webrtc</NativeBuildOutputDir>
+    <NativeVcpkgBinDir>$(RepoRoot)vcpkg_installed\x64-windows\bin</NativeVcpkgBinDir>
   </PropertyGroup>
 
   <ItemGroup>
@@ -25,6 +28,29 @@
 
   <ItemGroup>
     <ProjectReference Include="..\P2PAudio.Windows.Core\P2PAudio.Windows.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="$(NativeBuildOutputDir)\$(Configuration)\p2paudio_core_udp_opus.dll"
+             Condition="Exists('$(NativeBuildOutputDir)\$(Configuration)\p2paudio_core_udp_opus.dll') and !Exists('$(MSBuildProjectDirectory)\runtimes\win-x64\native\p2paudio_core_udp_opus.dll')"
+             Link="runtimes\win-x64\native\p2paudio_core_udp_opus.dll"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(NativeBuildOutputDir)\p2paudio_core_udp_opus.dll"
+             Condition="Exists('$(NativeBuildOutputDir)\p2paudio_core_udp_opus.dll') and !Exists('$(NativeBuildOutputDir)\$(Configuration)\p2paudio_core_udp_opus.dll') and !Exists('$(MSBuildProjectDirectory)\runtimes\win-x64\native\p2paudio_core_udp_opus.dll')"
+             Link="runtimes\win-x64\native\p2paudio_core_udp_opus.dll"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(NativeVcpkgBinDir)\opus.dll"
+             Condition="Exists('$(NativeVcpkgBinDir)\opus.dll') and !Exists('$(MSBuildProjectDirectory)\runtimes\win-x64\native\opus.dll')"
+             Link="runtimes\win-x64\native\opus.dll"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(NativeVcpkgBinDir)\portaudio.dll"
+             Condition="Exists('$(NativeVcpkgBinDir)\portaudio.dll') and !Exists('$(MSBuildProjectDirectory)\runtimes\win-x64\native\portaudio.dll')"
+             Link="runtimes\win-x64\native\portaudio.dll"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

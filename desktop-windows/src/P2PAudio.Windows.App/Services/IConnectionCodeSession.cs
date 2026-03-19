@@ -6,10 +6,15 @@ public interface IConnectionCodeSession : IDisposable
 
     long ExpiresAtUnixMs { get; }
 
-    Task<string> WaitForConfirmPayloadAsync(CancellationToken cancellationToken);
+    Task<ConnectionCodeSubmission> WaitForConfirmPayloadAsync(CancellationToken cancellationToken);
 }
 
 public interface IConnectionCodeSessionFactory
 {
-    IConnectionCodeSession Create(string initPayload, string offerSdp, long expiresAtUnixMs);
+    IConnectionCodeSession Create(string initPayload, string localAddressHintSource, long expiresAtUnixMs);
 }
+
+public sealed record ConnectionCodeSubmission(
+    string Payload,
+    string RemoteAddress
+);

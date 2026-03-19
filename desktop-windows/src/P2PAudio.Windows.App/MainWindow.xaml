@@ -32,6 +32,10 @@
                         FontSize="18"
                         FontWeight="Bold" />
                     <TextBlock
+                        Text="{x:Bind ViewModel.TransportModeLabel, Mode=OneWay}"
+                        FontSize="11"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock
                         Text="{x:Bind ViewModel.BackendLabel, Mode=OneWay}"
                         FontSize="11"
                         Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
@@ -146,9 +150,28 @@
                     Padding="28,22">
                     <StackPanel Spacing="14">
                         <TextBlock
-                            Text="このPCの役割を選んでください"
+                            Text="転送モードと、このPCの役割を選んでください"
                             FontSize="16"
                             FontWeight="SemiBold" />
+                        <StackPanel Spacing="6">
+                            <TextBlock
+                                Text="転送モード"
+                                FontSize="12"
+                                FontWeight="SemiBold"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <ComboBox
+                                x:Name="TransportModeComboBox"
+                                SelectionChanged="OnTransportModeSelectionChanged"
+                                SelectedIndex="{x:Bind ViewModel.SelectedTransportModeIndex, Mode=OneWay}">
+                                <ComboBoxItem Content="WebRTC" />
+                                <ComboBoxItem Content="UDP + Opus" />
+                            </ComboBox>
+                            <TextBlock
+                                Text="{x:Bind ViewModel.TransportModeDescription, Mode=OneWay}"
+                                FontSize="12"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
                         <Grid ColumnSpacing="14">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -174,7 +197,7 @@
                                         FontWeight="SemiBold"
                                         Foreground="#F4F8FF" />
                                     <TextBlock
-                                        Text="このPCの音を相手へ"
+                                        Text="{x:Bind ViewModel.SenderEntryDescription, Mode=OneWay}"
                                         FontSize="12"
                                         Foreground="#C3D4E9"
                                         TextWrapping="Wrap" />
@@ -208,7 +231,7 @@
                                         FontWeight="SemiBold"
                                         Foreground="#FFF4E4" />
                                     <TextBlock
-                                        Text="相手の音をこのPCで再生"
+                                        Text="{x:Bind ViewModel.ListenerEntryDescription, Mode=OneWay}"
                                         FontSize="12"
                                         Foreground="#E4D0BC"
                                         TextWrapping="Wrap" />
@@ -238,11 +261,11 @@
                     Padding="28,22">
                     <StackPanel Spacing="10">
                         <TextBlock
-                            Text="接続の準備をしています…"
+                            Text="{x:Bind ViewModel.PathStepTitle, Mode=OneWay}"
                             FontSize="16"
                             FontWeight="SemiBold" />
                         <TextBlock
-                            Text="同じネットワーク上で直接つなぐための確認をしています。"
+                            Text="{x:Bind ViewModel.PathStepDescription, Mode=OneWay}"
                             FontSize="13"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             TextWrapping="Wrap" />
@@ -300,7 +323,7 @@
                             </Border>
                         </StackPanel>
 
-                        <Expander Header="従来の手動手順を使う" Padding="0">
+                        <Expander x:Name="SenderManualFallbackExpander" Header="従来の手動手順を使う" Padding="0">
                             <StackPanel Spacing="10" Margin="0,10,0,0">
                                 <TextBlock
                                     Text="接続コードを使わず、開始データと応答データを手動でやり取りする場合のみ使います。"

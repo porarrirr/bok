@@ -4,6 +4,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using P2PAudio.Windows.App.Logging;
 using P2PAudio.Windows.App.ViewModels;
 using P2PAudio.Windows.Core.Models;
 using Windows.ApplicationModel.DataTransfer;
@@ -67,7 +68,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (e.PropertyName is nameof(MainViewModel.CurrentSetupStep) or nameof(MainViewModel.CurrentStreamState) or nameof(MainViewModel.IsVerificationPending) or nameof(MainViewModel.FailureHintLabel))
+        if (e.PropertyName is nameof(MainViewModel.CurrentSetupStep) or nameof(MainViewModel.CurrentStreamState) or nameof(MainViewModel.IsVerificationPending) or nameof(MainViewModel.FailureHintLabel) or nameof(MainViewModel.SelectedTransportMode))
         {
             UpdateFlowCards();
         }
@@ -86,8 +87,14 @@ public sealed partial class MainWindow : Window
         var hideSetupCards = streamState is StreamState.Streaming or StreamState.Interrupted or StreamState.Ended or StreamState.Failed;
 
         EntryCard.Visibility = showEntryCard ? Visibility.Visible : Visibility.Collapsed;
-        PathDiagnosingCard.Visibility = !hideSetupCards && step == SetupStep.PathDiagnosing ? Visibility.Visible : Visibility.Collapsed;
+        PathDiagnosingCard.Visibility = !hideSetupCards &&
+            (step == SetupStep.PathDiagnosing || step == SetupStep.UdpSenderDiscovering)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         SenderShowInitCard.Visibility = !hideSetupCards && step == SetupStep.SenderShowInit ? Visibility.Visible : Visibility.Collapsed;
+        SenderManualFallbackExpander.Visibility = ViewModel.ShowManualPayloadFallback
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         SenderVerifyCodeCard.Visibility = !hideSetupCards && step == SetupStep.SenderVerifyCode && ViewModel.IsVerificationPending
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -137,6 +144,15 @@ public sealed partial class MainWindow : Window
         ViewModel.StartListener();
     }
 
+    private void OnTransportModeSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        ViewModel.SelectTransportMode(TransportModeComboBox.SelectedIndex == 1
+            ? TransportMode.UdpOpus
+            : TransportMode.WebRtc);
+    }
+
     private async void OnPastePayloadClick(object sender, RoutedEventArgs e)
     {
         await ViewModel.PasteFromClipboardAsync();
@@ -180,11 +196,11 @@ public sealed partial class MainWindow : Window
         if (string.IsNullOrEmpty(ViewModel.CurrentPayload))
             return;
 
-        var dataPackage = new DataPackage();
-        dataPackage.SetText(ViewModel.CurrentPayload);
-        Clipboard.SetContent(dataPackage);
-
-        ShowTransientMessage("接続データをクリップボードへコピーしました。");
+        TryCopyTextToClipboard(
+            ViewModel.CurrentPayload,
+            successMessage: "接続データをクリップボードへコピーしました。",
+            failureMessage: "接続データをクリップボードへコピーできませんでした。"
+        );
     }
 
     private void OnCopyConnectionCodeClick(object sender, RoutedEventArgs e)
@@ -192,11 +208,27 @@ public sealed partial class MainWindow : Window
         if (string.IsNullOrEmpty(ViewModel.CurrentConnectionCode))
             return;
 
-        var dataPackage = new DataPackage();
-        dataPackage.SetText(ViewModel.CurrentConnectionCode);
-        Clipboard.SetContent(dataPackage);
+        TryCopyTextToClipboard(
+            ViewModel.CurrentConnectionCode,
+            successMessage: "接続コードをクリップボードへコピーしました。",
+            failureMessage: "接続コードをクリップボードへコピーできませんでした。"
+        );
+    }
 
-        ShowTransientMessage("接続コードをクリップボードへコピーしました。");
+    private void TryCopyTextToClipboard(string text, string successMessage, string failureMessage)
+    {
+        try
+        {
+            var dataPackage = new DataPackage();
+            dataPackage.SetText(text);
+            Clipboard.SetContent(dataPackage);
+            ShowTransientMessage(successMessage);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.E("MainWindow", "clipboard_copy_failed", failureMessage, exception: ex);
+            ShowTransientMessage($"{failureMessage} {ex.Message}");
+        }
     }
 
     private void ShowTransientMessage(string message)

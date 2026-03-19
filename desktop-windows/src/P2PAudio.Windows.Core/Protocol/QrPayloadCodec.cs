@@ -29,6 +29,18 @@ public static class QrPayloadCodec
         return EncodeTransportString(raw);
     }
 
+    public static string EncodeUdpInit(UdpInitPayload payload)
+    {
+        var raw = JsonSerializer.Serialize(payload, JsonOptions);
+        return EncodeTransportString(raw);
+    }
+
+    public static string EncodeUdpConfirm(UdpConfirmPayload payload)
+    {
+        var raw = JsonSerializer.Serialize(payload, JsonOptions);
+        return EncodeTransportString(raw);
+    }
+
     public static PairingInitPayload DecodeInit(string raw)
     {
         var normalized = DecodeTransportString(raw);
@@ -41,6 +53,20 @@ public static class QrPayloadCodec
         var normalized = DecodeTransportString(raw);
         var payload = JsonSerializer.Deserialize<PairingConfirmPayload>(normalized, JsonOptions);
         return payload ?? throw new SessionFailure(FailureCode.InvalidPayload, "Invalid confirm payload");
+    }
+
+    public static UdpInitPayload DecodeUdpInit(string raw)
+    {
+        var normalized = DecodeTransportString(raw);
+        var payload = JsonSerializer.Deserialize<UdpInitPayload>(normalized, JsonOptions);
+        return payload ?? throw new SessionFailure(FailureCode.InvalidPayload, "Invalid UDP init payload");
+    }
+
+    public static UdpConfirmPayload DecodeUdpConfirm(string raw)
+    {
+        var normalized = DecodeTransportString(raw);
+        var payload = JsonSerializer.Deserialize<UdpConfirmPayload>(normalized, JsonOptions);
+        return payload ?? throw new SessionFailure(FailureCode.InvalidPayload, "Invalid UDP confirm payload");
     }
 
     private static string EncodeTransportString(string raw)
