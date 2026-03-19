@@ -43,7 +43,8 @@ internal class AdaptivePcmBufferController(
             val arrivalDeltaMs = arrivalRealtimeMs - previousArrival
             val senderDeltaMs = (frame.timestampMs - previousTimestamp).coerceAtLeast(1L)
             val variationMs = abs(arrivalDeltaMs - senderDeltaMs).toDouble()
-            estimatedJitterMs += (variationMs - estimatedJitterMs) / 8.0
+            val smoothingDivisor = if (variationMs >= estimatedJitterMs) 4.0 else 12.0
+            estimatedJitterMs += (variationMs - estimatedJitterMs) / smoothingDivisor
             currentTargetFrames = max(currentTargetFrames, recommendedTargetFrames())
         }
 
@@ -52,20 +53,20 @@ internal class AdaptivePcmBufferController(
     }
 
     fun onGapConcealed() {
-        registerPressure(extraFrames = 2)
+        registerPressure(extraFrames = 4)
     }
 
     fun onLateFrameDropped() {
-        registerPressure(extraFrames = 1)
+        registerPressure(extraFrames = 2)
     }
 
     fun onQueueOverflow() {
-        stablePlaybackFrames = 0
+        registerPressure(extraFrames = 2)
     }
 
     fun onAudioTrackUnderrun(underrunDelta: Int) {
         if (underrunDelta > 0) {
-            registerPressure(extraFrames = (underrunDelta * 2).coerceAtMost(4))
+            registerPressure(extraFrames = (underrunDelta * 3).coerceAtMost(8))
         }
     }
 
@@ -111,11 +112,16 @@ internal class AdaptivePcmBufferController(
     private fun recommendedTargetFrames(): Int {
         val jitterFrames = ceil(estimatedJitterMs / frameDurationMs.toDouble()).toInt()
         val safetyFrames = if (estimatedJitterMs >= frameDurationMs / 2.0) 1 else 0
-        return (steadyPrebufferFrames + jitterFrames + safetyFrames)
+        val burstFrames = when {
+            estimatedJitterMs >= frameDurationMs * 2.5 -> 2
+            estimatedJitterMs >= frameDurationMs * 1.25 -> 1
+            else -> 0
+        }
+        return (steadyPrebufferFrames + jitterFrames + safetyFrames + burstFrames)
             .coerceIn(steadyPrebufferFrames, maxTargetFrames)
     }
 
     private companion object {
-        private const val STABLE_PLAYBACK_THRESHOLD_FRAMES = 24
+        private const val STABLE_PLAYBACK_THRESHOLD_FRAMES = 32
     }
 }

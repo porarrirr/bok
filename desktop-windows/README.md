@@ -48,6 +48,7 @@ This module contains the Windows implementation for the shared v2 pairing/audio 
 - If native bridge load fails, app enters failed state and blocks connection flow.
 - Development-only stub can be enabled with `ALLOW_STUB_FOR_DEV=1`.
 - UDP + Opus mode requires the native UDP sender DLL and Opus runtime from `vcpkg_installed/x64-windows/bin/` to be copied beside the app.
+- The Windows resolver loads native dependencies from `runtimes\win-x64\native` before loading the primary WebRTC / UDP bridge DLLs.
 
 ## Notes
 

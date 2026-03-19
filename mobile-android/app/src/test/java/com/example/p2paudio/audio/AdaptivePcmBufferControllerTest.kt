@@ -48,7 +48,7 @@ class AdaptivePcmBufferControllerTest {
         controller.reset(frameDurationMs = 20)
         controller.onAudioTrackUnderrun(underrunDelta = 1)
 
-        repeat(48) {
+        repeat(160) {
             controller.onFramePlayed(queueDepthFrames = 4)
         }
 
@@ -56,7 +56,7 @@ class AdaptivePcmBufferControllerTest {
     }
 
     @Test
-    fun queueOverflowDoesNotIncreaseTargetPrebuffer() {
+    fun queueOverflowRaisesTargetPrebuffer() {
         val controller = AdaptivePcmBufferController(
             startupPrebufferFrames = 2,
             steadyPrebufferFrames = 2,
@@ -66,7 +66,7 @@ class AdaptivePcmBufferControllerTest {
 
         controller.onQueueOverflow()
 
-        assertEquals(2, controller.snapshot().targetPrebufferFrames)
+        assertTrue(controller.snapshot().targetPrebufferFrames > 2)
     }
 
     private fun frame(sequence: Int, timestampMs: Long): PcmFrame {

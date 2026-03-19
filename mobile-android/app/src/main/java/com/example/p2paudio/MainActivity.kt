@@ -62,6 +62,7 @@ import com.example.p2paudio.model.AudioStreamState
 import com.example.p2paudio.model.ConnectionDiagnostics
 import com.example.p2paudio.model.FailureCode
 import com.example.p2paudio.model.NetworkPathType
+import com.example.p2paudio.service.AudioReceiveService
 import com.example.p2paudio.service.AudioSendService
 import com.example.p2paudio.transport.TransportMode
 import com.example.p2paudio.ui.MainUiState
@@ -120,8 +121,20 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    MainViewModel.UiCommand.StartUdpReceiveService -> {
+                        runCatching {
+                            startForegroundReceiveService()
+                        }.onFailure { error ->
+                            viewModel.onUdpReceiveServiceStartFailed(error)
+                        }
+                    }
+
                     MainViewModel.UiCommand.StopProjectionService -> {
                         stopForegroundSendService()
+                    }
+
+                    MainViewModel.UiCommand.StopUdpReceiveService -> {
+                        stopForegroundReceiveService()
                     }
                 }
             }
@@ -178,6 +191,19 @@ class MainActivity : ComponentActivity() {
     private fun stopForegroundSendService() {
         AppLogger.i("MainActivity", "stop_foreground_service", "Stopping AudioSendService")
         stopService(Intent(this, AudioSendService::class.java))
+    }
+
+    private fun startForegroundReceiveService() {
+        AppLogger.i("MainActivity", "start_receive_service", "Starting AudioReceiveService")
+        val intent = Intent(this, AudioReceiveService::class.java).apply {
+            action = AudioReceiveService.ACTION_START_RECEIVE
+        }
+        startForegroundService(intent)
+    }
+
+    private fun stopForegroundReceiveService() {
+        AppLogger.i("MainActivity", "stop_receive_service", "Stopping AudioReceiveService")
+        stopService(Intent(this, AudioReceiveService::class.java))
     }
 }
 

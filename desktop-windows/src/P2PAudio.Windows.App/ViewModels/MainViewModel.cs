@@ -704,6 +704,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private async Task InitializeDeferredAsync()
     {
         var startupState = await Task.Run(() => CreateStartupState(_startupBridgeFactory!));
+        AppLogger.I(
+            "MainViewModel",
+            "startup_state_ready",
+            "Deferred startup state created",
+            new Dictionary<string, object?>
+            {
+                ["bridgeType"] = startupState.Bridge.GetType().Name,
+                ["backendReady"] = startupState.BackendHealth.IsReady,
+                ["backendMessage"] = startupState.BackendHealth.Message,
+                ["isDevelopmentStub"] = startupState.BackendHealth.IsDevelopmentStub
+            });
 
         RunOnUiThread(() =>
         {
@@ -1523,9 +1534,19 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            var startupReason = FormatBridgeStartupReason(ex);
+            AppLogger.E(
+                "MainViewModel",
+                "startup_bridge_create_failed",
+                "Native WebRTC bridge creation failed",
+                new Dictionary<string, object?>
+                {
+                    ["startupReason"] = startupReason
+                },
+                ex);
             return new StubWebRtcBridge(
                 enabledForDevelopment: IsStubAllowedForDevelopment(),
-                startupReason: FormatBridgeStartupReason(ex)
+                startupReason: startupReason
             );
         }
     }
@@ -1538,7 +1559,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            return new StubUdpAudioSenderBridge(FormatUdpBridgeStartupReason(ex));
+            var startupReason = FormatUdpBridgeStartupReason(ex);
+            AppLogger.E(
+                "MainViewModel",
+                "startup_udp_bridge_create_failed",
+                "Native UDP bridge creation failed",
+                new Dictionary<string, object?>
+                {
+                    ["startupReason"] = startupReason
+                },
+                ex);
+            return new StubUdpAudioSenderBridge(startupReason);
         }
     }
 
@@ -1580,9 +1611,19 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            var startupReason = FormatBridgeStartupReason(ex);
+            AppLogger.E(
+                "MainViewModel",
+                "startup_bridge_factory_failed",
+                "Startup bridge factory failed",
+                new Dictionary<string, object?>
+                {
+                    ["startupReason"] = startupReason
+                },
+                ex);
             var fallbackBridge = new StubWebRtcBridge(
                 enabledForDevelopment: false,
-                startupReason: FormatBridgeStartupReason(ex)
+                startupReason: startupReason
             );
             return new StartupState(fallbackBridge, fallbackBridge.GetBackendHealth());
         }
@@ -1596,10 +1637,21 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            var startupReason = FormatBridgeStartupReason(ex);
+            AppLogger.E(
+                "MainViewModel",
+                "startup_backend_probe_failed",
+                "Backend health probe failed",
+                new Dictionary<string, object?>
+                {
+                    ["bridgeType"] = bridge.GetType().Name,
+                    ["startupReason"] = startupReason
+                },
+                ex);
             DisposeBackend(bridge);
             var fallbackBridge = new StubWebRtcBridge(
                 enabledForDevelopment: false,
-                startupReason: FormatBridgeStartupReason(ex)
+                startupReason: startupReason
             );
             return new StartupState(fallbackBridge, fallbackBridge.GetBackendHealth());
         }

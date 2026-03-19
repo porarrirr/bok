@@ -182,6 +182,8 @@
     <string name="notification_channel_name">音声リンクの共有</string>
     <string name="notification_content_title">音声リンク</string>
     <string name="notification_content_text">この端末の音を共有しています</string>
+    <string name="notification_receive_content_title">音声リンク</string>
+    <string name="notification_receive_content_text">Windows のメディア音声をバックグラウンド受信しています</string>
 
     <string name="error_audio_capture_android10">音声共有はAndroid 10以降で利用できます。</string>
     <string name="error_permission_denied">必要な権限が許可されませんでした。</string>

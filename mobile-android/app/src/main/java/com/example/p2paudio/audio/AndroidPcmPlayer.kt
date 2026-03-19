@@ -84,13 +84,13 @@ class AndroidPcmPlayer(
     private var lastStatsLogAtMs: Long = System.currentTimeMillis()
     private var lastWarningLogAtMs: Long = 0L
     private var lastDiagnosticsDispatchAtMs: Long = 0L
+    private var rebuffering: Boolean = false
 
-    fun enqueue(frame: PcmFrame) {
+    fun enqueue(frame: PcmFrame, arrivalRealtimeMs: Long = SystemClock.elapsedRealtime()) {
         if (frame.pcmBytes.isEmpty()) {
             return
         }
 
-        val arrivalRealtimeMs = SystemClock.elapsedRealtime()
         synchronized(lock) {
             val formatKey = "${frame.sampleRate}-${frame.channels}-${frame.bitsPerSample}"
             if (lastFormatKey != null && lastFormatKey != formatKey) {
@@ -292,6 +292,12 @@ class AndroidPcmPlayer(
         }
 
         val adaptiveSnapshot = adaptiveBufferController.snapshot()
+        if (rebuffering) {
+            if (pendingFrames.size < adaptiveSnapshot.startupTargetFrames) {
+                return null
+            }
+            rebuffering = false
+        }
         val expected = expectedSequence
         if (expected == null) {
             if (pendingFrames.size < adaptiveSnapshot.startupTargetFrames) {
@@ -394,6 +400,7 @@ class AndroidPcmPlayer(
             audioTrackUnderruns += underrunDelta
             lastObservedTrackUnderrunCount = currentUnderrunCount
             adaptiveBufferController.onAudioTrackUnderrun(underrunDelta)
+            enterRebufferingUnsafe()
         }
     }
 
@@ -446,6 +453,7 @@ class AndroidPcmPlayer(
         currentFrameSamplesPerChannel = 0
         audioTrackBufferFrames = 0
         lastObservedTrackUnderrunCount = 0
+        rebuffering = false
         audioTrack?.runCatching {
             pause()
             flush()
@@ -494,6 +502,23 @@ class AndroidPcmPlayer(
                 context = it
             )
         }
+    }
+
+    private fun enterRebufferingUnsafe() {
+        if (rebuffering) {
+            return
+        }
+
+        rebuffering = true
+        expectedSequence = null
+        logPlaybackWarning(
+            event = "player_rebuffer_start",
+            message = "Entering adaptive rebuffering after playback pressure",
+            context = mapOf(
+                "pendingFrames" to pendingFrames.size,
+                "audioTrackUnderruns" to audioTrackUnderruns
+            )
+        )
     }
 
     companion object {

@@ -32,6 +32,7 @@ import com.example.p2paudio.protocol.ConnectionCodeCodec
 import com.example.p2paudio.protocol.PairingPayloadValidator
 import com.example.p2paudio.protocol.QrPayloadCodec
 import com.example.p2paudio.protocol.VerificationCode
+import com.example.p2paudio.service.AudioReceiveService
 import com.example.p2paudio.service.AudioSendService
 import com.example.p2paudio.transport.PairingAudioTransport
 import com.example.p2paudio.transport.TransportMode
@@ -57,10 +58,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
     private val udpPcmPlayer = AndroidPcmPlayer(
         source = AudioStreamSource.UDP_OPUS_RECEIVE,
-        startupPrebufferFrames = 2,
-        steadyPrebufferFrames = 2,
-        maxQueueFrames = 12,
-        minTrackBufferFrames = 6,
+        startupPrebufferFrames = 4,
+        steadyPrebufferFrames = 4,
+        maxQueueFrames = 24,
+        minTrackBufferFrames = 12,
         diagnosticsListener = ::onAudioStreamDiagnosticsChanged
     )
     private var pcmSender: AndroidPcmSender? = null
@@ -136,8 +137,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         },
-        pcmFrameListener = { frame ->
-            onRemoteFrameReceived(frame, udpPcmPlayer, text(R.string.status_udp_receiving_audio))
+        pcmFrameListener = { frame, arrivalRealtimeMs ->
+            onRemoteFrameReceived(
+                frame = frame,
+                player = udpPcmPlayer,
+                statusMessage = text(R.string.status_udp_receiving_audio),
+                arrivalRealtimeMs = arrivalRealtimeMs
+            )
         },
         diagnosticsListener = { diagnostics ->
             _uiState.update { it.copy(connectionDiagnostics = diagnostics) }
@@ -313,6 +319,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun onProjectionServiceStartFailed(error: Throwable?) {
         val cause = error ?: IllegalStateException("Foreground service start failed")
         onCaptureServiceStartFailed(cause)
+    }
+
+    fun onUdpReceiveServiceStartFailed(error: Throwable) {
+        AppLogger.e(
+            "MainViewModel",
+            "udp_receive_service_start_failed",
+            "Failed to start receiver foreground service",
+            context = mapOf("reason" to (error.message ?: "unknown")),
+            throwable = error
+        )
+        recoverToEntry(
+            SessionFailure(
+                FailureCode.WEBRTC_NEGOTIATION_FAILED,
+                error.message ?: text(R.string.error_webrtc_negotiation_failed)
+            )
+        )
     }
 
     private fun onCaptureServiceStarted() {
@@ -524,6 +546,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
             return
         }
+
+        requestStartUdpReceiveService()
 
         val confirmPayload = UdpConfirmPayload(
             sessionId = init.sessionId,
@@ -958,6 +982,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         captureRuntime.stop()
         peerController.close()
         udpListenerTransport.close()
+        stopUdpReceiveServiceDirectly()
+        requestStopUdpReceiveService()
         stopProjectionServiceDirectly()
         requestStopProjectionService()
         _uiState.value = entryState(statusMessage = text(R.string.status_session_ended))
@@ -1023,6 +1049,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         captureRuntime.stop()
         peerController.close()
         udpListenerTransport.close()
+        stopUdpReceiveServiceDirectly()
+        requestStopUdpReceiveService()
         stopProjectionServiceDirectly()
         requestStopProjectionService()
         _uiState.value = entryState(statusMessage = statusMessage, failure = failure)
@@ -1033,8 +1061,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         app.stopService(Intent(app, AudioSendService::class.java))
     }
 
+    private fun stopUdpReceiveServiceDirectly() {
+        val app = getApplication<Application>()
+        app.stopService(Intent(app, AudioReceiveService::class.java))
+    }
+
     private fun requestStopProjectionService() {
         viewModelScope.launch { _commands.emit(UiCommand.StopProjectionService) }
+    }
+
+    private fun requestStartUdpReceiveService() {
+        viewModelScope.launch { _commands.emit(UiCommand.StartUdpReceiveService) }
+    }
+
+    private fun requestStopUdpReceiveService() {
+        viewModelScope.launch { _commands.emit(UiCommand.StopUdpReceiveService) }
     }
 
     private fun localizePeerMessage(message: String): String = when (message) {
@@ -1107,6 +1148,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         playbackMessageShown = false
         captureRuntime.stop()
         peerController.close()
+        stopUdpReceiveServiceDirectly()
+        requestStopUdpReceiveService()
         stopProjectionServiceDirectly()
         requestStopProjectionService()
         _uiState.update {
@@ -1131,9 +1174,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun onRemoteFrameReceived(
         frame: com.example.p2paudio.audio.PcmFrame,
         player: AndroidPcmPlayer,
-        statusMessage: String
+        statusMessage: String,
+        arrivalRealtimeMs: Long = android.os.SystemClock.elapsedRealtime()
     ) {
-        player.enqueue(frame)
+        player.enqueue(frame, arrivalRealtimeMs)
         if (!playbackMessageShown) {
             playbackMessageShown = true
             AppLogger.i(
@@ -1166,7 +1210,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         object RequestRecordAudioPermission : UiCommand
         data class RequestProjectionPermission(val captureIntent: Intent) : UiCommand
         data class StartProjectionService(val permissionResultData: Intent) : UiCommand
+        object StartUdpReceiveService : UiCommand
         object StopProjectionService : UiCommand
+        object StopUdpReceiveService : UiCommand
     }
 
     private enum class PayloadRole {

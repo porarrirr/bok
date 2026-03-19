@@ -21,6 +21,7 @@ public sealed class StartMenuShortcutTests
             Assert.Equal(normalizedExecutablePath, definition.TargetPath);
             Assert.Equal(Path.GetDirectoryName(normalizedExecutablePath), definition.WorkingDirectory);
             Assert.Equal($"{normalizedExecutablePath},0", definition.IconLocation);
+            Assert.Equal(string.Empty, definition.Arguments);
             Assert.Equal("P2PAudio", definition.Description);
         }
         finally
@@ -57,6 +58,7 @@ public sealed class StartMenuShortcutTests
                 TargetPath: Path.Combine(tempDirectory, "missing", "P2PAudio.Windows.App.exe"),
                 WorkingDirectory: definition.WorkingDirectory,
                 IconLocation: definition.IconLocation,
+                Arguments: definition.Arguments,
                 Description: definition.Description);
 
             Assert.True(StartMenuShortcut.ShouldUpdateShortcut(existingShortcut, definition));
@@ -85,6 +87,7 @@ public sealed class StartMenuShortcutTests
                 TargetPath: definition.TargetPath.ToUpperInvariant(),
                 WorkingDirectory: definition.WorkingDirectory.ToUpperInvariant(),
                 IconLocation: $"{definition.TargetPath.ToUpperInvariant()},0",
+                Arguments: definition.Arguments,
                 Description: definition.Description.ToLowerInvariant());
 
             Assert.False(StartMenuShortcut.ShouldUpdateShortcut(existingShortcut, definition));
@@ -113,6 +116,36 @@ public sealed class StartMenuShortcutTests
                 TargetPath: definition.TargetPath,
                 WorkingDirectory: Path.Combine(tempDirectory, "other"),
                 IconLocation: definition.IconLocation,
+                Arguments: definition.Arguments,
+                Description: definition.Description);
+
+            Assert.True(StartMenuShortcut.ShouldUpdateShortcut(existingShortcut, definition));
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ShouldUpdateShortcut_WhenArgumentsDiffer_ReturnsTrue()
+    {
+        var tempDirectory = CreateTempDirectory();
+
+        try
+        {
+            var desiredTargetPath = Path.Combine(tempDirectory, "P2PAudio.Windows.App.exe");
+            File.WriteAllBytes(desiredTargetPath, []);
+
+            var definition = StartMenuShortcut.CreateDesiredShortcut(
+                shortcutPath: Path.Combine(tempDirectory, "P2PAudio.lnk"),
+                targetPath: desiredTargetPath);
+
+            var existingShortcut = new StartMenuShortcut.ShortcutSnapshot(
+                TargetPath: definition.TargetPath,
+                WorkingDirectory: definition.WorkingDirectory,
+                IconLocation: definition.IconLocation,
+                Arguments: @"--app-path=""C:\Old\P2PAudio.Windows.App.exe""",
                 Description: definition.Description);
 
             Assert.True(StartMenuShortcut.ShouldUpdateShortcut(existingShortcut, definition));

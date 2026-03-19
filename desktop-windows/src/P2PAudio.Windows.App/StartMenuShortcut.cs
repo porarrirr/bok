@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text;
 
 namespace P2PAudio.Windows.App;
 
@@ -64,6 +63,7 @@ internal static class StartMenuShortcut
             TargetPath: normalizedTargetPath,
             WorkingDirectory: workingDirectory,
             IconLocation: $"{normalizedTargetPath},0",
+            Arguments: string.Empty,
             Description: AppName
         );
     }
@@ -84,6 +84,7 @@ internal static class StartMenuShortcut
 
         return !PathsMatch(existingShortcut.TargetPath, desiredShortcut.TargetPath) ||
                !PathsMatch(existingShortcut.WorkingDirectory, desiredShortcut.WorkingDirectory) ||
+               !string.Equals(existingShortcut.Arguments?.Trim(), desiredShortcut.Arguments, StringComparison.Ordinal) ||
                !string.Equals(existingShortcut.Description?.Trim(), desiredShortcut.Description, StringComparison.OrdinalIgnoreCase) ||
                !string.Equals(NormalizeIconLocation(existingShortcut.IconLocation), NormalizeIconLocation(desiredShortcut.IconLocation), StringComparison.OrdinalIgnoreCase);
     }
@@ -135,6 +136,7 @@ internal static class StartMenuShortcut
                 TargetPath: GetShortcutProperty(shortcut, nameof(ShortcutSnapshot.TargetPath)),
                 WorkingDirectory: GetShortcutProperty(shortcut, nameof(ShortcutSnapshot.WorkingDirectory)),
                 IconLocation: GetShortcutProperty(shortcut, nameof(ShortcutSnapshot.IconLocation)),
+                Arguments: GetShortcutProperty(shortcut, nameof(ShortcutSnapshot.Arguments)),
                 Description: GetShortcutProperty(shortcut, nameof(ShortcutSnapshot.Description))
             );
         }
@@ -160,43 +162,23 @@ internal static class StartMenuShortcut
 
         Directory.CreateDirectory(shortcutDirectory);
 
-        var escapedShortcutPath = shortcutDefinition.ShortcutPath.Replace("'", "''");
-        var escapedTargetPath = shortcutDefinition.TargetPath.Replace("'", "''");
-        var escapedWorkingDirectory = shortcutDefinition.WorkingDirectory.Replace("'", "''");
-        var escapedIconLocation = shortcutDefinition.IconLocation.Replace("'", "''");
-        var escapedDescription = shortcutDefinition.Description.Replace("'", "''");
-
-        var script = $"""
-$ws = New-Object -ComObject WScript.Shell
-$shortcut = $ws.CreateShortcut('{escapedShortcutPath}')
-$shortcut.TargetPath = '{escapedTargetPath}'
-$shortcut.WorkingDirectory = '{escapedWorkingDirectory}'
-$shortcut.IconLocation = '{escapedIconLocation}'
-$shortcut.Description = '{escapedDescription}'
-$shortcut.Save()
-""";
-
-        var encodedScript = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
-        var psi = new ProcessStartInfo
+        object? shell = null;
+        object? shortcut = null;
+        try
         {
-            FileName = "powershell.exe",
-            Arguments = $"-NoProfile -NonInteractive -EncodedCommand {encodedScript}",
-            CreateNoWindow = true,
-            UseShellExecute = false,
-            WindowStyle = ProcessWindowStyle.Hidden
-        };
-
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start PowerShell for Start Menu shortcut creation.");
-
-        if (!process.WaitForExit(5_000))
-        {
-            throw new TimeoutException("Timed out while updating the Start Menu shortcut.");
+            shell = CreateShell();
+            shortcut = OpenShortcut(shell, shortcutDefinition.ShortcutPath);
+            SetShortcutProperty(shortcut, nameof(ShortcutSnapshot.TargetPath), shortcutDefinition.TargetPath);
+            SetShortcutProperty(shortcut, nameof(ShortcutSnapshot.WorkingDirectory), shortcutDefinition.WorkingDirectory);
+            SetShortcutProperty(shortcut, nameof(ShortcutSnapshot.IconLocation), shortcutDefinition.IconLocation);
+            SetShortcutProperty(shortcut, nameof(ShortcutSnapshot.Arguments), shortcutDefinition.Arguments);
+            SetShortcutProperty(shortcut, nameof(ShortcutSnapshot.Description), shortcutDefinition.Description);
+            SaveShortcut(shortcut);
         }
-
-        if (process.ExitCode != 0)
+        finally
         {
-            throw new InvalidOperationException($"PowerShell failed to update the Start Menu shortcut (exit code {process.ExitCode}).");
+            ReleaseComObject(shortcut);
+            ReleaseComObject(shell);
         }
     }
 
@@ -225,6 +207,26 @@ $shortcut.Save()
             binder: null,
             target: shortcut,
             args: null) as string;
+
+    private static void SetShortcutProperty(object shortcut, string propertyName, string value)
+    {
+        shortcut.GetType().InvokeMember(
+            propertyName,
+            BindingFlags.SetProperty,
+            binder: null,
+            target: shortcut,
+            args: [value]);
+    }
+
+    private static void SaveShortcut(object shortcut)
+    {
+        shortcut.GetType().InvokeMember(
+            "Save",
+            BindingFlags.InvokeMethod,
+            binder: null,
+            target: shortcut,
+            args: null);
+    }
 
     private static void ReleaseComObject(object? comObject)
     {
@@ -297,11 +299,13 @@ $shortcut.Save()
         string TargetPath,
         string WorkingDirectory,
         string IconLocation,
+        string Arguments,
         string Description);
 
     internal sealed record ShortcutSnapshot(
         string? TargetPath,
         string? WorkingDirectory,
         string? IconLocation,
+        string? Arguments,
         string? Description);
 }

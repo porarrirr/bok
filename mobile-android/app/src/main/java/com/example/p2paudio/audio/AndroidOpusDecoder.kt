@@ -151,7 +151,7 @@ put("OpusHead".toByteArray())
     }
 
     companion object {
-        private const val CODEC_TIMEOUT_US = 10_000L
+        private const val CODEC_TIMEOUT_US = 20_000L
         private const val WARNING_LOG_INTERVAL_MS = 1_000L
     }
 }

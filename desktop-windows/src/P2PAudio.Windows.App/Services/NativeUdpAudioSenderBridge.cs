@@ -13,6 +13,8 @@ public sealed class NativeUdpAudioSenderBridge : IUdpAudioSenderBridge, IDisposa
 
     public NativeUdpAudioSenderBridge()
     {
+        NativeUdpOpusLibraryResolver.EnsureRegistered();
+        NativeWebRtcLibraryResolver.EnsureLoaded(NativeUdpOpusLibraryResolver.DllBaseName);
         _handle = NativeUdpOpusNativeMethods.core_udp_opus_create();
         if (_handle == 0)
         {
