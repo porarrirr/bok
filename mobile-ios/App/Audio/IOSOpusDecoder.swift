@@ -150,12 +150,22 @@ final class IOSOpusDecoder {
         }
 
         let magicCookie = makeOpusMagicCookie(sampleRate: packet.sampleRate, channels: packet.channels)
-        magicCookie.withUnsafeBytes { rawBuffer in
-            _ = AudioConverterSetProperty(
+        let cookieStatus = magicCookie.withUnsafeBytes { rawBuffer -> OSStatus in
+            guard let baseAddress = rawBuffer.baseAddress else {
+                return kAudio_ParamError
+            }
+            return AudioConverterSetProperty(
                 newConverter,
                 kAudioConverterDecompressionMagicCookie,
                 UInt32(magicCookie.count),
-                rawBuffer.baseAddress
+                baseAddress
+            )
+        }
+        guard cookieStatus == noErr else {
+            AudioConverterDispose(newConverter)
+            throw SessionFailure(
+                code: .webrtcNegotiationFailed,
+                message: L10n.tr("error.opus_decoder_unavailable")
             )
         }
 
