@@ -142,6 +142,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         BackendLabel = "内部処理を初期化しています...";
         StatusMessage = "起動準備をしています。";
         UpdateDiagnostics(new ConnectionDiagnostics(PathType: UsbTetheringDetector.ClassifyPrimaryPath()));
+        ResetAudioStreamDetails();
 
         if (initializeImmediately)
         {
@@ -172,6 +173,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string failureCodeLabel = "原因コード: -";
+
+    [ObservableProperty]
+    private string audioStreamSummaryLabel = "音声ストリーム: 待機中";
+
+    [ObservableProperty]
+    private string audioBufferingLabel = "送出整形: -";
+
+    [ObservableProperty]
+    private string audioHealthLabel = "統計: -";
 
     [ObservableProperty]
     private string verificationCode = string.Empty;
@@ -343,6 +353,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         SetStreamState(StreamState.Idle);
         SetFailureCode(null, clearWhenNull: true);
         UpdateDiagnostics(new ConnectionDiagnostics(PathType: UsbTetheringDetector.ClassifyPrimaryPath()));
+        ResetAudioStreamDetails();
 
         SelectedTransportMode = mode;
         StatusMessage = mode switch
@@ -376,6 +387,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         IsVerificationPending = false;
         CurrentSetupStep = SetupStep.PathDiagnosing;
         UpdateDiagnostics(new ConnectionDiagnostics(PathType: UsbTetheringDetector.ClassifyPrimaryPath()));
+        ResetAudioStreamDetails();
 
         var localOffer = await _bridge.CreateOfferAsync();
         UpdateDiagnosticsFromBridgeOr(localOffer.Diagnostics);
@@ -454,6 +466,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         SetStreamState(StreamState.Idle);
         SetFailureCode(null, clearWhenNull: true);
         UpdateDiagnostics(new ConnectionDiagnostics(PathType: UsbTetheringDetector.ClassifyPrimaryPath()));
+        ResetAudioStreamDetails();
         RefreshDiagnosticsFromBridge();
         CurrentSetupStep = SetupStep.ListenerScanInit;
         FlowStateLabel = "案内: 開始データを入力";
@@ -484,6 +497,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             PathType: UsbTetheringDetector.ClassifyPrimaryPath(),
             SelectedCandidatePairType: "udp_opus"
         ));
+        ResetAudioStreamDetails();
 
         try
         {
@@ -635,6 +649,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         SetFailureCode(null, clearWhenNull: true);
         SetStreamState(StreamState.Ended);
         UpdateDiagnostics(new ConnectionDiagnostics(PathType: UsbTetheringDetector.ClassifyPrimaryPath()));
+        ResetAudioStreamDetails();
     }
 
     public void Shutdown()
@@ -1363,6 +1378,48 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    private void OnLoopbackDiagnosticsChanged(object? sender, LoopbackAudioDiagnostics diagnostics)
+    {
+        RunOnUiThread(() => UpdateLoopbackDiagnostics(diagnostics));
+    }
+
+    private void UpdateLoopbackDiagnostics(LoopbackAudioDiagnostics diagnostics)
+    {
+        if (!diagnostics.IsActive)
+        {
+            ResetAudioStreamDetails();
+            return;
+        }
+
+        var transportLabel = SelectedTransportMode switch
+        {
+            TransportMode.WebRtc => "WebRTC / PCM",
+            TransportMode.UdpOpus => "UDP + Opus / PCM入力",
+            _ => "PCM"
+        };
+        var channelLabel = diagnostics.Channels switch
+        {
+            1 => "モノ",
+            2 => "ステレオ",
+            > 0 => $"{diagnostics.Channels}ch",
+            _ => "-"
+        };
+
+        AudioStreamSummaryLabel =
+            $"音声ストリーム: 送信 / {transportLabel} / {diagnostics.SampleRate:N0} Hz / {channelLabel} / {diagnostics.BitsPerSample}bit / {diagnostics.FrameDurationMs}ms";
+        AudioBufferingLabel =
+            $"送出整形: {diagnostics.FrameSamplesPerChannel} samples ({diagnostics.FramesPerSecond}fps), 送信待ち {diagnostics.PendingSendFrames}, PCM蓄積 {diagnostics.PendingPcmBytes} bytes";
+        AudioHealthLabel =
+            $"統計: 送信済み {diagnostics.SentFrames}, 失敗 {diagnostics.SendFailures}, キュー整理 {diagnostics.PendingSendDrops}, ペーシング {(diagnostics.PacingEnabled ? "有効" : "無効")}";
+    }
+
+    private void ResetAudioStreamDetails()
+    {
+        AudioStreamSummaryLabel = "音声ストリーム: 待機中";
+        AudioBufferingLabel = "送出整形: -";
+        AudioHealthLabel = "統計: -";
+    }
+
     private static bool HasMeaningfulDiagnostics(ConnectionDiagnostics diagnostics)
     {
         return diagnostics.PathType != NetworkPathType.Unknown ||
@@ -1775,12 +1832,24 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private ILoopbackAudioSender EnsureWebRtcLoopbackSender()
     {
-        return _webRtcLoopbackSender ??= _webRtcLoopbackSenderFactory();
+        if (_webRtcLoopbackSender is null)
+        {
+            _webRtcLoopbackSender = _webRtcLoopbackSenderFactory();
+            _webRtcLoopbackSender.DiagnosticsChanged += OnLoopbackDiagnosticsChanged;
+        }
+
+        return _webRtcLoopbackSender;
     }
 
     private ILoopbackAudioSender EnsureUdpLoopbackSender()
     {
-        return _udpLoopbackSender ??= _udpLoopbackSenderFactory();
+        if (_udpLoopbackSender is null)
+        {
+            _udpLoopbackSender = _udpLoopbackSenderFactory();
+            _udpLoopbackSender.DiagnosticsChanged += OnLoopbackDiagnosticsChanged;
+        }
+
+        return _udpLoopbackSender;
     }
 
     private static void StopLoopbackSender(ILoopbackAudioSender? sender)

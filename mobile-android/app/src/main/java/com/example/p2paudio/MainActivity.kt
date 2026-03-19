@@ -56,6 +56,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.example.p2paudio.logging.AppLogger
+import com.example.p2paudio.model.AudioStreamDiagnostics
+import com.example.p2paudio.model.AudioStreamSource
 import com.example.p2paudio.model.AudioStreamState
 import com.example.p2paudio.model.ConnectionDiagnostics
 import com.example.p2paudio.model.FailureCode
@@ -247,6 +249,8 @@ private fun MainScreen(
                 expirySeconds = expirySeconds
             )
 
+            AudioStreamCard(uiState.audioStreamDiagnostics)
+
             if (transientMessage.isNotBlank()) {
                 Text(
                     modifier = Modifier
@@ -322,6 +326,49 @@ private fun MainScreen(
             }
 
             TroubleshootingDetailsCard(uiState = uiState)
+        }
+    }
+}
+
+@Composable
+private fun AudioStreamCard(diagnostics: AudioStreamDiagnostics) {
+    if (!diagnostics.hasContent()) {
+        return
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "音声ストリーム",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = audioSourceLabel(diagnostics),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = "形式: ${diagnostics.sampleRate} Hz / ${channelLabel(diagnostics.channels)} / ${diagnostics.bitsPerSample}bit / ${diagnostics.frameDurationMs}ms (${diagnostics.frameSamplesPerChannel} samples)",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                text = "自動調整: ${bufferingModeLabel(diagnostics)}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "バッファ: 初期 ${diagnostics.startupTargetFrames} / 目標 ${diagnostics.targetPrebufferFrames} / 現在 ${diagnostics.queueDepthFrames} / AudioTrack ${diagnostics.audioTrackBufferFrames} フレーム",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                text = "揺らぎ: 約 ${diagnostics.estimatedJitterMs}ms / 補間 ${diagnostics.insertedSilenceFrames} / 遅着 ${diagnostics.staleFrameDrops} / 溢れ ${diagnostics.queueOverflowDrops} / underrun ${diagnostics.audioTrackUnderruns}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -1372,6 +1419,26 @@ private fun currentRoleLabel(setupMode: SetupMode): String = when (setupMode) {
 private fun currentTransportLabel(transportMode: TransportMode): String = when (transportMode) {
     TransportMode.WEBRTC -> "現在の転送モード: WebRTC"
     TransportMode.UDP_OPUS -> "現在の転送モード: UDP + Opus"
+}
+
+private fun audioSourceLabel(diagnostics: AudioStreamDiagnostics): String = when (diagnostics.source) {
+    AudioStreamSource.WEBRTC_RECEIVE -> "受信: WebRTC PCM"
+    AudioStreamSource.UDP_OPUS_RECEIVE -> "受信: UDP + Opus"
+    AudioStreamSource.NONE -> "受信: 待機中"
+}
+
+private fun bufferingModeLabel(diagnostics: AudioStreamDiagnostics): String {
+    return if (diagnostics.targetPrebufferFrames > diagnostics.basePrebufferFrames) {
+        "安定優先 (${diagnostics.basePrebufferFrames} → ${diagnostics.targetPrebufferFrames})"
+    } else {
+        "低遅延優先 (${diagnostics.targetPrebufferFrames} フレーム)"
+    }
+}
+
+private fun channelLabel(channels: Int): String = when (channels) {
+    1 -> "モノ"
+    2 -> "ステレオ"
+    else -> "${channels}ch"
 }
 
 private fun journeyLabels(setupMode: SetupMode, transportMode: TransportMode): List<Int> {

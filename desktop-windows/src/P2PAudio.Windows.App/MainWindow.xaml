@@ -600,6 +600,26 @@
                             FontSize="12"
                             Foreground="{ThemeResource SystemFillColorCriticalBrush}"
                             TextWrapping="Wrap" />
+                        <TextBlock
+                            Text="音声ストリーム"
+                            FontSize="11"
+                            Margin="0,8,0,0"
+                            Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                        <TextBlock
+                            Text="{x:Bind ViewModel.AudioStreamSummaryLabel, Mode=OneWay}"
+                            FontSize="12"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            TextWrapping="Wrap" />
+                        <TextBlock
+                            Text="{x:Bind ViewModel.AudioBufferingLabel, Mode=OneWay}"
+                            FontSize="12"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            TextWrapping="Wrap" />
+                        <TextBlock
+                            Text="{x:Bind ViewModel.AudioHealthLabel, Mode=OneWay}"
+                            FontSize="12"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            TextWrapping="Wrap" />
                     </StackPanel>
                 </Expander>
 

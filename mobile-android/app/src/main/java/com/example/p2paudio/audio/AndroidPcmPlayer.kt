@@ -4,20 +4,30 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Process
+import android.os.SystemClock
 import com.example.p2paudio.logging.AppLogger
+import com.example.p2paudio.model.AudioStreamDiagnostics
+import com.example.p2paudio.model.AudioStreamSource
 import java.util.PriorityQueue
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 
 class AndroidPcmPlayer(
+    private val source: AudioStreamSource,
     private val startupPrebufferFrames: Int = 3,
     private val steadyPrebufferFrames: Int = 3,
     private val maxQueueFrames: Int = 20,
-    private val minTrackBufferFrames: Int = 8
+    private val minTrackBufferFrames: Int = 8,
+    private val diagnosticsListener: (AudioStreamDiagnostics) -> Unit = {}
 ) {
     private val running = AtomicBoolean(false)
     private val lock = Object()
     private val pendingFrames = PriorityQueue<PcmFrame>(compareBy { it.sequence })
+    private val adaptiveBufferController = AdaptivePcmBufferController(
+        startupPrebufferFrames = startupPrebufferFrames,
+        steadyPrebufferFrames = steadyPrebufferFrames,
+        maxQueueFrames = maxQueueFrames
+    )
 
     private var playbackThread: Thread? = null
     private var audioTrack: AudioTrack? = null
@@ -29,14 +39,23 @@ class AndroidPcmPlayer(
     private var insertedSilenceFrames: Long = 0
     private var queueOverflowDrops: Long = 0
     private var staleFrameDrops: Long = 0
+    private var audioTrackUnderruns: Int = 0
+    private var lastObservedTrackUnderrunCount: Int = 0
+    private var currentSampleRate: Int = 0
+    private var currentChannels: Int = 0
+    private var currentBitsPerSample: Int = 0
+    private var currentFrameSamplesPerChannel: Int = 0
+    private var audioTrackBufferFrames: Int = 0
     private var lastStatsLogAtMs: Long = System.currentTimeMillis()
     private var lastWarningLogAtMs: Long = 0L
+    private var lastDiagnosticsDispatchAtMs: Long = 0L
 
     fun enqueue(frame: PcmFrame) {
         if (frame.pcmBytes.isEmpty()) {
             return
         }
 
+        val arrivalRealtimeMs = SystemClock.elapsedRealtime()
         synchronized(lock) {
             val formatKey = "${frame.sampleRate}-${frame.channels}-${frame.bitsPerSample}"
             if (lastFormatKey != null && lastFormatKey != formatKey) {
@@ -53,12 +72,21 @@ class AndroidPcmPlayer(
                 frameBytes = frame.pcmBytes.size
                 frameDurationMs = ((frame.frameSamplesPerChannel * 1000L) / frame.sampleRate).coerceAtLeast(1L)
                 lastFormatKey = formatKey
+                currentSampleRate = frame.sampleRate
+                currentChannels = frame.channels
+                currentBitsPerSample = frame.bitsPerSample
+                currentFrameSamplesPerChannel = frame.frameSamplesPerChannel
+                adaptiveBufferController.reset(frameDurationMs)
+                lastObservedTrackUnderrunCount = audioTrack?.underrunCount ?: 0
+                audioTrackBufferFrames = audioTrack?.bufferSizeInFrames ?: 0
             }
 
+            adaptiveBufferController.onFrameArrived(frame, arrivalRealtimeMs)
             pendingFrames.add(frame)
             if (pendingFrames.size > maxQueueFrames) {
                 pendingFrames.poll()
                 queueOverflowDrops++
+                adaptiveBufferController.onQueueOverflow()
                 logPlaybackWarning(
                     event = "player_queue_overflow",
                     message = "Dropped the oldest queued frame to cap playback latency",
@@ -71,12 +99,18 @@ class AndroidPcmPlayer(
             lock.notifyAll()
         }
 
+        publishDiagnosticsIfNeeded()
         if (running.compareAndSet(false, true)) {
             startPlaybackLoop()
         }
     }
 
     fun stop() {
+        var stopPlayedFrames: Long
+        var stopInsertedSilenceFrames: Long
+        var stopQueueOverflowDrops: Long
+        var stopStaleFrameDrops: Long
+        var stopAudioTrackUnderruns: Int
         running.set(false)
         synchronized(lock) {
             lock.notifyAll()
@@ -92,26 +126,35 @@ class AndroidPcmPlayer(
             )
         }
         synchronized(lock) {
+            stopPlayedFrames = playedFrames
+            stopInsertedSilenceFrames = insertedSilenceFrames
+            stopQueueOverflowDrops = queueOverflowDrops
+            stopStaleFrameDrops = staleFrameDrops
+            stopAudioTrackUnderruns = audioTrackUnderruns
             resetUnsafe()
+            playedFrames = 0
+            insertedSilenceFrames = 0
+            queueOverflowDrops = 0
+            staleFrameDrops = 0
+            audioTrackUnderruns = 0
+            lastStatsLogAtMs = System.currentTimeMillis()
+            lastWarningLogAtMs = 0L
+            lastDiagnosticsDispatchAtMs = 0L
         }
         playbackThread = null
+        diagnosticsListener(AudioStreamDiagnostics())
         AppLogger.i(
             "PcmPlayer",
             "player_stop",
             "PCM player stopped",
             context = mapOf(
-                "playedFrames" to playedFrames,
-                "insertedSilenceFrames" to insertedSilenceFrames,
-                "queueOverflowDrops" to queueOverflowDrops,
-                "staleFrameDrops" to staleFrameDrops
+                "playedFrames" to stopPlayedFrames,
+                "insertedSilenceFrames" to stopInsertedSilenceFrames,
+                "queueOverflowDrops" to stopQueueOverflowDrops,
+                "staleFrameDrops" to stopStaleFrameDrops,
+                "audioTrackUnderruns" to stopAudioTrackUnderruns
             )
         )
-        playedFrames = 0
-        insertedSilenceFrames = 0
-        queueOverflowDrops = 0
-        staleFrameDrops = 0
-        lastStatsLogAtMs = System.currentTimeMillis()
-        lastWarningLogAtMs = 0L
     }
 
     private fun startPlaybackLoop() {
@@ -122,6 +165,7 @@ class AndroidPcmPlayer(
                     var trackToWrite: AudioTrack? = null
                     var bytesToWrite: ByteArray? = null
                     var shouldContinue = false
+                    var queueDepthAfterWrite = 0
 
                     synchronized(lock) {
                         val track = audioTrack
@@ -136,6 +180,7 @@ class AndroidPcmPlayer(
                             } else {
                                 trackToWrite = track
                                 bytesToWrite = nextBytes
+                                queueDepthAfterWrite = pendingFrames.size
                             }
                         }
                     }
@@ -171,7 +216,12 @@ class AndroidPcmPlayer(
                         continue
                     }
 
-                    playedFrames++
+                    synchronized(lock) {
+                        playedFrames++
+                        adaptiveBufferController.onFramePlayed(queueDepthAfterWrite)
+                    }
+                    updateTrackUnderruns(track)
+                    publishDiagnosticsIfNeeded()
                     logStatsIfNeeded()
                 }
             } catch (_: InterruptedException) {
@@ -191,12 +241,16 @@ class AndroidPcmPlayer(
 
     private fun dequeueFrameUnsafe(): ByteArray? {
         if (pendingFrames.isEmpty()) {
+            if (expectedSequence != null) {
+                adaptiveBufferController.onPlaybackWait()
+            }
             return null
         }
 
+        val adaptiveSnapshot = adaptiveBufferController.snapshot()
         val expected = expectedSequence
         if (expected == null) {
-            if (pendingFrames.size < startupPrebufferFrames) {
+            if (pendingFrames.size < adaptiveSnapshot.startupTargetFrames) {
                 return null
             }
             val first = pendingFrames.poll() ?: return null
@@ -204,7 +258,6 @@ class AndroidPcmPlayer(
             return first.pcmBytes
         }
 
-        val prebufferReady = pendingFrames.size >= steadyPrebufferFrames
         while (pendingFrames.isNotEmpty()) {
             val head = pendingFrames.peek() ?: break
             if (head.sequence >= expected) {
@@ -212,6 +265,7 @@ class AndroidPcmPlayer(
             }
             pendingFrames.poll()
             staleFrameDrops++
+            adaptiveBufferController.onLateFrameDropped()
         }
 
         val head = pendingFrames.peek()
@@ -221,12 +275,14 @@ class AndroidPcmPlayer(
             return frame.pcmBytes
         }
 
-        if (!prebufferReady) {
+        if (pendingFrames.size < adaptiveSnapshot.targetPrebufferFrames) {
+            adaptiveBufferController.onPlaybackWait()
             return null
         }
 
         expectedSequence = expected + 1
         insertedSilenceFrames++
+        adaptiveBufferController.onGapConcealed()
         logPlaybackWarning(
             event = "player_gap_concealed",
             message = "Inserted silence for a missing PCM frame",
@@ -283,6 +339,53 @@ class AndroidPcmPlayer(
             .apply { play() }
     }
 
+    private fun updateTrackUnderruns(track: AudioTrack) {
+        val currentUnderrunCount = track.underrunCount
+        val underrunDelta = (currentUnderrunCount - lastObservedTrackUnderrunCount).coerceAtLeast(0)
+        if (underrunDelta <= 0) {
+            return
+        }
+
+        synchronized(lock) {
+            audioTrackUnderruns += underrunDelta
+            lastObservedTrackUnderrunCount = currentUnderrunCount
+            adaptiveBufferController.onAudioTrackUnderrun(underrunDelta)
+        }
+    }
+
+    private fun publishDiagnosticsIfNeeded(force: Boolean = false) {
+        val now = SystemClock.elapsedRealtime()
+        val diagnostics = synchronized(lock) {
+            if (!force && now - lastDiagnosticsDispatchAtMs < DIAGNOSTICS_DISPATCH_INTERVAL_MS) {
+                null
+            } else {
+                lastDiagnosticsDispatchAtMs = now
+                val adaptiveSnapshot = adaptiveBufferController.snapshot()
+                AudioStreamDiagnostics(
+                source = if (currentSampleRate > 0) source else AudioStreamSource.NONE,
+                sampleRate = currentSampleRate,
+                channels = currentChannels,
+                bitsPerSample = currentBitsPerSample,
+                frameSamplesPerChannel = currentFrameSamplesPerChannel,
+                frameDurationMs = frameDurationMs.toInt(),
+                startupTargetFrames = adaptiveSnapshot.startupTargetFrames,
+                targetPrebufferFrames = adaptiveSnapshot.targetPrebufferFrames,
+                basePrebufferFrames = adaptiveSnapshot.basePrebufferFrames,
+                maxQueueFrames = maxQueueFrames,
+                queueDepthFrames = pendingFrames.size,
+                audioTrackBufferFrames = audioTrackBufferFrames,
+                estimatedJitterMs = adaptiveSnapshot.estimatedJitterMs,
+                playedFrames = playedFrames,
+                insertedSilenceFrames = insertedSilenceFrames,
+                staleFrameDrops = staleFrameDrops,
+                queueOverflowDrops = queueOverflowDrops,
+                audioTrackUnderruns = audioTrackUnderruns
+            )
+            }
+        }
+        diagnostics?.let(diagnosticsListener)
+    }
+
     private fun waitForFramesUnsafe() {
         lock.wait(frameDurationMs)
     }
@@ -292,6 +395,13 @@ class AndroidPcmPlayer(
         expectedSequence = null
         lastFormatKey = null
         frameBytes = 0
+        frameDurationMs = 20
+        currentSampleRate = 0
+        currentChannels = 0
+        currentBitsPerSample = 0
+        currentFrameSamplesPerChannel = 0
+        audioTrackBufferFrames = 0
+        lastObservedTrackUnderrunCount = 0
         audioTrack?.runCatching {
             pause()
             flush()
@@ -299,6 +409,7 @@ class AndroidPcmPlayer(
             release()
         }
         audioTrack = null
+        adaptiveBufferController.reset(frameDurationMs)
     }
 
     private fun logPlaybackWarning(event: String, message: String, context: Map<String, Any?>) {
@@ -311,29 +422,40 @@ class AndroidPcmPlayer(
     }
 
     private fun logStatsIfNeeded() {
-        val now = System.currentTimeMillis()
-        if (now - lastStatsLogAtMs < STATS_LOG_INTERVAL_MS) {
-            return
+        val diagnostics = synchronized(lock) {
+            val now = System.currentTimeMillis()
+            if (now - lastStatsLogAtMs < STATS_LOG_INTERVAL_MS) {
+                null
+            } else {
+                lastStatsLogAtMs = now
+                val adaptiveSnapshot = adaptiveBufferController.snapshot()
+                mapOf(
+                    "playedFrames" to playedFrames,
+                    "insertedSilenceFrames" to insertedSilenceFrames,
+                    "queueOverflowDrops" to queueOverflowDrops,
+                    "staleFrameDrops" to staleFrameDrops,
+                    "queueDepth" to pendingFrames.size,
+                    "targetPrebufferFrames" to adaptiveSnapshot.targetPrebufferFrames,
+                    "estimatedJitterMs" to adaptiveSnapshot.estimatedJitterMs,
+                    "audioTrackUnderruns" to audioTrackUnderruns
+                )
+            }
         }
 
-        lastStatsLogAtMs = now
-        AppLogger.d(
-            "PcmPlayer",
-            "player_stats",
-            "PCM player stats",
-            context = mapOf(
-                "playedFrames" to playedFrames,
-                "insertedSilenceFrames" to insertedSilenceFrames,
-                "queueOverflowDrops" to queueOverflowDrops,
-                "staleFrameDrops" to staleFrameDrops,
-                "queueDepth" to synchronized(lock) { pendingFrames.size }
+        diagnostics?.let {
+            AppLogger.d(
+                "PcmPlayer",
+                "player_stats",
+                "PCM player stats",
+                context = it
             )
-        )
+        }
     }
 
     companion object {
         private const val PLAYBACK_STOP_JOIN_TIMEOUT_MS = 500L
         private const val STATS_LOG_INTERVAL_MS = 5_000L
         private const val WARNING_LOG_INTERVAL_MS = 1_000L
+        private const val DIAGNOSTICS_DISPATCH_INTERVAL_MS = 250L
     }
 }

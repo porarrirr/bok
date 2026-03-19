@@ -16,6 +16,8 @@ import com.example.p2paudio.audio.AndroidPcmSender
 import com.example.p2paudio.capture.AndroidAudioCaptureManager
 import com.example.p2paudio.capture.AudioCaptureRuntime
 import com.example.p2paudio.logging.AppLogger
+import com.example.p2paudio.model.AudioStreamDiagnostics
+import com.example.p2paudio.model.AudioStreamSource
 import com.example.p2paudio.model.AudioStreamState
 import com.example.p2paudio.model.ConnectionDiagnostics
 import com.example.p2paudio.model.FailureCode
@@ -49,12 +51,17 @@ import kotlinx.coroutines.launch
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val captureRuntime = AudioCaptureRuntime
-    private val pcmPlayer = AndroidPcmPlayer()
+    private val pcmPlayer = AndroidPcmPlayer(
+        source = AudioStreamSource.WEBRTC_RECEIVE,
+        diagnosticsListener = ::onAudioStreamDiagnosticsChanged
+    )
     private val udpPcmPlayer = AndroidPcmPlayer(
+        source = AudioStreamSource.UDP_OPUS_RECEIVE,
         startupPrebufferFrames = 2,
-        steadyPrebufferFrames = 1,
-        maxQueueFrames = 8,
-        minTrackBufferFrames = 4
+        steadyPrebufferFrames = 2,
+        maxQueueFrames = 12,
+        minTrackBufferFrames = 6,
+        diagnosticsListener = ::onAudioStreamDiagnosticsChanged
     )
     private var pcmSender: AndroidPcmSender? = null
     private var playbackMessageShown = false
@@ -170,6 +177,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 verificationCode = "",
                 pendingAnswerSdp = "",
                 activeSessionId = "",
+                audioStreamDiagnostics = AudioStreamDiagnostics(),
                 failure = null,
                 statusMessage = text(R.string.status_sender_prepare)
             )
@@ -193,6 +201,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 verificationCode = "",
                 pendingAnswerSdp = "",
                 activeSessionId = "",
+                audioStreamDiagnostics = AudioStreamDiagnostics(),
                 failure = null,
                 statusMessage = text(R.string.status_listener_ready_to_scan)
             )
@@ -256,6 +265,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     TransportMode.WEBRTC -> text(R.string.status_ready)
                     TransportMode.UDP_OPUS -> text(R.string.status_udp_ready)
                 },
+                audioStreamDiagnostics = AudioStreamDiagnostics(),
                 failure = null
             )
         }
@@ -1110,6 +1120,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 verificationCode = "",
                 pendingAnswerSdp = "",
                 activeSessionId = "",
+                audioStreamDiagnostics = AudioStreamDiagnostics(),
                 failure = null,
                 streamState = AudioStreamState.IDLE,
                 statusMessage = text(R.string.status_udp_listener_ready_to_scan)
@@ -1137,6 +1148,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
             _uiState.update { it.copy(statusMessage = statusMessage) }
         }
+    }
+
+    private fun onAudioStreamDiagnosticsChanged(diagnostics: AudioStreamDiagnostics) {
+        _uiState.update { it.copy(audioStreamDiagnostics = diagnostics) }
     }
 
     private fun entryState(statusMessage: String, failure: SessionFailure? = null): MainUiState {

@@ -256,7 +256,7 @@ offer_result session_controller::create_offer() {
     diagnostics_.failure_hint.clear();
 
     rtcDataChannelInit data_channel_init{};
-    data_channel_init.reliability.unordered = false;
+    data_channel_init.reliability.unordered = true;
     data_channel_init.reliability.unreliable = true;
     data_channel_init.reliability.maxRetransmits = 0;
     data_channel_id_ = rtcCreateDataChannelEx(peer_connection_id_, "audio-pcm", &data_channel_init);

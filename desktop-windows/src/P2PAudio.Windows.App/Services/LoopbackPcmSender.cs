@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using NAudio.Wave;
 using P2PAudio.Windows.App.Logging;
 using P2PAudio.Windows.Core.Audio;
@@ -7,16 +8,23 @@ namespace P2PAudio.Windows.App.Services;
 public sealed class LoopbackPcmSender : ILoopbackAudioSender
 {
     private const long StatsLogIntervalMs = 5_000;
+    private const long DiagnosticsPublishIntervalMs = 250;
     private const int DefaultFramesPerSecond = 50;
     private const int ResampleBufferBytes = 16_384;
+    private const int MaxPendingSendFrames = 12;
+    private const int SendLoopStopTimeoutMs = 1_000;
 
     private readonly Func<PcmFrame, bool> _sendFrame;
     private readonly object _sync = new();
     private readonly LoopbackCaptureOptions _options;
+    private readonly AudioFrameTimingClock _frameTimingClock = new();
     private readonly List<byte> _pendingPcm16 = [];
     private WasapiLoopbackCapture? _capture;
     private BufferedWaveProvider? _resampleInputBuffer;
     private MediaFoundationResampler? _resampler;
+    private BlockingCollection<PendingFrame>? _pendingSendQueue;
+    private CancellationTokenSource? _sendLoopCts;
+    private Task? _sendLoopTask;
     private int _sampleRate;
     private int _channels;
     private int _frameSamples;
@@ -24,8 +32,11 @@ public sealed class LoopbackPcmSender : ILoopbackAudioSender
     private bool _isRunning;
     private long _sentFrames;
     private long _sendFailures;
+    private long _pendingSendDrops;
     private long _lastStatsLogAtMs = Environment.TickCount64;
     private long _lastSendFailureLogAtMs;
+    private long _lastQueueDropLogAtMs;
+    private long _lastDiagnosticsPublishedAtMs;
 
     public LoopbackPcmSender(Func<byte[], bool> sendPacket)
         : this(frame => sendPacket(PcmPacketCodec.Encode(frame)))
@@ -37,6 +48,8 @@ public sealed class LoopbackPcmSender : ILoopbackAudioSender
         _sendFrame = sendFrame ?? throw new ArgumentNullException(nameof(sendFrame));
         _options = options ?? new LoopbackCaptureOptions();
     }
+
+    public event EventHandler<LoopbackAudioDiagnostics>? DiagnosticsChanged;
 
     public bool IsRunning
     {
@@ -51,74 +64,143 @@ public sealed class LoopbackPcmSender : ILoopbackAudioSender
 
     public void Start()
     {
-        lock (_sync)
+        WasapiLoopbackCapture? capture = null;
+        LoopbackAudioDiagnostics diagnostics;
+        SendLoopHandle sendLoopHandle = new(null, null, null);
+        int inputSampleRate = 0;
+        int outputSampleRate = 0;
+        int channels = 0;
+        int bitsPerSample = 0;
+        string encoding = string.Empty;
+
+        try
         {
-            if (_isRunning)
+            lock (_sync)
             {
-                return;
+                if (_isRunning)
+                {
+                    return;
+                }
+
+                capture = new WasapiLoopbackCapture();
+                _capture = capture;
+                _sampleRate = ResolveOutputSampleRate(capture.WaveFormat.SampleRate);
+                _channels = PcmCaptureNormalizer.GetOutputChannels(capture.WaveFormat.Channels);
+                _frameSamples = Math.Max(1, _sampleRate / _options.FramesPerSecond);
+                _sequence = 0;
+                ResetTelemetryUnsafe();
+                _pendingPcm16.Clear();
+                ConfigureResamplerUnsafe(capture.WaveFormat.SampleRate, _channels);
+                _frameTimingClock.Reset(
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    Environment.TickCount64
+                );
+
+                _pendingSendQueue = new BlockingCollection<PendingFrame>(
+                    new ConcurrentQueue<PendingFrame>(),
+                    MaxPendingSendFrames
+                );
+                _sendLoopCts = new CancellationTokenSource();
+                _sendLoopTask = Task.Run(() => SendLoopAsync(_pendingSendQueue, _sendLoopCts.Token));
+
+                capture.DataAvailable += OnDataAvailable;
+                capture.RecordingStopped += OnRecordingStopped;
+                capture.StartRecording();
+
+                _isRunning = true;
+                diagnostics = BuildDiagnosticsUnsafe();
+                inputSampleRate = capture.WaveFormat.SampleRate;
+                outputSampleRate = _sampleRate;
+                channels = _channels;
+                bitsPerSample = capture.WaveFormat.BitsPerSample;
+                encoding = capture.WaveFormat.Encoding.ToString();
+            }
+        }
+        catch
+        {
+            if (capture is not null)
+            {
+                capture.DataAvailable -= OnDataAvailable;
+                capture.RecordingStopped -= OnRecordingStopped;
+                capture.Dispose();
             }
 
-            _capture = new WasapiLoopbackCapture();
-            _sampleRate = ResolveOutputSampleRate(_capture.WaveFormat.SampleRate);
-            _channels = PcmCaptureNormalizer.GetOutputChannels(_capture.WaveFormat.Channels);
-            _frameSamples = Math.Max(1, _sampleRate / _options.FramesPerSecond);
-            _sequence = 0;
-            _sentFrames = 0;
-            _sendFailures = 0;
-            _lastStatsLogAtMs = Environment.TickCount64;
-            _lastSendFailureLogAtMs = 0;
-            _pendingPcm16.Clear();
-            ConfigureResamplerUnsafe(_capture.WaveFormat.SampleRate, _channels);
+            lock (_sync)
+            {
+                _capture = null;
+                DisposeResamplerUnsafe();
+                sendLoopHandle = DetachSendLoopUnsafe();
+                ResetTelemetryUnsafe();
+                ResetAudioFormatUnsafe();
+            }
 
-            _capture.DataAvailable += OnDataAvailable;
-            _capture.RecordingStopped += OnRecordingStopped;
-            _capture.StartRecording();
-            _isRunning = true;
-
-            AppLogger.I(
-                "LoopbackSender",
-                "capture_started",
-                "WASAPI loopback capture started",
-                new Dictionary<string, object?>
-                {
-                    ["inputSampleRate"] = _capture.WaveFormat.SampleRate,
-                    ["outputSampleRate"] = _sampleRate,
-                    ["channels"] = _channels,
-                    ["bitsPerSample"] = _capture.WaveFormat.BitsPerSample,
-                    ["encoding"] = _capture.WaveFormat.Encoding.ToString()
-                }
-            );
+            StopSendLoop(sendLoopHandle);
+            throw;
         }
+
+        PublishDiagnostics(diagnostics, force: true);
+        AppLogger.I(
+            "LoopbackSender",
+            "capture_started",
+            "WASAPI loopback capture started",
+            new Dictionary<string, object?>
+            {
+                ["inputSampleRate"] = inputSampleRate,
+                ["outputSampleRate"] = outputSampleRate,
+                ["channels"] = channels,
+                ["bitsPerSample"] = bitsPerSample,
+                ["encoding"] = encoding,
+                ["framesPerSecond"] = _options.FramesPerSecond
+            }
+        );
     }
 
     public void Stop()
     {
         WasapiLoopbackCapture? capture;
+        SendLoopHandle sendLoopHandle;
+        LoopbackAudioDiagnostics diagnostics;
+        long sentFrames;
+        long sendFailures;
+        long pendingSendDrops;
+
         lock (_sync)
         {
-            if (!_isRunning)
+            if (!_isRunning && _capture is null && _pendingSendQueue is null)
             {
                 return;
             }
 
             capture = _capture;
+            if (capture is not null)
+            {
+                capture.DataAvailable -= OnDataAvailable;
+                capture.RecordingStopped -= OnRecordingStopped;
+            }
+
             _capture = null;
             _isRunning = false;
+            _pendingPcm16.Clear();
+            DisposeResamplerUnsafe();
+            sendLoopHandle = DetachSendLoopUnsafe();
+
+            sentFrames = _sentFrames;
+            sendFailures = _sendFailures;
+            pendingSendDrops = _pendingSendDrops;
+
+            ResetTelemetryUnsafe();
+            ResetAudioFormatUnsafe();
+            diagnostics = BuildDiagnosticsUnsafe();
         }
 
         if (capture is not null)
         {
-            capture.DataAvailable -= OnDataAvailable;
-            capture.RecordingStopped -= OnRecordingStopped;
             capture.StopRecording();
             capture.Dispose();
         }
 
-        lock (_sync)
-        {
-            _pendingPcm16.Clear();
-            DisposeResamplerUnsafe();
-        }
+        StopSendLoop(sendLoopHandle);
+        PublishDiagnostics(diagnostics, force: true);
 
         AppLogger.I(
             "LoopbackSender",
@@ -126,8 +208,9 @@ public sealed class LoopbackPcmSender : ILoopbackAudioSender
             "WASAPI loopback capture stopped",
             new Dictionary<string, object?>
             {
-                ["sentFrames"] = _sentFrames,
-                ["sendFailures"] = _sendFailures
+                ["sentFrames"] = sentFrames,
+                ["sendFailures"] = sendFailures,
+                ["pendingSendDrops"] = pendingSendDrops
             }
         );
     }
@@ -139,7 +222,7 @@ public sealed class LoopbackPcmSender : ILoopbackAudioSender
 
     private void OnDataAvailable(object? sender, WaveInEventArgs e)
     {
-        List<PendingFrame> framesToSend;
+        List<PendingFrame> framesToQueue;
         lock (_sync)
         {
             if (!_isRunning || _capture is null)
@@ -148,50 +231,33 @@ public sealed class LoopbackPcmSender : ILoopbackAudioSender
             }
 
             AppendAsPcm16(e.Buffer, e.BytesRecorded, _capture.WaveFormat);
-            framesToSend = DrainFramesUnsafe();
+            framesToQueue = DrainFramesUnsafe();
         }
 
-        foreach (var pendingFrame in framesToSend)
-        {
-            if (_sendFrame(pendingFrame.Frame))
-            {
-                _sentFrames++;
-                continue;
-            }
-
-            _sendFailures++;
-            var now = Environment.TickCount64;
-            if (now - _lastSendFailureLogAtMs >= 1_000)
-            {
-                _lastSendFailureLogAtMs = now;
-                AppLogger.W(
-                    "LoopbackSender",
-                    "pcm_send_failed",
-                    "Failed to send loopback PCM frame",
-                    new Dictionary<string, object?>
-                    {
-                        ["sequence"] = pendingFrame.Frame.Sequence,
-                        ["sampleRate"] = pendingFrame.Frame.SampleRate,
-                        ["channels"] = pendingFrame.Frame.Channels,
-                        ["frameSamplesPerChannel"] = pendingFrame.Frame.FrameSamplesPerChannel,
-                        ["sendFailures"] = _sendFailures
-                    }
-                );
-            }
-        }
-
+        EnqueueFrames(framesToQueue);
         LogStatsIfNeeded();
+        PublishDiagnosticsIfNeeded();
     }
 
     private void OnRecordingStopped(object? sender, StoppedEventArgs e)
     {
+        SendLoopHandle sendLoopHandle;
+        LoopbackAudioDiagnostics diagnostics;
+
         lock (_sync)
         {
             _isRunning = false;
             _capture = null;
             _pendingPcm16.Clear();
             DisposeResamplerUnsafe();
+            sendLoopHandle = DetachSendLoopUnsafe();
+            ResetTelemetryUnsafe();
+            ResetAudioFormatUnsafe();
+            diagnostics = BuildDiagnosticsUnsafe();
         }
+
+        StopSendLoop(sendLoopHandle);
+        PublishDiagnostics(diagnostics, force: true);
 
         if (e.Exception is not null)
         {
@@ -304,36 +370,183 @@ public sealed class LoopbackPcmSender : ILoopbackAudioSender
         {
             var pcm = _pendingPcm16.GetRange(0, frameBytes).ToArray();
             _pendingPcm16.RemoveRange(0, frameBytes);
+            var timing = _frameTimingClock.Next(_sampleRate, _frameSamples);
 
             frames.Add(new PendingFrame(
                 new PcmFrame(
                     Sequence: _sequence++,
-                    TimestampMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    TimestampMs: timing.TimestampMs,
                     SampleRate: _sampleRate,
                     Channels: _channels,
                     BitsPerSample: 16,
                     FrameSamplesPerChannel: _frameSamples,
                     PcmBytes: pcm
-                )
+                ),
+                timing.DueAtTickMs
             ));
         }
 
         return frames;
     }
 
-    private void LogStatsIfNeeded()
+    private void EnqueueFrames(IEnumerable<PendingFrame> frames)
     {
-        var now = Environment.TickCount64;
-        if (now - _lastStatsLogAtMs < StatsLogIntervalMs)
+        foreach (var pendingFrame in frames)
         {
-            return;
+            if (!TryEnqueueFrame(pendingFrame))
+            {
+                return;
+            }
         }
+    }
 
-        _lastStatsLogAtMs = now;
-        int pendingPcmBytes;
+    private bool TryEnqueueFrame(PendingFrame pendingFrame)
+    {
+        BlockingCollection<PendingFrame>? queue;
         lock (_sync)
         {
-            pendingPcmBytes = _pendingPcm16.Count;
+            if (!_isRunning)
+            {
+                return false;
+            }
+
+            queue = _pendingSendQueue;
+        }
+
+        if (queue is null || queue.IsAddingCompleted)
+        {
+            return false;
+        }
+
+        while (!queue.TryAdd(pendingFrame))
+        {
+            if (!queue.TryTake(out var droppedFrame))
+            {
+                return false;
+            }
+
+            long pendingSendDrops;
+            var shouldLog = false;
+            lock (_sync)
+            {
+                _pendingSendDrops++;
+                pendingSendDrops = _pendingSendDrops;
+                var now = Environment.TickCount64;
+                if (now - _lastQueueDropLogAtMs >= 1_000)
+                {
+                    _lastQueueDropLogAtMs = now;
+                    shouldLog = true;
+                }
+            }
+
+            if (shouldLog)
+            {
+                AppLogger.W(
+                    "LoopbackSender",
+                    "sender_queue_overflow",
+                    "Dropped the oldest pending frame to keep sender latency bounded",
+                    new Dictionary<string, object?>
+                    {
+                        ["droppedSequence"] = droppedFrame.Frame.Sequence,
+                        ["pendingSendDrops"] = pendingSendDrops
+                    }
+                );
+            }
+        }
+
+        return true;
+    }
+
+    private async Task SendLoopAsync(
+        BlockingCollection<PendingFrame> pendingSendQueue,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            foreach (var pendingFrame in pendingSendQueue.GetConsumingEnumerable(cancellationToken))
+            {
+                var delayMs = pendingFrame.DueAtTickMs - Environment.TickCount64;
+                if (delayMs > 0)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(delayMs), cancellationToken);
+                }
+
+                var success = false;
+                string? exceptionMessage = null;
+                try
+                {
+                    success = _sendFrame(pendingFrame.Frame);
+                }
+                catch (Exception ex)
+                {
+                    exceptionMessage = ex.Message;
+                }
+
+                long sendFailures;
+                var shouldLogFailure = false;
+                lock (_sync)
+                {
+                    if (success)
+                    {
+                        _sentFrames++;
+                    }
+                    else
+                    {
+                        _sendFailures++;
+                        var now = Environment.TickCount64;
+                        if (now - _lastSendFailureLogAtMs >= 1_000)
+                        {
+                            _lastSendFailureLogAtMs = now;
+                            shouldLogFailure = true;
+                        }
+                    }
+
+                    sendFailures = _sendFailures;
+                }
+
+                if (!success && shouldLogFailure)
+                {
+                    AppLogger.W(
+                        "LoopbackSender",
+                        "pcm_send_failed",
+                        "Failed to send loopback PCM frame",
+                        new Dictionary<string, object?>
+                        {
+                            ["sequence"] = pendingFrame.Frame.Sequence,
+                            ["sampleRate"] = pendingFrame.Frame.SampleRate,
+                            ["channels"] = pendingFrame.Frame.Channels,
+                            ["frameSamplesPerChannel"] = pendingFrame.Frame.FrameSamplesPerChannel,
+                            ["sendFailures"] = sendFailures,
+                            ["exception"] = exceptionMessage
+                        }
+                    );
+                }
+
+                LogStatsIfNeeded();
+                PublishDiagnosticsIfNeeded();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    private void LogStatsIfNeeded()
+    {
+        LoopbackAudioDiagnostics diagnostics;
+        lock (_sync)
+        {
+            var now = Environment.TickCount64;
+            if (now - _lastStatsLogAtMs < StatsLogIntervalMs)
+            {
+                return;
+            }
+
+            _lastStatsLogAtMs = now;
+            diagnostics = BuildDiagnosticsUnsafe();
         }
 
         AppLogger.D(
@@ -342,16 +555,137 @@ public sealed class LoopbackPcmSender : ILoopbackAudioSender
             "Loopback sender stats",
             new Dictionary<string, object?>
             {
-                ["sentFrames"] = _sentFrames,
-                ["sendFailures"] = _sendFailures,
-                ["pendingPcmBytes"] = pendingPcmBytes,
-                ["sampleRate"] = _sampleRate,
-                ["channels"] = _channels
+                ["sentFrames"] = diagnostics.SentFrames,
+                ["sendFailures"] = diagnostics.SendFailures,
+                ["pendingPcmBytes"] = diagnostics.PendingPcmBytes,
+                ["pendingSendFrames"] = diagnostics.PendingSendFrames,
+                ["pendingSendDrops"] = diagnostics.PendingSendDrops,
+                ["sampleRate"] = diagnostics.SampleRate,
+                ["channels"] = diagnostics.Channels,
+                ["frameDurationMs"] = diagnostics.FrameDurationMs
             }
         );
     }
 
-    private sealed record PendingFrame(PcmFrame Frame);
+    private void PublishDiagnosticsIfNeeded(bool force = false)
+    {
+        LoopbackAudioDiagnostics diagnostics;
+        EventHandler<LoopbackAudioDiagnostics>? handler;
+
+        lock (_sync)
+        {
+            if (!force)
+            {
+                var now = Environment.TickCount64;
+                if (now - _lastDiagnosticsPublishedAtMs < DiagnosticsPublishIntervalMs)
+                {
+                    return;
+                }
+
+                _lastDiagnosticsPublishedAtMs = now;
+            }
+            else
+            {
+                _lastDiagnosticsPublishedAtMs = Environment.TickCount64;
+            }
+
+            diagnostics = BuildDiagnosticsUnsafe();
+            handler = DiagnosticsChanged;
+        }
+
+        handler?.Invoke(this, diagnostics);
+    }
+
+    private void PublishDiagnostics(LoopbackAudioDiagnostics diagnostics, bool force)
+    {
+        EventHandler<LoopbackAudioDiagnostics>? handler;
+        lock (_sync)
+        {
+            if (force)
+            {
+                _lastDiagnosticsPublishedAtMs = Environment.TickCount64;
+            }
+
+            handler = DiagnosticsChanged;
+        }
+
+        handler?.Invoke(this, diagnostics);
+    }
+
+    private LoopbackAudioDiagnostics BuildDiagnosticsUnsafe()
+    {
+        var frameDurationMs = _sampleRate <= 0 || _frameSamples <= 0
+            ? 0
+            : Math.Max(1, (int)Math.Round((_frameSamples * 1000d) / _sampleRate));
+
+        return new LoopbackAudioDiagnostics(
+            IsActive: _isRunning,
+            SampleRate: _sampleRate,
+            Channels: _channels,
+            BitsPerSample: _sampleRate > 0 ? 16 : 0,
+            FrameSamplesPerChannel: _frameSamples,
+            FrameDurationMs: frameDurationMs,
+            FramesPerSecond: _options.FramesPerSecond,
+            PendingPcmBytes: _pendingPcm16.Count,
+            PendingSendFrames: _pendingSendQueue?.Count ?? 0,
+            SentFrames: _sentFrames,
+            SendFailures: _sendFailures,
+            PendingSendDrops: _pendingSendDrops,
+            PacingEnabled: true
+        );
+    }
+
+    private void ResetTelemetryUnsafe()
+    {
+        _sentFrames = 0;
+        _sendFailures = 0;
+        _pendingSendDrops = 0;
+        _lastStatsLogAtMs = Environment.TickCount64;
+        _lastSendFailureLogAtMs = 0;
+        _lastQueueDropLogAtMs = 0;
+        _lastDiagnosticsPublishedAtMs = 0;
+    }
+
+    private void ResetAudioFormatUnsafe()
+    {
+        _sampleRate = 0;
+        _channels = 0;
+        _frameSamples = 0;
+    }
+
+    private SendLoopHandle DetachSendLoopUnsafe()
+    {
+        var handle = new SendLoopHandle(_pendingSendQueue, _sendLoopCts, _sendLoopTask);
+        _pendingSendQueue = null;
+        _sendLoopCts = null;
+        _sendLoopTask = null;
+        return handle;
+    }
+
+    private static void StopSendLoop(SendLoopHandle handle)
+    {
+        handle.Queue?.CompleteAdding();
+        handle.Cancellation?.Cancel();
+
+        try
+        {
+            handle.Task?.Wait(SendLoopStopTimeoutMs);
+        }
+        catch (AggregateException)
+        {
+        }
+
+        handle.Queue?.Dispose();
+        handle.Cancellation?.Dispose();
+    }
+
+    private sealed record PendingFrame(PcmFrame Frame, long DueAtTickMs);
+
+    private sealed record SendLoopHandle(
+        BlockingCollection<PendingFrame>? Queue,
+        CancellationTokenSource? Cancellation,
+        Task? Task
+    );
 }
 
 public sealed class LoopbackCaptureOptions

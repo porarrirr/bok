@@ -640,6 +640,44 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task SenderDiagnostics_LoopbackStats_AreDisplayed()
+    {
+        var bridge = new FakeWebRtcBridge();
+        var loopbackSender = new FakeLoopbackAudioSender();
+        var viewModel = CreateViewModel(
+            bridge: bridge,
+            webRtcLoopbackSender: loopbackSender
+        );
+
+        await viewModel.StartSenderAsync();
+        await viewModel.ProcessInputPayloadAsync(MakeConfirmPayload());
+        await viewModel.ApproveVerificationAndConnectAsync();
+
+        loopbackSender.EmitDiagnostics(new LoopbackAudioDiagnostics(
+            IsActive: true,
+            SampleRate: 48_000,
+            Channels: 2,
+            BitsPerSample: 16,
+            FrameSamplesPerChannel: 960,
+            FrameDurationMs: 20,
+            FramesPerSecond: 50,
+            PendingPcmBytes: 3_840,
+            PendingSendFrames: 2,
+            SentFrames: 24,
+            SendFailures: 1,
+            PendingSendDrops: 3,
+            PacingEnabled: true
+        ));
+
+        Assert.Contains("48,000", viewModel.AudioStreamSummaryLabel);
+        Assert.Contains("ステレオ", viewModel.AudioStreamSummaryLabel);
+        Assert.Contains("送信待ち 2", viewModel.AudioBufferingLabel);
+        Assert.Contains("失敗 1", viewModel.AudioHealthLabel);
+        Assert.Contains("キュー整理 3", viewModel.AudioHealthLabel);
+        viewModel.Shutdown();
+    }
+
+    [Fact]
     public async Task StartSender_UdpMode_ConnectionCodeFailure_Fails()
     {
         var connectionCodeFactory = new FakeConnectionCodeSessionFactory
@@ -1170,6 +1208,8 @@ public sealed class MainViewModelTests
     {
         public bool IsRunning { get; private set; }
 
+        public event EventHandler<LoopbackAudioDiagnostics>? DiagnosticsChanged;
+
         public int StartCalls { get; private set; }
 
         public int StopCalls { get; private set; }
@@ -1195,6 +1235,11 @@ public sealed class MainViewModelTests
             }
 
             IsRunning = false;
+        }
+
+        public void EmitDiagnostics(LoopbackAudioDiagnostics diagnostics)
+        {
+            DiagnosticsChanged?.Invoke(this, diagnostics);
         }
 
         public void Dispose()

@@ -1,6 +1,7 @@
 package com.example.p2paudio.ui
 
 import com.example.p2paudio.model.AudioStreamState
+import com.example.p2paudio.model.AudioStreamDiagnostics
 import com.example.p2paudio.model.ConnectionDiagnostics
 import com.example.p2paudio.model.SessionFailure
 import com.example.p2paudio.transport.TransportMode
@@ -19,6 +20,7 @@ data class MainUiState(
     val pendingAnswerSdp: String = "",
     val activeSessionId: String = "",
     val failure: SessionFailure? = null,
+    val audioStreamDiagnostics: AudioStreamDiagnostics = AudioStreamDiagnostics(),
     val connectionDiagnostics: ConnectionDiagnostics = ConnectionDiagnostics()
 )
 
