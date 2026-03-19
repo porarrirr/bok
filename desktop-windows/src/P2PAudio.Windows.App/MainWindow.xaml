@@ -172,6 +172,30 @@
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                 TextWrapping="Wrap" />
                         </StackPanel>
+                        <StackPanel
+                            x:Name="UdpOpusFrameDurationPanel"
+                            Spacing="6"
+                            Visibility="Collapsed">
+                            <TextBlock
+                                Text="Opus フレーム長"
+                                FontSize="12"
+                                FontWeight="SemiBold"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <ComboBox
+                                x:Name="UdpOpusFrameDurationComboBox"
+                                SelectionChanged="OnUdpOpusFrameDurationSelectionChanged"
+                                SelectedIndex="{x:Bind ViewModel.SelectedUdpOpusFrameDurationIndex, Mode=OneWay}"
+                                IsEnabled="{x:Bind ViewModel.CanConfigureUdpOpusFrameDuration, Mode=OneWay}">
+                                <ComboBoxItem Content="5 ms" />
+                                <ComboBoxItem Content="10 ms" />
+                                <ComboBoxItem Content="20 ms" />
+                            </ComboBox>
+                            <TextBlock
+                                Text="{x:Bind ViewModel.UdpOpusFrameDurationDescription, Mode=OneWay}"
+                                FontSize="12"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
                         <Grid ColumnSpacing="14">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />

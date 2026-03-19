@@ -114,6 +114,9 @@ public sealed partial class MainWindow : Window
             : Visibility.Collapsed;
         ListenerScanInitCard.Visibility = !hideSetupCards && step == SetupStep.ListenerScanInit ? Visibility.Visible : Visibility.Collapsed;
         ListenerShowConfirmCard.Visibility = !hideSetupCards && step == SetupStep.ListenerShowConfirm ? Visibility.Visible : Visibility.Collapsed;
+        UdpOpusFrameDurationPanel.Visibility = ViewModel.SelectedTransportMode == TransportMode.UdpOpus
+            ? Visibility.Visible
+            : Visibility.Collapsed;
 
         var showFailure = streamState is StreamState.Failed or StreamState.Interrupted
             || !string.IsNullOrEmpty(ViewModel.FailureHintLabel);
@@ -165,6 +168,19 @@ public sealed partial class MainWindow : Window
         ViewModel.SelectTransportMode(TransportModeComboBox.SelectedIndex == 1
             ? TransportMode.UdpOpus
             : TransportMode.WebRtc);
+    }
+
+    private void OnUdpOpusFrameDurationSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        var frameDurationMs = UdpOpusFrameDurationComboBox.SelectedIndex switch
+        {
+            0 => 5,
+            1 => 10,
+            _ => 20
+        };
+        ViewModel.SelectUdpOpusFrameDuration(frameDurationMs);
     }
 
     private async void OnPastePayloadClick(object sender, RoutedEventArgs e)

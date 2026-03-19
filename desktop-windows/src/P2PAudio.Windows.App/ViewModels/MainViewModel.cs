@@ -14,6 +14,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private const int ReceiveLoopIdleDelayMs = 5;
     private const int ReceiveHealthCheckIdleTicks = 100;
     private const long ReceiveStatsLogIntervalMs = 5_000;
+    private const int DefaultUdpOpusFrameDurationMs = 20;
+    private const int ShortUdpOpusFrameDurationMs = 5;
+    private const int MediumUdpOpusFrameDurationMs = 10;
 
     private IWebRtcBridge _bridge;
     private readonly Func<IWebRtcBridge>? _startupBridgeFactory;
@@ -134,7 +137,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _udpLoopbackSenderFactory = udpLoopbackSenderFactory
             ?? (() => new LoopbackPcmSender(
                 frame => _udpBridge.SendPcmFrame(frame),
-                new LoopbackCaptureOptions(targetSampleRate: 48_000)));
+                CreateUdpLoopbackCaptureOptions()));
         _playbackService = new PcmPlaybackService();
         _backendHealth = CreatePendingBackendHealth();
         _udpBackendHealth = CreateBackendHealth(_udpBridge);
@@ -181,6 +184,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private string audioBufferingLabel = "送出整形: -";
 
     [ObservableProperty]
+    private int selectedUdpOpusFrameDurationMs = DefaultUdpOpusFrameDurationMs;
+
+    [ObservableProperty]
     private string audioHealthLabel = "統計: -";
 
     [ObservableProperty]
@@ -216,6 +222,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public int SelectedTransportModeIndex => SelectedTransportMode == TransportMode.WebRtc ? 0 : 1;
 
+    public int SelectedUdpOpusFrameDurationIndex => SelectedUdpOpusFrameDurationMs switch
+    {
+        ShortUdpOpusFrameDurationMs => 0,
+        MediumUdpOpusFrameDurationMs => 1,
+        _ => 2
+    };
+
     public string TransportModeLabel => SelectedTransportMode switch
     {
         TransportMode.WebRtc => "転送モード: WebRTC",
@@ -229,6 +242,18 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         TransportMode.UdpOpus => "WebRTC と同じ接続コードの流れで、この PC のメディア音声を Opus + UDP で Android へ低遅延送信します。",
         _ => string.Empty
     };
+
+    public string UdpOpusFrameDurationDescription => SelectedUdpOpusFrameDurationMs switch
+    {
+        ShortUdpOpusFrameDurationMs => "5 ms: 低遅延寄りです。ネットワークやCPU負荷にはやや敏感です。",
+        MediumUdpOpusFrameDurationMs => "10 ms: 遅延と安定性のバランスが取りやすい設定です。",
+        _ => "20 ms: 既定値です。最も安定しやすく、Android受信側とも合わせやすい設定です。"
+    };
+
+    public string UdpOpusFrameDurationSummary => $"Opus フレーム長: {SelectedUdpOpusFrameDurationMs} ms";
+
+    public bool CanConfigureUdpOpusFrameDuration => CurrentSetupStep == SetupStep.Entry &&
+        CurrentStreamState is StreamState.Idle or StreamState.Ended or StreamState.Failed;
 
     public string SenderEntryDescription => SelectedTransportMode switch
     {
@@ -362,6 +387,23 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             TransportMode.UdpOpus => "UDP + Opus モードです。接続コードを Android 側に貼り付けると、Windows のメディア音声送信を開始できます。",
             _ => "準備できました。"
         };
+    }
+
+    public void SelectUdpOpusFrameDuration(int frameDurationMs)
+    {
+        if (!IsSupportedUdpOpusFrameDuration(frameDurationMs) ||
+            SelectedUdpOpusFrameDurationMs == frameDurationMs ||
+            !CanConfigureUdpOpusFrameDuration)
+        {
+            return;
+        }
+
+        SelectedUdpOpusFrameDurationMs = frameDurationMs;
+
+        if (SelectedTransportMode == TransportMode.UdpOpus)
+        {
+            StatusMessage = $"UDP + Opus のフレーム長を {frameDurationMs} ms に変更しました。";
+        }
     }
 
     public async Task StartSenderAsync()
@@ -526,7 +568,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
         CurrentSetupStep = SetupStep.SenderShowInit;
         FlowStateLabel = "案内: 接続コードを共有";
-        StatusMessage = "UDP + Opus の接続コードを作成しました。コピーして Android 側に貼り付けてください。";
+        StatusMessage = $"UDP + Opus の接続コードを作成しました。Opus フレーム長は {SelectedUdpOpusFrameDurationMs} ms です。コピーして Android 側に貼り付けてください。";
     }
 
     public async Task ProcessInputPayloadAsync(string rawPayload)
@@ -1815,7 +1857,16 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(TransportModeDescription));
         OnPropertyChanged(nameof(SenderEntryDescription));
         OnPropertyChanged(nameof(ListenerEntryDescription));
+        OnPropertyChanged(nameof(UdpOpusFrameDurationSummary));
         OnPropertyChanged(nameof(ShowManualPayloadFallback));
+    }
+
+    partial void OnSelectedUdpOpusFrameDurationMsChanged(int value)
+    {
+        _ = value;
+        OnPropertyChanged(nameof(SelectedUdpOpusFrameDurationIndex));
+        OnPropertyChanged(nameof(UdpOpusFrameDurationDescription));
+        OnPropertyChanged(nameof(UdpOpusFrameDurationSummary));
     }
 
     partial void OnVerificationCodeChanged(string value)
@@ -1842,6 +1893,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(StepProgressLabel));
         OnPropertyChanged(nameof(PathStepTitle));
         OnPropertyChanged(nameof(PathStepDescription));
+        OnPropertyChanged(nameof(CanConfigureUdpOpusFrameDuration));
     }
 
     private string GetRecommendedAction()
@@ -1904,6 +1956,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         return _udpLoopbackSender;
     }
 
+    private LoopbackCaptureOptions CreateUdpLoopbackCaptureOptions()
+    {
+        return new LoopbackCaptureOptions(
+            targetSampleRate: 48_000,
+            frameDurationMs: SelectedUdpOpusFrameDurationMs);
+    }
+
     private static void StopLoopbackSender(ILoopbackAudioSender? sender)
     {
         if (sender is not null && sender.IsRunning)
@@ -1935,6 +1994,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
 
         return $"{value[..3]} - {value[3..]}";
+    }
+
+    private static bool IsSupportedUdpOpusFrameDuration(int frameDurationMs)
+    {
+        return frameDurationMs is ShortUdpOpusFrameDurationMs or MediumUdpOpusFrameDurationMs or DefaultUdpOpusFrameDurationMs;
     }
 
     private static string LocalizeFailureHint(string failureHint)

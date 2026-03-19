@@ -89,7 +89,7 @@ public sealed class LoopbackPcmSender : ILoopbackAudioSender
                 _capture = capture;
                 _sampleRate = ResolveOutputSampleRate(capture.WaveFormat.SampleRate);
                 _channels = PcmCaptureNormalizer.GetOutputChannels(capture.WaveFormat.Channels);
-                _frameSamples = Math.Max(1, _sampleRate / _options.FramesPerSecond);
+                _frameSamples = _options.ResolveFrameSamples(_sampleRate);
                 _sequence = 0;
                 ResetTelemetryUnsafe();
                 _pendingPcm16.Clear();
@@ -293,7 +293,7 @@ public sealed class LoopbackPcmSender : ILoopbackAudioSender
 
         _channels = normalized.Channels;
         _sampleRate = ResolveOutputSampleRate(format.SampleRate);
-        _frameSamples = Math.Max(1, _sampleRate / _options.FramesPerSecond);
+        _frameSamples = _options.ResolveFrameSamples(_sampleRate);
 
         if (_resampler is null)
         {
@@ -734,12 +734,12 @@ public sealed class LoopbackPcmSender : ILoopbackAudioSender
 
 public sealed class LoopbackCaptureOptions
 {
-    private const int DefaultFramesPerSecond = 50;
+    private const int DefaultFrameDurationMs = 20;
     private const int DefaultAudioBufferMilliseconds = 20;
 
     public LoopbackCaptureOptions(
         int? targetSampleRate = null,
-        int framesPerSecond = DefaultFramesPerSecond,
+        int frameDurationMs = DefaultFrameDurationMs,
         int audioBufferMilliseconds = DefaultAudioBufferMilliseconds)
     {
         if (targetSampleRate is <= 0)
@@ -747,9 +747,9 @@ public sealed class LoopbackCaptureOptions
             throw new ArgumentOutOfRangeException(nameof(targetSampleRate));
         }
 
-        if (framesPerSecond <= 0)
+        if (frameDurationMs <= 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(framesPerSecond));
+            throw new ArgumentOutOfRangeException(nameof(frameDurationMs));
         }
 
         if (audioBufferMilliseconds <= 0)
@@ -758,15 +758,27 @@ public sealed class LoopbackCaptureOptions
         }
 
         TargetSampleRate = targetSampleRate;
-        FramesPerSecond = framesPerSecond;
+        FrameDurationMs = frameDurationMs;
         AudioBufferMilliseconds = audioBufferMilliseconds;
     }
 
     public int? TargetSampleRate { get; }
 
-    public int FramesPerSecond { get; }
+    public int FrameDurationMs { get; }
+
+    public int FramesPerSecond => Math.Max(1, (int)Math.Round(1000d / FrameDurationMs));
 
     public int AudioBufferMilliseconds { get; }
+
+    public int ResolveFrameSamples(int sampleRate)
+    {
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+
+        return Math.Max(1, (int)Math.Round(sampleRate * (FrameDurationMs / 1000d)));
+    }
 }
 
 internal sealed class LowLatencyWasapiLoopbackCapture : WasapiCapture
