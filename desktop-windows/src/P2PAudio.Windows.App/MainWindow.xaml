@@ -197,6 +197,25 @@
                                 FontSize="12"
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                 TextWrapping="Wrap" />
+                            <TextBlock
+                                Text="Opus application"
+                                FontSize="12"
+                                FontWeight="SemiBold"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Margin="0,8,0,0" />
+                            <ComboBox
+                                x:Name="UdpOpusApplicationComboBox"
+                                SelectionChanged="OnUdpOpusApplicationSelectionChanged"
+                                SelectedIndex="{x:Bind ViewModel.SelectedUdpOpusApplicationIndex, Mode=OneWay}"
+                                IsEnabled="{x:Bind ViewModel.CanConfigureUdpOpusApplication, Mode=OneWay}">
+                                <ComboBoxItem Content="RESTRICTED_LOWDELAY" />
+                                <ComboBoxItem Content="AUDIO" />
+                            </ComboBox>
+                            <TextBlock
+                                Text="{x:Bind ViewModel.UdpOpusApplicationDescription, Mode=OneWay}"
+                                FontSize="12"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                TextWrapping="Wrap" />
                         </StackPanel>
                         <Grid ColumnSpacing="14">
                             <Grid.ColumnDefinitions>

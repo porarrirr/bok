@@ -189,6 +189,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private int selectedUdpOpusFrameDurationMs = DefaultUdpOpusFrameDurationMs;
 
     [ObservableProperty]
+    private UdpOpusApplication selectedUdpOpusApplication = UdpOpusApplication.RestrictedLowDelay;
+
+    [ObservableProperty]
     private string audioHealthLabel = "統計: -";
 
     [ObservableProperty]
@@ -234,6 +237,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _ => 2
     };
 
+    public int SelectedUdpOpusApplicationIndex => SelectedUdpOpusApplication switch
+    {
+        UdpOpusApplication.RestrictedLowDelay => 0,
+        UdpOpusApplication.Audio => 1,
+        _ => 0
+    };
+
     public string TransportModeLabel => SelectedTransportMode switch
     {
         TransportMode.WebRtc => "転送モード: WebRTC",
@@ -260,8 +270,24 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public string UdpOpusFrameDurationSummary => $"Opus フレーム長: {SelectedUdpOpusFrameDurationMs} ms";
 
+    public string UdpOpusApplicationDescription => SelectedUdpOpusApplication switch
+    {
+        UdpOpusApplication.RestrictedLowDelay => "RESTRICTED_LOWDELAY: 遅延を最優先にした設定です。音楽再生では音質面の余裕が少なめです。",
+        UdpOpusApplication.Audio => "AUDIO: 音楽や一般的な再生音向けの設定です。低遅延より音質バランスを優先します。",
+        _ => "RESTRICTED_LOWDELAY: 遅延を最優先にした設定です。"
+    };
+
+    public string UdpOpusApplicationSummary => SelectedUdpOpusApplication switch
+    {
+        UdpOpusApplication.RestrictedLowDelay => "Opus application: RESTRICTED_LOWDELAY",
+        UdpOpusApplication.Audio => "Opus application: AUDIO",
+        _ => "Opus application: RESTRICTED_LOWDELAY"
+    };
+
     public bool CanConfigureUdpOpusFrameDuration => CurrentSetupStep == SetupStep.Entry &&
         CurrentStreamState is StreamState.Idle or StreamState.Ended or StreamState.Failed;
+
+    public bool CanConfigureUdpOpusApplication => CanConfigureUdpOpusFrameDuration;
 
     public string SenderEntryDescription => SelectedTransportMode switch
     {
@@ -407,10 +433,31 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
 
         SelectedUdpOpusFrameDurationMs = frameDurationMs;
+        RecreateUdpLoopbackSender();
 
         if (SelectedTransportMode == TransportMode.UdpOpus)
         {
             StatusMessage = $"UDP + Opus のフレーム長を {frameDurationMs} ms に変更しました。";
+        }
+    }
+
+    public void SelectUdpOpusApplication(UdpOpusApplication application)
+    {
+        if (SelectedUdpOpusApplication == application || !CanConfigureUdpOpusApplication)
+        {
+            return;
+        }
+
+        SelectedUdpOpusApplication = application;
+        RecreateUdpLoopbackSender();
+
+        if (SelectedTransportMode == TransportMode.UdpOpus)
+        {
+            StatusMessage = application switch
+            {
+                UdpOpusApplication.Audio => "UDP + Opus の application を AUDIO に変更しました。",
+                _ => "UDP + Opus の application を RESTRICTED_LOWDELAY に変更しました。"
+            };
         }
     }
 
@@ -1024,7 +1071,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         var result = await _udpBridge.StartStreamingAsync(
             confirmSubmission.RemoteAddress,
             confirmPayload.ReceiverPort,
-            confirmPayload.ReceiverDeviceName
+            confirmPayload.ReceiverDeviceName,
+            SelectedUdpOpusApplication
         );
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -1866,6 +1914,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(SenderEntryDescription));
         OnPropertyChanged(nameof(ListenerEntryDescription));
         OnPropertyChanged(nameof(UdpOpusFrameDurationSummary));
+        OnPropertyChanged(nameof(UdpOpusApplicationSummary));
         OnPropertyChanged(nameof(ShowManualPayloadFallback));
     }
 
@@ -1875,6 +1924,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(SelectedUdpOpusFrameDurationIndex));
         OnPropertyChanged(nameof(UdpOpusFrameDurationDescription));
         OnPropertyChanged(nameof(UdpOpusFrameDurationSummary));
+    }
+
+    partial void OnSelectedUdpOpusApplicationChanged(UdpOpusApplication value)
+    {
+        _ = value;
+        OnPropertyChanged(nameof(SelectedUdpOpusApplicationIndex));
+        OnPropertyChanged(nameof(UdpOpusApplicationDescription));
+        OnPropertyChanged(nameof(UdpOpusApplicationSummary));
     }
 
     partial void OnVerificationCodeChanged(string value)
@@ -1902,6 +1959,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(PathStepTitle));
         OnPropertyChanged(nameof(PathStepDescription));
         OnPropertyChanged(nameof(CanConfigureUdpOpusFrameDuration));
+        OnPropertyChanged(nameof(CanConfigureUdpOpusApplication));
     }
 
     private string GetRecommendedAction()
@@ -1968,7 +2026,19 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         return new LoopbackCaptureOptions(
             targetSampleRate: 48_000,
-            frameDurationMs: SelectedUdpOpusFrameDurationMs);
+            frameDurationMs: SelectedUdpOpusFrameDurationMs,
+            application: SelectedUdpOpusApplication);
+    }
+
+    private void RecreateUdpLoopbackSender()
+    {
+        if (_udpLoopbackSender is null)
+        {
+            return;
+        }
+
+        _udpLoopbackSender.DiagnosticsChanged -= OnLoopbackDiagnosticsChanged;
+        DisposeLoopbackSenderInstance(ref _udpLoopbackSender);
     }
 
     private static void StopLoopbackSender(ILoopbackAudioSender? sender)

@@ -740,7 +740,8 @@ public sealed class LoopbackCaptureOptions
     public LoopbackCaptureOptions(
         int? targetSampleRate = null,
         int frameDurationMs = DefaultFrameDurationMs,
-        int audioBufferMilliseconds = DefaultAudioBufferMilliseconds)
+        int audioBufferMilliseconds = DefaultAudioBufferMilliseconds,
+        UdpOpusApplication application = UdpOpusApplication.RestrictedLowDelay)
     {
         if (targetSampleRate is <= 0)
         {
@@ -760,6 +761,7 @@ public sealed class LoopbackCaptureOptions
         TargetSampleRate = targetSampleRate;
         FrameDurationMs = frameDurationMs;
         AudioBufferMilliseconds = audioBufferMilliseconds;
+        Application = application;
     }
 
     public int? TargetSampleRate { get; }
@@ -769,6 +771,8 @@ public sealed class LoopbackCaptureOptions
     public int FramesPerSecond => Math.Max(1, (int)Math.Round(1000d / FrameDurationMs));
 
     public int AudioBufferMilliseconds { get; }
+
+    public UdpOpusApplication Application { get; }
 
     public int ResolveFrameSamples(int sampleRate)
     {

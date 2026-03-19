@@ -186,6 +186,16 @@ public sealed partial class MainWindow : Window
         ViewModel.SelectUdpOpusFrameDuration(frameDurationMs);
     }
 
+    private void OnUdpOpusApplicationSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        var application = UdpOpusApplicationComboBox.SelectedIndex == 1
+            ? Services.UdpOpusApplication.Audio
+            : Services.UdpOpusApplication.RestrictedLowDelay;
+        ViewModel.SelectUdpOpusApplication(application);
+    }
+
     private async void OnPastePayloadClick(object sender, RoutedEventArgs e)
     {
         await ViewModel.PasteFromClipboardAsync();
