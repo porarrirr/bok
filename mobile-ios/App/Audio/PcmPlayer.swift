@@ -1,6 +1,42 @@
 import AVFoundation
 import Foundation
 
+struct PcmPlayerOverflowTrimResult {
+    let droppedFrameCount: Int
+    let nextExpectedSequence: Int?
+}
+
+func trimOverflowFramesForRealtimePlayback(
+    pendingSequenceNumbers: inout [Int],
+    scheduledFrames: Int,
+    maxQueueFrames: Int,
+    expectedSequence: Int?
+) -> PcmPlayerOverflowTrimResult {
+    var nextExpectedSequence = expectedSequence
+    var droppedFrameCount = 0
+
+    while pendingSequenceNumbers.count + scheduledFrames > maxQueueFrames, !pendingSequenceNumbers.isEmpty {
+        let droppedSequence = pendingSequenceNumbers.removeFirst()
+        droppedFrameCount += 1
+        if let expectedSequence = nextExpectedSequence, droppedSequence >= expectedSequence {
+            nextExpectedSequence = droppedSequence + 1
+        }
+    }
+
+    return PcmPlayerOverflowTrimResult(
+        droppedFrameCount: droppedFrameCount,
+        nextExpectedSequence: nextExpectedSequence
+    )
+}
+
+func playbackStartThresholdFrames(startupPrebufferFrames: Int, minTrackBufferFrames: Int) -> Int {
+    max(startupPrebufferFrames, minTrackBufferFrames)
+}
+
+func playbackResumeThresholdFrames(steadyPrebufferFrames: Int, minTrackBufferFrames: Int) -> Int {
+    max(steadyPrebufferFrames, max(minTrackBufferFrames / 2, 1))
+}
+
 private struct QueuedPcmFrame {
     let frame: PcmFrame
     let arrivalRealtimeMs: UInt64
@@ -9,13 +45,16 @@ private struct QueuedPcmFrame {
 final class PcmPlayer {
     typealias DiagnosticsHandler = (AudioStreamDiagnostics) -> Void
     typealias ErrorHandler = (SessionFailure) -> Void
+    typealias LogHandler = (AppLogLevel, String, String, [String: String]) -> Void
 
     private let source: AudioStreamSource
     private let startupPrebufferFrames: Int
     private let steadyPrebufferFrames: Int
     private let maxQueueFrames: Int
+    private let minTrackBufferFrames: Int
     private let diagnosticsHandler: DiagnosticsHandler
     private let errorHandler: ErrorHandler?
+    private let logHandler: LogHandler?
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
     private let queue = DispatchQueue(label: "com.example.p2paudio.pcm-player")
@@ -41,15 +80,19 @@ final class PcmPlayer {
         startupPrebufferFrames: Int = 3,
         steadyPrebufferFrames: Int = 3,
         maxQueueFrames: Int = 20,
+        minTrackBufferFrames: Int = 8,
         diagnosticsHandler: @escaping DiagnosticsHandler = { _ in },
-        errorHandler: ErrorHandler? = nil
+        errorHandler: ErrorHandler? = nil,
+        logHandler: LogHandler? = nil
     ) {
         self.source = source
         self.startupPrebufferFrames = max(startupPrebufferFrames, 1)
         self.steadyPrebufferFrames = max(steadyPrebufferFrames, 1)
         self.maxQueueFrames = max(maxQueueFrames, self.startupPrebufferFrames)
+        self.minTrackBufferFrames = max(minTrackBufferFrames, 1)
         self.diagnosticsHandler = diagnosticsHandler
         self.errorHandler = errorHandler
+        self.logHandler = logHandler
         engine.attach(playerNode)
     }
 
@@ -97,12 +140,28 @@ final class PcmPlayer {
             return $0.frame.sequence < $1.frame.sequence
         }
 
-        while pendingFrames.count + scheduledFrames > maxQueueFrames {
-            let dropped = pendingFrames.removeFirst()
-            queueOverflowDrops += 1
-            if let expectedSequence, dropped.frame.sequence >= expectedSequence {
-                self.expectedSequence = dropped.frame.sequence + 1
-            }
+        var pendingSequenceNumbers = pendingFrames.map(\.frame.sequence)
+        let trimResult = trimOverflowFramesForRealtimePlayback(
+            pendingSequenceNumbers: &pendingSequenceNumbers,
+            scheduledFrames: scheduledFrames,
+            maxQueueFrames: maxQueueFrames,
+            expectedSequence: expectedSequence
+        )
+        if trimResult.droppedFrameCount > 0 {
+            queueOverflowDrops += Int64(trimResult.droppedFrameCount)
+            self.expectedSequence = trimResult.nextExpectedSequence
+            let retained = Set(pendingSequenceNumbers)
+            pendingFrames.removeAll { !retained.contains($0.frame.sequence) }
+            log(
+                .warning,
+                "Dropped queued PCM frames to cap playback latency",
+                metadata: [
+                    "source": source.rawValue,
+                    "droppedFrames": String(trimResult.droppedFrameCount),
+                    "scheduledFrames": String(scheduledFrames),
+                    "queueDepth": String(pendingFrames.count)
+                ]
+            )
         }
 
         drainQueueUnsafe(format: format)
@@ -115,10 +174,10 @@ final class PcmPlayer {
             resetUnsafe(notifyDiagnostics: false)
 
             guard let newFormat = AVAudioFormat(
-                commonFormat: .pcmFormatInt16,
+                commonFormat: .pcmFormatFloat32,
                 sampleRate: Double(frame.sampleRate),
                 channels: AVAudioChannelCount(frame.channels),
-                interleaved: true
+                interleaved: false
             ) else {
                 handleError(SessionFailure(code: .webrtcNegotiationFailed, message: L10n.tr("error.audio_playback_unavailable")))
                 return nil
@@ -126,9 +185,20 @@ final class PcmPlayer {
 
             engine.disconnectNodeOutput(playerNode)
             engine.connect(playerNode, to: engine.mainMixerNode, format: newFormat)
+            engine.prepare()
 
             currentFormat = newFormat
             currentFormatKey = key
+            log(
+                .info,
+                "Prepared playback format",
+                metadata: [
+                    "source": source.rawValue,
+                    "sampleRate": String(frame.sampleRate),
+                    "channels": String(frame.channels),
+                    "bitsPerSample": String(frame.bitsPerSample)
+                ]
+            )
             return newFormat
         }
         return currentFormat
@@ -141,17 +211,28 @@ final class PcmPlayer {
         }
         pcmBuffer.frameLength = frameCount
 
-        let bufferList = UnsafeMutableAudioBufferListPointer(pcmBuffer.mutableAudioBufferList)
-        guard let audioBuffer = bufferList.first, let dst = audioBuffer.mData else {
+        guard
+            let channelData = pcmBuffer.floatChannelData,
+            frame.channels > 0,
+            frame.bitsPerSample == 16
+        else {
             return nil
         }
 
-        let copySize = min(Int(audioBuffer.mDataByteSize), frame.pcmData.count)
-        frame.pcmData.withUnsafeBytes { src in
-            guard let srcBase = src.baseAddress else { return }
-            memcpy(dst, srcBase, copySize)
-            if copySize < Int(audioBuffer.mDataByteSize) {
-                memset(dst.advanced(by: copySize), 0, Int(audioBuffer.mDataByteSize) - copySize)
+        let sampleCount = frame.frameSamplesPerChannel * frame.channels
+        let expectedBytes = sampleCount * MemoryLayout<Int16>.size
+        guard frame.pcmData.count >= expectedBytes else {
+            return nil
+        }
+
+        frame.pcmData.withUnsafeBytes { rawBuffer in
+            guard let samples = rawBuffer.bindMemory(to: Int16.self).baseAddress else { return }
+            for channel in 0..<frame.channels {
+                let destination = channelData[channel]
+                for frameIndex in 0..<frame.frameSamplesPerChannel {
+                    let sampleIndex = (frameIndex * frame.channels) + channel
+                    destination[frameIndex] = Float(samples[sampleIndex]) / Float(Int16.max)
+                }
             }
         }
 
@@ -166,13 +247,24 @@ final class PcmPlayer {
 
             let scheduledGeneration = generation
             scheduledFrames += 1
-            playerNode.scheduleBuffer(buffer, completionHandler: { [weak self] in
+            playerNode.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
                 self?.queue.async { [weak self] in
                     guard let self, self.generation == scheduledGeneration else {
                         return
                     }
                     self.scheduledFrames = max(self.scheduledFrames - 1, 0)
                     self.playedFrames += 1
+                    if self.playedFrames == 1 {
+                        self.log(
+                            .info,
+                            "Remote audio playback started",
+                            metadata: [
+                                "source": self.source.rawValue,
+                                "scheduledFrames": String(self.scheduledFrames),
+                                "decodedPackets": String(self.decodedPackets)
+                            ]
+                        )
+                    }
                     self.publishDiagnosticsUnsafe()
                     if let format = self.currentFormat {
                         self.drainQueueUnsafe(format: format)
@@ -181,11 +273,30 @@ final class PcmPlayer {
             })
         }
 
-        if !playbackStarted && scheduledFrames >= startupPrebufferFrames {
+        let startThresholdFrames = playbackStartThresholdFrames(
+            startupPrebufferFrames: startupPrebufferFrames,
+            minTrackBufferFrames: minTrackBufferFrames
+        )
+        let resumeThresholdFrames = playbackResumeThresholdFrames(
+            steadyPrebufferFrames: steadyPrebufferFrames,
+            minTrackBufferFrames: minTrackBufferFrames
+        )
+
+        if !playbackStarted && scheduledFrames >= startThresholdFrames {
             do {
                 try ensureEngineRunningUnsafe()
                 playerNode.play()
                 playbackStarted = true
+                log(
+                    .info,
+                    "Playback start threshold reached",
+                    metadata: [
+                        "source": source.rawValue,
+                        "scheduledFrames": String(scheduledFrames),
+                        "targetFrames": String(startThresholdFrames),
+                        "queueDepth": String(pendingFrames.count + scheduledFrames)
+                    ]
+                )
             } catch {
                 handleError(
                     SessionFailure(
@@ -194,10 +305,19 @@ final class PcmPlayer {
                     )
                 )
             }
-        } else if playbackStarted && !playerNode.isPlaying && scheduledFrames >= steadyPrebufferFrames {
+        } else if playbackStarted && !playerNode.isPlaying && scheduledFrames >= resumeThresholdFrames {
             do {
                 try ensureEngineRunningUnsafe()
                 playerNode.play()
+                log(
+                    .info,
+                    "Playback resumed after buffer refill",
+                    metadata: [
+                        "source": source.rawValue,
+                        "scheduledFrames": String(scheduledFrames),
+                        "targetFrames": String(resumeThresholdFrames)
+                    ]
+                )
             } catch {
                 handleError(
                     SessionFailure(
@@ -229,8 +349,17 @@ final class PcmPlayer {
     }
 
     private func ensureEngineRunningUnsafe() throws {
+        try AudioPlaybackSession.shared.activateForPlayback()
         if !engine.isRunning {
             try engine.start()
+            log(
+                .info,
+                "Audio engine started",
+                metadata: [
+                    "source": source.rawValue,
+                    "playerIsPlaying": String(playerNode.isPlaying)
+                ]
+            )
         }
     }
 
@@ -270,7 +399,15 @@ final class PcmPlayer {
                     ? Int((Double(currentFrameSamplesPerChannel) / Double(currentSampleRate)) * 1000.0)
                     : 0,
                 startupTargetFrames: startupPrebufferFrames,
-                targetPrebufferFrames: playbackStarted ? steadyPrebufferFrames : startupPrebufferFrames,
+                targetPrebufferFrames: playbackStarted
+                    ? playbackResumeThresholdFrames(
+                        steadyPrebufferFrames: steadyPrebufferFrames,
+                        minTrackBufferFrames: minTrackBufferFrames
+                    )
+                    : playbackStartThresholdFrames(
+                        startupPrebufferFrames: startupPrebufferFrames,
+                        minTrackBufferFrames: minTrackBufferFrames
+                    ),
                 maxQueueFrames: maxQueueFrames,
                 queueDepthFrames: pendingFrames.count + scheduledFrames,
                 playedFrames: playedFrames,
@@ -282,7 +419,24 @@ final class PcmPlayer {
     }
 
     private func handleError(_ failure: SessionFailure) {
+        log(
+            .error,
+            "Playback pipeline failed",
+            metadata: [
+                "source": source.rawValue,
+                "failureCode": failure.code.rawValue,
+                "reason": failure.message
+            ]
+        )
         errorHandler?(failure)
+    }
+
+    private func log(
+        _ level: AppLogLevel,
+        _ message: String,
+        metadata: [String: String] = [:]
+    ) {
+        logHandler?(level, "PcmPlayer", message, metadata)
     }
 
     private static func realtimeNowMs() -> UInt64 {

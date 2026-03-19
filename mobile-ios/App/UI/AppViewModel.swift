@@ -535,11 +535,13 @@ final class AppViewModel: ObservableObject {
             log(
                 .info,
                 "AppViewModel",
-                "First remote audio frame received",
+                "First remote audio frame enqueued for playback",
                 metadata: [
+                    "sequence": String(frame.sequence),
                     "sampleRate": String(frame.sampleRate),
                     "channels": String(frame.channels),
-                    "bitsPerSample": String(frame.bitsPerSample)
+                    "bitsPerSample": String(frame.bitsPerSample),
+                    "arrivalRealtimeMs": String(arrivalRealtimeMs)
                 ]
             )
             self.statusMessage = statusMessage
@@ -633,6 +635,7 @@ final class AppViewModel: ObservableObject {
             startupPrebufferFrames: config.startupPrebufferFrames,
             steadyPrebufferFrames: config.steadyPrebufferFrames,
             maxQueueFrames: config.maxQueueFrames,
+            minTrackBufferFrames: config.minTrackBufferFrames,
             diagnosticsHandler: { [weak self] diagnostics in
                 Task { @MainActor [weak self] in
                     self?.updateAudioStreamDiagnostics(diagnostics)
@@ -641,6 +644,11 @@ final class AppViewModel: ObservableObject {
             errorHandler: { [weak self] failure in
                 Task { @MainActor [weak self] in
                     self?.handlePlaybackFailure(failure)
+                }
+            },
+            logHandler: { [weak self] level, category, message, metadata in
+                Task { @MainActor [weak self] in
+                    self?.log(level, category, message, metadata: metadata)
                 }
             }
         )
@@ -653,6 +661,7 @@ final class AppViewModel: ObservableObject {
             startupPrebufferFrames: config.startupPrebufferFrames,
             steadyPrebufferFrames: config.steadyPrebufferFrames,
             maxQueueFrames: config.maxQueueFrames,
+            minTrackBufferFrames: config.minTrackBufferFrames,
             diagnosticsHandler: { [weak self] diagnostics in
                 Task { @MainActor [weak self] in
                     self?.updateAudioStreamDiagnostics(diagnostics)
@@ -661,6 +670,11 @@ final class AppViewModel: ObservableObject {
             errorHandler: { [weak self] failure in
                 Task { @MainActor [weak self] in
                     self?.handlePlaybackFailure(failure)
+                }
+            },
+            logHandler: { [weak self] level, category, message, metadata in
+                Task { @MainActor [weak self] in
+                    self?.log(level, category, message, metadata: metadata)
                 }
             }
         )
