@@ -14,8 +14,7 @@ class LateFrameRecoveryControllerTest {
             controller.shouldKeepWaiting(
                 expectedSequence = 42,
                 frameDurationMs = 20L,
-                queuedTrackFrames = 15_360,
-                frameSamplesPerChannel = 960,
+                bufferedPacketCount = 16,
                 nowRealtimeMs = 1_000L
             )
         )
@@ -23,8 +22,7 @@ class LateFrameRecoveryControllerTest {
             controller.shouldKeepWaiting(
                 expectedSequence = 42,
                 frameDurationMs = 20L,
-                queuedTrackFrames = 11_520,
-                frameSamplesPerChannel = 960,
+                bufferedPacketCount = 12,
                 nowRealtimeMs = 1_120L
             )
         )
@@ -38,8 +36,7 @@ class LateFrameRecoveryControllerTest {
             controller.shouldKeepWaiting(
                 expectedSequence = 7,
                 frameDurationMs = 20L,
-                queuedTrackFrames = 15_360,
-                frameSamplesPerChannel = 960,
+                bufferedPacketCount = 16,
                 nowRealtimeMs = 2_000L
             )
         )
@@ -47,9 +44,8 @@ class LateFrameRecoveryControllerTest {
             controller.shouldKeepWaiting(
                 expectedSequence = 7,
                 frameDurationMs = 20L,
-                queuedTrackFrames = 15_360,
-                frameSamplesPerChannel = 960,
-                nowRealtimeMs = 2_220L
+                bufferedPacketCount = 16,
+                nowRealtimeMs = 2_210L
             )
         )
     }
@@ -61,19 +57,17 @@ class LateFrameRecoveryControllerTest {
         assertTrue(
             controller.shouldKeepWaiting(
                 expectedSequence = 99,
-                frameDurationMs = 20L,
-                queuedTrackFrames = 5_760,
-                frameSamplesPerChannel = 960,
+                frameDurationMs = 60L,
+                bufferedPacketCount = 4,
                 nowRealtimeMs = 3_000L
             )
         )
         assertFalse(
             controller.shouldKeepWaiting(
                 expectedSequence = 99,
-                frameDurationMs = 20L,
-                queuedTrackFrames = 1_920,
-                frameSamplesPerChannel = 960,
-                nowRealtimeMs = 3_020L
+                frameDurationMs = 60L,
+                bufferedPacketCount = 2,
+                nowRealtimeMs = 3_060L
             )
         )
     }
@@ -86,8 +80,7 @@ class LateFrameRecoveryControllerTest {
             controller.shouldKeepWaiting(
                 expectedSequence = 10,
                 frameDurationMs = 20L,
-                queuedTrackFrames = 15_360,
-                frameSamplesPerChannel = 960,
+                bufferedPacketCount = 16,
                 nowRealtimeMs = 4_000L
             )
         )
@@ -95,9 +88,8 @@ class LateFrameRecoveryControllerTest {
             controller.shouldKeepWaiting(
                 expectedSequence = 10,
                 frameDurationMs = 20L,
-                queuedTrackFrames = 15_360,
-                frameSamplesPerChannel = 960,
-                nowRealtimeMs = 4_220L
+                bufferedPacketCount = 16,
+                nowRealtimeMs = 4_210L
             )
         )
 
@@ -107,8 +99,7 @@ class LateFrameRecoveryControllerTest {
             controller.shouldKeepWaiting(
                 expectedSequence = 11,
                 frameDurationMs = 20L,
-                queuedTrackFrames = 15_360,
-                frameSamplesPerChannel = 960,
+                bufferedPacketCount = 16,
                 nowRealtimeMs = 4_240L
             )
         )

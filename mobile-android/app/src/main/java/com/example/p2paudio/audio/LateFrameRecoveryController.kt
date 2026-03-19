@@ -1,7 +1,7 @@
 package com.example.p2paudio.audio
 
 internal class LateFrameRecoveryController(
-    private val minSafeTrackPackets: Int = MIN_SAFE_TRACK_PACKETS,
+    private val minSafeBufferedPackets: Int = MIN_SAFE_BUFFERED_PACKETS,
     private val maxLateFrameWaitMs: Long = MAX_LATE_FRAME_WAIT_MS
 ) {
     private var awaitedSequence: Int? = null
@@ -15,11 +15,10 @@ internal class LateFrameRecoveryController(
     fun shouldKeepWaiting(
         expectedSequence: Int,
         frameDurationMs: Long,
-        queuedTrackFrames: Int,
-        frameSamplesPerChannel: Int,
+        bufferedPacketCount: Int,
         nowRealtimeMs: Long
     ): Boolean {
-        if (frameDurationMs <= 0L || queuedTrackFrames <= 0 || frameSamplesPerChannel <= 0) {
+        if (frameDurationMs <= 0L) {
             return false
         }
         if (awaitedSequence != expectedSequence) {
@@ -28,9 +27,7 @@ internal class LateFrameRecoveryController(
         }
 
         val waitedMs = (nowRealtimeMs - awaitedSinceRealtimeMs).coerceAtLeast(0L)
-        val queuedTrackPackets = ((queuedTrackFrames + frameSamplesPerChannel - 1) / frameSamplesPerChannel)
-            .coerceAtLeast(0)
-        val safeWaitPackets = (queuedTrackPackets - minSafeTrackPackets).coerceAtLeast(0)
+        val safeWaitPackets = (bufferedPacketCount - minSafeBufferedPackets).coerceAtLeast(0)
         if (safeWaitPackets <= 0) {
             return false
         }
@@ -41,7 +38,7 @@ internal class LateFrameRecoveryController(
     }
 
     private companion object {
-        private const val MIN_SAFE_TRACK_PACKETS = 2
+        private const val MIN_SAFE_BUFFERED_PACKETS = 2
         private const val MAX_LATE_FRAME_WAIT_MS = 200L
     }
 }

@@ -19,6 +19,13 @@ internal data class QueueOverflowTrimResult(
     val nextExpectedSequence: Int?
 )
 
+internal fun shouldWaitForMissingFrameQueueRecovery(
+    bufferedPacketCount: Int,
+    startupTargetFrames: Int
+): Boolean {
+    return bufferedPacketCount < startupTargetFrames.coerceAtLeast(1)
+}
+
 internal fun trimOverflowFramesForRealtimePlayback(
     pendingFrames: PriorityQueue<PcmFrame>,
     maxQueueFrames: Int,
@@ -336,7 +343,12 @@ class AndroidPcmPlayer(
             return frame.pcmBytes
         }
 
-        val shouldWaitForQueueRecovery = pendingFrames.size < adaptiveSnapshot.targetPrebufferFrames
+        val track = audioTrack
+        val bufferedPacketCount = track?.let { bufferedPacketCountForControllerUnsafe(it) } ?: pendingFrames.size
+        val shouldWaitForQueueRecovery = shouldWaitForMissingFrameQueueRecovery(
+            bufferedPacketCount = bufferedPacketCount,
+            startupTargetFrames = adaptiveSnapshot.startupTargetFrames
+        )
         val shouldWaitForLateFrame = shouldKeepWaitingForMissingFrameUnsafe(expected)
         if (shouldWaitForQueueRecovery || shouldWaitForLateFrame) {
             adaptiveBufferController.onPlaybackWait()
@@ -541,14 +553,10 @@ class AndroidPcmPlayer(
 
     private fun shouldKeepWaitingForMissingFrameUnsafe(expectedSequence: Int): Boolean {
         val track = audioTrack ?: return false
-        if (currentFrameSamplesPerChannel <= 0) {
-            return false
-        }
         return lateFrameRecoveryController.shouldKeepWaiting(
             expectedSequence = expectedSequence,
             frameDurationMs = frameDurationMs,
-            queuedTrackFrames = estimateQueuedTrackFramesUnsafe(track),
-            frameSamplesPerChannel = currentFrameSamplesPerChannel,
+            bufferedPacketCount = bufferedPacketCountForControllerUnsafe(track),
             nowRealtimeMs = SystemClock.elapsedRealtime()
         )
     }

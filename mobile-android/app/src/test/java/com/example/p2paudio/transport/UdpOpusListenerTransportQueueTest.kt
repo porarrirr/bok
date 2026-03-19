@@ -75,7 +75,8 @@ class UdpOpusListenerTransportQueueTest {
             listOf(10, 11, 12),
             buildList {
                 while (pendingPackets.isNotEmpty()) {
-                    add(pendingPackets.poll().packet.sequence)
+                    val queuedPacket = pendingPackets.poll() ?: break
+                    add(queuedPacket.packet.sequence)
                 }
             }
         )

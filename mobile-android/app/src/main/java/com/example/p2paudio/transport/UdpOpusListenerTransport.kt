@@ -231,7 +231,7 @@ class UdpOpusListenerTransport(
 
     private fun enqueueDecodePacket(packet: UdpOpusPacket, arrivalRealtimeMs: Long) {
         lateinit var enqueueResult: RealtimeDecodeEnqueueResult
-        var queuedPackets = 0
+        var queuedPackets: Int
         synchronized(decodeLock) {
             enqueueResult = enqueueRealtimeDecodePacket(
                 pendingPackets = pendingDecodePackets,
