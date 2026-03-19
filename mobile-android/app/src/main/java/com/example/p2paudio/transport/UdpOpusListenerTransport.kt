@@ -16,26 +16,43 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetSocketAddress
 import java.net.SocketException
+import java.util.PriorityQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
 class UdpListenerTransportException(val failure: SessionFailure) : IllegalStateException(failure.message)
 
+internal data class QueuedRealtimeDecodePacket(
+    val packet: UdpOpusPacket,
+    val arrivalRealtimeMs: Long
+)
+
+internal data class RealtimeDecodeEnqueueResult(
+    val droppedSequence: Int? = null,
+    val duplicateSequence: Int? = null
+)
+
 internal fun enqueueRealtimeDecodePacket(
-    pendingPackets: ArrayDeque<UdpOpusPacket>,
-    arrivalRealtimeMsBySequence: MutableMap<Int, Long>,
+    pendingPackets: PriorityQueue<QueuedRealtimeDecodePacket>,
     packet: UdpOpusPacket,
     arrivalRealtimeMs: Long,
     maxQueuePackets: Int
-): Int? {
+): RealtimeDecodeEnqueueResult {
+    if (pendingPackets.any { it.packet.sequence == packet.sequence }) {
+        return RealtimeDecodeEnqueueResult(duplicateSequence = packet.sequence)
+    }
+
     var droppedSequence: Int? = null
     while (pendingPackets.size >= maxQueuePackets) {
-        val droppedPacket = pendingPackets.removeFirstOrNull() ?: break
-        arrivalRealtimeMsBySequence.remove(droppedPacket.sequence)
-        droppedSequence = droppedPacket.sequence
+        val droppedPacket = pendingPackets.poll() ?: break
+        droppedSequence = droppedPacket.packet.sequence
     }
-    pendingPackets.addLast(packet)
-    arrivalRealtimeMsBySequence[packet.sequence] = arrivalRealtimeMs
-    return droppedSequence
+    pendingPackets.add(
+        QueuedRealtimeDecodePacket(
+            packet = packet,
+            arrivalRealtimeMs = arrivalRealtimeMs
+        )
+    )
+    return RealtimeDecodeEnqueueResult(droppedSequence = droppedSequence)
 }
 
 class UdpOpusListenerTransport(
@@ -50,12 +67,11 @@ class UdpOpusListenerTransport(
 
     private val advertiser = NsdUdpReceiverAdvertiser(context)
     private val decodeLock = Object()
-    private val pendingDecodePackets = ArrayDeque<UdpOpusPacket>()
-    private val arrivalRealtimeMsBySequence = HashMap<Int, Long>()
-    private val decoder = AndroidOpusDecoder { frame ->
-        val arrivalRealtimeMs = synchronized(decodeLock) {
-            arrivalRealtimeMsBySequence.remove(frame.sequence)
-        } ?: SystemClock.elapsedRealtime()
+    private val pendingDecodePackets = PriorityQueue(
+        compareBy<QueuedRealtimeDecodePacket> { it.packet.sequence }
+            .thenBy { it.arrivalRealtimeMs }
+    )
+    private val decoder = AndroidOpusDecoder { frame, arrivalRealtimeMs ->
         pcmFrameListener(frame, arrivalRealtimeMs)
     }
     private val running = AtomicBoolean(false)
@@ -106,7 +122,7 @@ class UdpOpusListenerTransport(
                 try {
                     while (running.get()) {
                         val nextPacket = waitForDecodePacket() ?: continue
-                        decoder.decode(nextPacket)
+                        decoder.decode(nextPacket.packet, nextPacket.arrivalRealtimeMs)
                     }
                 } catch (_: InterruptedException) {
                 } catch (error: Exception) {
@@ -193,7 +209,6 @@ class UdpOpusListenerTransport(
         decoderThread?.interrupt()
         synchronized(decodeLock) {
             pendingDecodePackets.clear()
-            arrivalRealtimeMsBySequence.clear()
             decodeLock.notifyAll()
         }
         listenerThread = null
@@ -215,37 +230,50 @@ class UdpOpusListenerTransport(
     }
 
     private fun enqueueDecodePacket(packet: UdpOpusPacket, arrivalRealtimeMs: Long) {
-        var droppedSequence: Int? = null
+        lateinit var enqueueResult: RealtimeDecodeEnqueueResult
+        var queuedPackets = 0
         synchronized(decodeLock) {
-            droppedSequence = enqueueRealtimeDecodePacket(
+            enqueueResult = enqueueRealtimeDecodePacket(
                 pendingPackets = pendingDecodePackets,
-                arrivalRealtimeMsBySequence = arrivalRealtimeMsBySequence,
                 packet = packet,
                 arrivalRealtimeMs = arrivalRealtimeMs,
                 maxQueuePackets = MAX_DECODE_QUEUE_PACKETS
             )
+            queuedPackets = pendingDecodePackets.size
             decodeLock.notifyAll()
         }
 
-        if (droppedSequence != null) {
+        if (enqueueResult.duplicateSequence != null) {
+            AppLogger.w(
+                "UdpOpusListener",
+                "packet_duplicate_ignored",
+                "Ignored a duplicate UDP Opus packet before decode",
+                context = mapOf(
+                    "duplicateSequence" to enqueueResult.duplicateSequence,
+                    "queuedPackets" to queuedPackets
+                )
+            )
+        }
+
+        if (enqueueResult.droppedSequence != null) {
             AppLogger.w(
                 "UdpOpusListener",
                 "packet_queue_overflow",
                 "Dropped an older UDP Opus packet to preserve realtime playback",
                 context = mapOf(
-                    "droppedSequence" to droppedSequence,
-                    "queuedPackets" to pendingDecodePackets.size
+                    "droppedSequence" to enqueueResult.droppedSequence,
+                    "queuedPackets" to queuedPackets
                 )
             )
         }
     }
 
-    private fun waitForDecodePacket(): UdpOpusPacket? {
+    private fun waitForDecodePacket(): QueuedRealtimeDecodePacket? {
         synchronized(decodeLock) {
             while (running.get() && pendingDecodePackets.isEmpty()) {
                 decodeLock.wait()
             }
-            return pendingDecodePackets.removeFirstOrNull()
+            return pendingDecodePackets.poll()
         }
     }
 

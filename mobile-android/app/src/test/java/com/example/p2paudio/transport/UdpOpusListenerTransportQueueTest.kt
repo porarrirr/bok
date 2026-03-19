@@ -4,49 +4,81 @@ import com.example.p2paudio.audio.UdpOpusPacket
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.util.PriorityQueue
 
 class UdpOpusListenerTransportQueueTest {
 
     @Test
     fun enqueueRealtimeDecodePacketDropsOldestPacketWhenQueueIsFull() {
-        val pendingPackets = ArrayDeque<UdpOpusPacket>().apply {
-            addLast(packet(sequence = 1))
-            addLast(packet(sequence = 2))
-        }
-        val arrivalTimes = linkedMapOf(
-            1 to 100L,
-            2 to 120L
+        val pendingPackets = priorityQueueOf(
+            QueuedRealtimeDecodePacket(packet(sequence = 1), arrivalRealtimeMs = 100L),
+            QueuedRealtimeDecodePacket(packet(sequence = 2), arrivalRealtimeMs = 120L)
         )
 
-        val droppedSequence = enqueueRealtimeDecodePacket(
+        val result = enqueueRealtimeDecodePacket(
             pendingPackets = pendingPackets,
-            arrivalRealtimeMsBySequence = arrivalTimes,
             packet = packet(sequence = 3),
             arrivalRealtimeMs = 140L,
             maxQueuePackets = 2
         )
 
-        assertEquals(1, droppedSequence)
-        assertEquals(listOf(2, 3), pendingPackets.map { it.sequence })
-        assertEquals(mapOf(2 to 120L, 3 to 140L), arrivalTimes)
+        assertEquals(1, result.droppedSequence)
+        assertNull(result.duplicateSequence)
+        assertEquals(listOf(2, 3), pendingPackets.map { it.packet.sequence }.sorted())
     }
 
     @Test
-    fun enqueueRealtimeDecodePacketKeepsAllPacketsWhenCapacityRemains() {
-        val pendingPackets = ArrayDeque<UdpOpusPacket>()
-        val arrivalTimes = mutableMapOf<Int, Long>()
+    fun enqueueRealtimeDecodePacketIgnoresDuplicateSequences() {
+        val pendingPackets = priorityQueueOf(
+            QueuedRealtimeDecodePacket(packet(sequence = 9), arrivalRealtimeMs = 900L)
+        )
 
-        val droppedSequence = enqueueRealtimeDecodePacket(
+        val result = enqueueRealtimeDecodePacket(
             pendingPackets = pendingPackets,
-            arrivalRealtimeMsBySequence = arrivalTimes,
             packet = packet(sequence = 9),
-            arrivalRealtimeMs = 900L,
+            arrivalRealtimeMs = 950L,
             maxQueuePackets = 2
         )
 
-        assertNull(droppedSequence)
-        assertEquals(listOf(9), pendingPackets.map { it.sequence })
-        assertEquals(mapOf(9 to 900L), arrivalTimes)
+        assertNull(result.droppedSequence)
+        assertEquals(9, result.duplicateSequence)
+        assertEquals(1, pendingPackets.size)
+        val retainedPacket = pendingPackets.single()
+        assertEquals(9, retainedPacket.packet.sequence)
+        assertEquals(900L, retainedPacket.arrivalRealtimeMs)
+    }
+
+    @Test
+    fun pendingDecodeQueuePollsPacketsInSequenceOrderAfterOutOfOrderArrival() {
+        val pendingPackets = priorityQueueOf()
+
+        enqueueRealtimeDecodePacket(
+            pendingPackets = pendingPackets,
+            packet = packet(sequence = 12),
+            arrivalRealtimeMs = 1_200L,
+            maxQueuePackets = 4
+        )
+        enqueueRealtimeDecodePacket(
+            pendingPackets = pendingPackets,
+            packet = packet(sequence = 10),
+            arrivalRealtimeMs = 1_000L,
+            maxQueuePackets = 4
+        )
+        enqueueRealtimeDecodePacket(
+            pendingPackets = pendingPackets,
+            packet = packet(sequence = 11),
+            arrivalRealtimeMs = 1_100L,
+            maxQueuePackets = 4
+        )
+
+        assertEquals(
+            listOf(10, 11, 12),
+            buildList {
+                while (pendingPackets.isNotEmpty()) {
+                    add(pendingPackets.poll().packet.sequence)
+                }
+            }
+        )
     }
 
     private fun packet(sequence: Int): UdpOpusPacket {
@@ -58,5 +90,16 @@ class UdpOpusListenerTransportQueueTest {
             frameSamplesPerChannel = 960,
             opusPayload = byteArrayOf(1, 2, 3)
         )
+    }
+
+    private fun priorityQueueOf(
+        vararg packets: QueuedRealtimeDecodePacket
+    ): PriorityQueue<QueuedRealtimeDecodePacket> {
+        return PriorityQueue<QueuedRealtimeDecodePacket>(
+            compareBy<QueuedRealtimeDecodePacket> { it.packet.sequence }
+                .thenBy { it.arrivalRealtimeMs }
+        ).apply {
+            addAll(packets)
+        }
     }
 }
