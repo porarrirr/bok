@@ -66,6 +66,13 @@ jobs:
           PROJECT_PATH="$PROJECT_PATH_INPUT"
           SPEC_PATH="$PROJECT_SPEC_PATH_INPUT"
 
+          if [ -e "$SPEC_PATH" ]; then
+            if ! command -v xcodegen >/dev/null 2>&1; then
+              brew install xcodegen
+            fi
+            xcodegen generate --spec "$SPEC_PATH"
+          fi
+
           if [ -e "$PROJECT_PATH" ]; then
             case "$PROJECT_PATH" in
               *.xcodeproj|*.xcworkspace) ;;
@@ -82,17 +89,6 @@ jobs:
             echo "Project container not found: $PROJECT_PATH"
             echo "Project spec not found: $SPEC_PATH"
             exit 1
-          fi
-
-          if ! command -v xcodegen >/dev/null 2>&1; then
-            brew install xcodegen
-          fi
-
-          xcodegen generate --spec "$SPEC_PATH"
-
-          if [ -e "$PROJECT_PATH" ]; then
-            echo "RESOLVED_PROJECT_PATH=$PROJECT_PATH" >> "$GITHUB_ENV"
-            exit 0
           fi
 
           SPEC_DIR="$(cd "$(dirname "$SPEC_PATH")" && pwd)"
