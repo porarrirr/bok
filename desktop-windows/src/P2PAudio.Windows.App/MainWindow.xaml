@@ -14,283 +14,507 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- ═══ Sticky header bar ═══ -->
         <Border
             Grid.Row="0"
             Background="{ThemeResource LayerFillColorDefaultBrush}"
             BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
             BorderThickness="0,0,0,1"
-            Padding="32,14,32,12">
-            <Grid>
+            Padding="32,16,32,14">
+            <Grid ColumnSpacing="20">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <StackPanel Spacing="2" VerticalAlignment="Center">
+
+                <StackPanel Spacing="4" VerticalAlignment="Center">
                     <TextBlock
                         Text="音声リンク"
-                        FontSize="18"
-                        FontWeight="Bold" />
+                        FontSize="28"
+                        FontWeight="SemiBold" />
                     <TextBlock
-                        Text="{x:Bind ViewModel.TransportModeLabel, Mode=OneWay}"
-                        FontSize="11"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    <TextBlock
-                        Text="{x:Bind ViewModel.BackendLabel, Mode=OneWay}"
-                        FontSize="11"
-                        Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                        Text="Windows と Android を直接つなぐ音声共有ワークスペース"
+                        Style="{StaticResource BodyTextStyle}" />
                 </StackPanel>
-                <Button
+
+                <StackPanel
                     Grid.Column="1"
-                    Content="⏹ 終了"
-                    Click="OnStopClick"
-                    IsEnabled="{x:Bind ViewModel.CanStop, Mode=OneWay}"
-                    Padding="16,7"
-                    VerticalAlignment="Center" />
+                    Orientation="Horizontal"
+                    Spacing="10"
+                    VerticalAlignment="Center">
+                    <Border
+                        Style="{StaticResource InsetCardStyle}"
+                        Padding="12,8">
+                        <StackPanel Spacing="2" MaxWidth="360">
+                            <TextBlock
+                                Text="{x:Bind ViewModel.TransportModeLabel, Mode=OneWay}"
+                                Style="{StaticResource MetricLabelTextStyle}" />
+                            <TextBlock
+                                Text="{x:Bind ViewModel.BackendLabel, Mode=OneWay}"
+                                Style="{StaticResource BodyTextStyle}" />
+                        </StackPanel>
+                    </Border>
+
+                    <Button
+                        Content="接続を終了"
+                        Click="OnStopClick"
+                        IsEnabled="{x:Bind ViewModel.CanStop, Mode=OneWay}"
+                        Padding="18,10"
+                        VerticalAlignment="Center" />
+                </StackPanel>
             </Grid>
         </Border>
 
-        <!-- ═══ Scrollable content ═══ -->
-        <ScrollViewer Grid.Row="1" Padding="32,20,32,32" VerticalScrollBarVisibility="Auto">
-            <StackPanel Spacing="16" MaxWidth="880">
+        <ScrollViewer
+            Grid.Row="1"
+            Padding="32,24,32,32"
+            VerticalScrollBarVisibility="Auto">
+            <StackPanel
+                Spacing="20"
+                MaxWidth="1120">
 
-                <!-- ── Status hero ── -->
-                <Border
-                    x:Name="StatusHeroCard"
-                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    CornerRadius="16"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1"
-                    Padding="28,22">
-                    <StackPanel Spacing="10">
+                <Grid ColumnSpacing="16" RowSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="360" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Border
+                        x:Name="StatusHeroCard"
+                        Grid.Row="0"
+                        Grid.Column="0"
+                        Style="{StaticResource SectionCardStyle}"
+                        Padding="0">
                         <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                <TextBlock
-                                    Text="{x:Bind ViewModel.StreamStateIndicator, Mode=OneWay}"
-                                    FontSize="26"
-                                    VerticalAlignment="Center" />
-                                <TextBlock
-                                    x:Name="StreamStateText"
-                                    Text="{x:Bind ViewModel.StreamStateLabel, Mode=OneWay}"
-                                    FontSize="26"
-                                    FontWeight="Bold"
-                                    VerticalAlignment="Center" />
-                            </StackPanel>
                             <Border
-                                Grid.Column="2"
-                                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
-                                CornerRadius="10"
-                                Padding="10,4"
-                                VerticalAlignment="Center">
-                                <TextBlock
-                                    Text="{x:Bind ViewModel.StepProgressLabel, Mode=OneWay}"
-                                    FontSize="12"
-                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                    FontWeight="SemiBold" />
-                            </Border>
+                                Width="6"
+                                HorizontalAlignment="Left"
+                                Background="{ThemeResource CardStrokeColorDefaultBrush}"
+                                CornerRadius="20,0,0,20" />
+
+                            <Grid Padding="28,26">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Spacing="14">
+                                    <TextBlock
+                                        Text="接続ステータス"
+                                        Style="{StaticResource EyebrowTextStyle}" />
+
+                                    <Grid ColumnSpacing="16">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <Border
+                                            Width="52"
+                                            Height="52"
+                                            CornerRadius="16"
+                                            Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                            VerticalAlignment="Top">
+                                            <TextBlock
+                                                Text="{x:Bind ViewModel.StreamStateIndicator, Mode=OneWay}"
+                                                FontSize="24"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center" />
+                                        </Border>
+
+                                        <StackPanel
+                                            Grid.Column="1"
+                                            Spacing="6">
+                                            <TextBlock
+                                                x:Name="StreamStateText"
+                                                Text="{x:Bind ViewModel.StreamStateLabel, Mode=OneWay}"
+                                                FontSize="30"
+                                                FontWeight="SemiBold"
+                                                TextWrapping="Wrap" />
+                                            <TextBlock
+                                                Text="{x:Bind ViewModel.RecommendedAction, Mode=OneWay}"
+                                                FontSize="18"
+                                                FontWeight="SemiBold"
+                                                TextWrapping="Wrap" />
+                                            <TextBlock
+                                                Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
+                                                Style="{StaticResource BodyTextStyle}" />
+                                        </StackPanel>
+
+                                        <Border
+                                            Grid.Column="2"
+                                            Style="{StaticResource InsetCardStyle}"
+                                            Padding="12,8"
+                                            VerticalAlignment="Top">
+                                            <TextBlock
+                                                Text="{x:Bind ViewModel.StepProgressLabel, Mode=OneWay}"
+                                                FontSize="12"
+                                                FontWeight="SemiBold"
+                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                TextWrapping="Wrap" />
+                                        </Border>
+                                    </Grid>
+                                </StackPanel>
+
+                                <StackPanel
+                                    Grid.Row="1"
+                                    Margin="0,18,0,0"
+                                    Spacing="8">
+                                    <ProgressBar
+                                        Minimum="0"
+                                        Maximum="3"
+                                        Value="{x:Bind ViewModel.ProgressValue, Mode=OneWay}"
+                                        Height="6" />
+                                    <TextBlock
+                                        Text="必要な手順だけが下に表示されます。進行中はこのステータスが最優先で更新されます。"
+                                        Style="{StaticResource BodyTextStyle}" />
+                                </StackPanel>
+
+                                <Border
+                                    x:Name="StatusFailurePanel"
+                                    Grid.Row="2"
+                                    Visibility="Collapsed"
+                                    Style="{StaticResource InsetCardStyle}"
+                                    Margin="0,18,0,0"
+                                    BorderBrush="{ThemeResource SystemFillColorCriticalBrush}">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock
+                                            Text="対応が必要です"
+                                            Style="{StaticResource MetricLabelTextStyle}"
+                                            Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+                                        <TextBlock
+                                            Text="{x:Bind ViewModel.FailureHintLabel, Mode=OneWay}"
+                                            FontSize="13"
+                                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                            TextWrapping="Wrap" />
+                                        <TextBlock
+                                            Text="{x:Bind ViewModel.FailureCodeLabel, Mode=OneWay}"
+                                            FontSize="12"
+                                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                            TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
                         </Grid>
+                    </Border>
 
-                        <ProgressBar
-                            Minimum="0"
-                            Maximum="3"
-                            Value="{x:Bind ViewModel.ProgressValue, Mode=OneWay}"
-                            Height="4"
-                            Margin="0,2,0,0" />
+                    <Border
+                        Grid.Row="0"
+                        Grid.Column="1"
+                        Style="{StaticResource SectionCardStyle}">
+                        <StackPanel Spacing="16">
+                            <StackPanel Spacing="4">
+                                <TextBlock
+                                    Text="接続サマリー"
+                                    Style="{StaticResource EyebrowTextStyle}" />
+                                <TextBlock
+                                    Text="現在の構成"
+                                    FontSize="22"
+                                    FontWeight="SemiBold" />
+                                <TextBlock
+                                    Text="転送方式とネットワークの見え方を、ここでまとめて確認できます。"
+                                    Style="{StaticResource BodyTextStyle}" />
+                            </StackPanel>
 
-                        <TextBlock
-                            Text="{x:Bind ViewModel.RecommendedAction, Mode=OneWay}"
-                            FontSize="15"
-                            FontWeight="SemiBold"
-                            TextWrapping="Wrap" />
-                        <TextBlock
-                            Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
-                            FontSize="13"
-                            TextWrapping="Wrap"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <StackPanel Spacing="12">
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="92" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="転送" Style="{StaticResource MetricLabelTextStyle}" />
+                                    <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.TransportModeLabel, Mode=OneWay}" Style="{StaticResource MetricValueTextStyle}" />
+                                </Grid>
 
-                        <StackPanel
-                            x:Name="StatusFailurePanel"
-                            Visibility="Collapsed"
-                            Spacing="2"
-                            Margin="0,4,0,0">
-                            <TextBlock
-                                Text="{x:Bind ViewModel.FailureHintLabel, Mode=OneWay}"
-                                FontSize="13"
-                                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                                TextWrapping="Wrap" />
-                            <TextBlock
-                                Text="{x:Bind ViewModel.FailureCodeLabel, Mode=OneWay}"
-                                FontSize="12"
-                                Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="92" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="接続モジュール" Style="{StaticResource MetricLabelTextStyle}" />
+                                    <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.BackendLabel, Mode=OneWay}" Style="{StaticResource MetricValueTextStyle}" />
+                                </Grid>
+
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="92" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="経路" Style="{StaticResource MetricLabelTextStyle}" />
+                                    <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.NetworkPathLabel, Mode=OneWay}" Style="{StaticResource MetricValueTextStyle}" />
+                                </Grid>
+
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="92" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="候補" Style="{StaticResource MetricLabelTextStyle}" />
+                                    <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.CandidateCountLabel, Mode=OneWay}" Style="{StaticResource MetricValueTextStyle}" />
+                                </Grid>
+
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="92" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="選択中" Style="{StaticResource MetricLabelTextStyle}" />
+                                    <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedCandidatePairLabel, Mode=OneWay}" Style="{StaticResource MetricValueTextStyle}" />
+                                </Grid>
+
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="92" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="音声" Style="{StaticResource MetricLabelTextStyle}" />
+                                    <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.AudioStreamSummaryLabel, Mode=OneWay}" Style="{StaticResource MetricValueTextStyle}" />
+                                </Grid>
+
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="92" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="統計" Style="{StaticResource MetricLabelTextStyle}" />
+                                    <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.AudioHealthLabel, Mode=OneWay}" Style="{StaticResource MetricValueTextStyle}" />
+                                </Grid>
+                            </StackPanel>
                         </StackPanel>
-                    </StackPanel>
-                </Border>
+                    </Border>
+                </Grid>
 
-                <!-- ── Transient toast ── -->
                 <InfoBar
                     x:Name="TransientInfoBar"
                     IsOpen="False"
                     Severity="Success"
                     IsClosable="True" />
 
-                <!-- ══════════════════════════════════════════
-                     Step 1 — Role selection (Entry)
-                     ══════════════════════════════════════════ -->
                 <Border
                     x:Name="EntryCard"
-                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    CornerRadius="16"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1"
-                    Padding="28,22">
-                    <StackPanel Spacing="14">
-                        <TextBlock
-                            Text="転送モードと、このPCの役割を選んでください"
-                            FontSize="16"
-                            FontWeight="SemiBold" />
-                        <StackPanel Spacing="6">
-                            <TextBlock
-                                Text="転送モード"
-                                FontSize="12"
-                                FontWeight="SemiBold"
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                            <ComboBox
-                                x:Name="TransportModeComboBox"
-                                SelectionChanged="OnTransportModeSelectionChanged"
-                                SelectedIndex="{x:Bind ViewModel.SelectedTransportModeIndex, Mode=OneWay}">
-                                <ComboBoxItem Content="WebRTC" />
-                                <ComboBoxItem Content="UDP + Opus" />
-                            </ComboBox>
-                            <TextBlock
-                                Text="{x:Bind ViewModel.TransportModeDescription, Mode=OneWay}"
-                                FontSize="12"
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                TextWrapping="Wrap" />
-                        </StackPanel>
+                    Style="{StaticResource SectionCardStyle}">
+                    <Grid ColumnSpacing="24" RowSpacing="20">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1.15*" />
+                            <ColumnDefinition Width="1*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
                         <StackPanel
-                            x:Name="UdpOpusFrameDurationPanel"
-                            Spacing="6"
-                            Visibility="Collapsed">
-                            <TextBlock
-                                Text="Opus フレーム長"
-                                FontSize="12"
-                                FontWeight="SemiBold"
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                            <ComboBox
-                                x:Name="UdpOpusFrameDurationComboBox"
-                                SelectionChanged="OnUdpOpusFrameDurationSelectionChanged"
-                                SelectedIndex="{x:Bind ViewModel.SelectedUdpOpusFrameDurationIndex, Mode=OneWay}"
-                                IsEnabled="{x:Bind ViewModel.CanConfigureUdpOpusFrameDuration, Mode=OneWay}">
-                                <ComboBoxItem Content="5 ms" />
-                                <ComboBoxItem Content="10 ms" />
-                                <ComboBoxItem Content="20 ms" />
-                                <ComboBoxItem Content="40 ms" />
-                                <ComboBoxItem Content="60 ms" />
-                            </ComboBox>
-                            <TextBlock
-                                Text="{x:Bind ViewModel.UdpOpusFrameDurationDescription, Mode=OneWay}"
-                                FontSize="12"
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                TextWrapping="Wrap" />
-                            <TextBlock
-                                Text="Opus application"
-                                FontSize="12"
-                                FontWeight="SemiBold"
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Margin="0,8,0,0" />
-                            <ComboBox
-                                x:Name="UdpOpusApplicationComboBox"
-                                SelectionChanged="OnUdpOpusApplicationSelectionChanged"
-                                SelectedIndex="{x:Bind ViewModel.SelectedUdpOpusApplicationIndex, Mode=OneWay}"
-                                IsEnabled="{x:Bind ViewModel.CanConfigureUdpOpusApplication, Mode=OneWay}">
-                                <ComboBoxItem Content="RESTRICTED_LOWDELAY" />
-                                <ComboBoxItem Content="AUDIO" />
-                            </ComboBox>
-                            <TextBlock
-                                Text="{x:Bind ViewModel.UdpOpusApplicationDescription, Mode=OneWay}"
-                                FontSize="12"
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                TextWrapping="Wrap" />
+                            Grid.Row="0"
+                            Grid.Column="0"
+                            Spacing="16">
+                            <StackPanel Spacing="4">
+                                <TextBlock
+                                    Text="セットアップ"
+                                    Style="{StaticResource EyebrowTextStyle}" />
+                                <TextBlock
+                                    Text="転送モードと役割を選ぶ"
+                                    Style="{StaticResource SectionTitleTextStyle}" />
+                                <TextBlock
+                                    Text="最初に方式を決めると、このPCで必要な手順だけが表示されます。"
+                                    Style="{StaticResource BodyTextStyle}" />
+                            </StackPanel>
+
+                            <Border Style="{StaticResource InsetCardStyle}">
+                                <StackPanel Spacing="12">
+                                    <TextBlock
+                                        Text="転送モード"
+                                        Style="{StaticResource MetricLabelTextStyle}" />
+                                    <ComboBox
+                                        x:Name="TransportModeComboBox"
+                                        SelectionChanged="OnTransportModeSelectionChanged"
+                                        SelectedIndex="{x:Bind ViewModel.SelectedTransportModeIndex, Mode=OneWay}">
+                                        <ComboBoxItem Content="WebRTC" />
+                                        <ComboBoxItem Content="UDP + Opus" />
+                                    </ComboBox>
+                                    <TextBlock
+                                        Text="{x:Bind ViewModel.TransportModeDescription, Mode=OneWay}"
+                                        Style="{StaticResource BodyTextStyle}" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border
+                                x:Name="UdpOpusFrameDurationPanel"
+                                Visibility="Collapsed"
+                                Style="{StaticResource InsetCardStyle}">
+                                <StackPanel Spacing="12">
+                                    <TextBlock
+                                        Text="UDP + Opus 詳細"
+                                        Style="{StaticResource MetricLabelTextStyle}" />
+
+                                    <StackPanel Spacing="6">
+                                        <TextBlock
+                                            Text="Opus フレーム長"
+                                            Style="{StaticResource MetricLabelTextStyle}" />
+                                        <ComboBox
+                                            x:Name="UdpOpusFrameDurationComboBox"
+                                            SelectionChanged="OnUdpOpusFrameDurationSelectionChanged"
+                                            SelectedIndex="{x:Bind ViewModel.SelectedUdpOpusFrameDurationIndex, Mode=OneWay}"
+                                            IsEnabled="{x:Bind ViewModel.CanConfigureUdpOpusFrameDuration, Mode=OneWay}">
+                                            <ComboBoxItem Content="5 ms" />
+                                            <ComboBoxItem Content="10 ms" />
+                                            <ComboBoxItem Content="20 ms" />
+                                            <ComboBoxItem Content="40 ms" />
+                                            <ComboBoxItem Content="60 ms" />
+                                        </ComboBox>
+                                        <TextBlock
+                                            Text="{x:Bind ViewModel.UdpOpusFrameDurationDescription, Mode=OneWay}"
+                                            Style="{StaticResource BodyTextStyle}" />
+                                    </StackPanel>
+
+                                    <StackPanel Spacing="6">
+                                        <TextBlock
+                                            Text="Opus application"
+                                            Style="{StaticResource MetricLabelTextStyle}" />
+                                        <ComboBox
+                                            x:Name="UdpOpusApplicationComboBox"
+                                            SelectionChanged="OnUdpOpusApplicationSelectionChanged"
+                                            SelectedIndex="{x:Bind ViewModel.SelectedUdpOpusApplicationIndex, Mode=OneWay}"
+                                            IsEnabled="{x:Bind ViewModel.CanConfigureUdpOpusApplication, Mode=OneWay}">
+                                            <ComboBoxItem Content="RESTRICTED_LOWDELAY" />
+                                            <ComboBoxItem Content="AUDIO" />
+                                        </ComboBox>
+                                        <TextBlock
+                                            Text="{x:Bind ViewModel.UdpOpusApplicationDescription, Mode=OneWay}"
+                                            Style="{StaticResource BodyTextStyle}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
-                        <Grid ColumnSpacing="14">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
 
-                            <!-- Sender card -->
-                            <Border
-                                Grid.Column="0"
-                                Background="#1A2535"
-                                CornerRadius="12"
-                                BorderBrush="#4C74A8"
-                                BorderThickness="1"
-                                Padding="18,16">
-                                <StackPanel Spacing="8">
-                                    <TextBlock
-                                        Text="🔊"
-                                        FontSize="28"
-                                        Foreground="#8CC7FF" />
-                                    <TextBlock
-                                        Text="音を送る"
-                                        FontSize="15"
-                                        FontWeight="SemiBold"
-                                        Foreground="#F4F8FF" />
-                                    <TextBlock
-                                        Text="{x:Bind ViewModel.SenderEntryDescription, Mode=OneWay}"
-                                        FontSize="12"
-                                        Foreground="#C3D4E9"
-                                        TextWrapping="Wrap" />
-                                    <Button
-                                        Content="送信側で開始"
-                                        Click="OnStartSenderClick"
-                                        IsEnabled="{x:Bind ViewModel.CanStartSender, Mode=OneWay}"
-                                        Style="{StaticResource AccentButtonStyle}"
-                                        HorizontalAlignment="Stretch"
-                                        Padding="0,9"
-                                        Margin="0,4,0,0" />
-                                </StackPanel>
-                            </Border>
+                        <StackPanel
+                            Grid.Row="0"
+                            Grid.Column="1"
+                            Spacing="12">
+                            <TextBlock
+                                Text="役割"
+                                Style="{StaticResource EyebrowTextStyle}" />
+                            <TextBlock
+                                Text="このPCで行うことを選ぶ"
+                                FontSize="22"
+                                FontWeight="SemiBold"
+                                TextWrapping="Wrap" />
 
-                            <!-- Listener card -->
-                            <Border
-                                Grid.Column="1"
-                                Background="#33261C"
-                                CornerRadius="12"
-                                BorderBrush="#C58E43"
-                                BorderThickness="1"
-                                Padding="18,16">
-                                <StackPanel Spacing="8">
-                                    <TextBlock
-                                        Text="🎧"
-                                        FontSize="28"
-                                        Foreground="#FFD39A" />
-                                    <TextBlock
-                                        Text="音を受け取る"
-                                        FontSize="15"
-                                        FontWeight="SemiBold"
-                                        Foreground="#FFF4E4" />
-                                    <TextBlock
-                                        Text="{x:Bind ViewModel.ListenerEntryDescription, Mode=OneWay}"
-                                        FontSize="12"
-                                        Foreground="#E4D0BC"
-                                        TextWrapping="Wrap" />
-                                    <Button
-                                        Content="受信側で開始"
-                                        Click="OnStartListenerClick"
-                                        IsEnabled="{x:Bind ViewModel.CanStartListener, Mode=OneWay}"
-                                        HorizontalAlignment="Stretch"
-                                        Padding="0,9"
-                                        Margin="0,4,0,0" />
-                                </StackPanel>
-                            </Border>
-                        </Grid>
-                    </StackPanel>
+                            <Grid ColumnSpacing="12" RowSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <Border
+                                    Grid.Row="0"
+                                    Grid.Column="0"
+                                    Style="{StaticResource InsetCardStyle}"
+                                    Padding="0">
+                                    <Grid>
+                                        <Border
+                                            Height="4"
+                                            VerticalAlignment="Top"
+                                            Background="{StaticResource SenderAccentBrush}"
+                                            CornerRadius="16,16,0,0" />
+
+                                        <StackPanel Padding="20,18" Spacing="14">
+                                            <StackPanel Spacing="10">
+                                                <Border
+                                                    Width="42"
+                                                    Height="42"
+                                                    CornerRadius="12"
+                                                    Background="{StaticResource SenderAccentMutedBrush}">
+                                                    <TextBlock
+                                                        Text="↑"
+                                                        FontSize="20"
+                                                        FontWeight="SemiBold"
+                                                        Foreground="{StaticResource SenderAccentBrush}"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center" />
+                                                </Border>
+
+                                                <StackPanel Spacing="4">
+                                                    <TextBlock
+                                                        Text="音を送る"
+                                                        FontSize="18"
+                                                        FontWeight="SemiBold" />
+                                                    <TextBlock
+                                                        Text="{x:Bind ViewModel.SenderEntryDescription, Mode=OneWay}"
+                                                        Style="{StaticResource BodyTextStyle}" />
+                                                </StackPanel>
+                                            </StackPanel>
+
+                                            <Button
+                                                Content="送信側で開始"
+                                                Click="OnStartSenderClick"
+                                                IsEnabled="{x:Bind ViewModel.CanStartSender, Mode=OneWay}"
+                                                Style="{StaticResource AccentButtonStyle}"
+                                                HorizontalAlignment="Stretch"
+                                                Padding="0,10" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+
+                                <Border
+                                    Grid.Row="0"
+                                    Grid.Column="1"
+                                    Style="{StaticResource InsetCardStyle}"
+                                    Padding="0">
+                                    <Grid>
+                                        <Border
+                                            Height="4"
+                                            VerticalAlignment="Top"
+                                            Background="{StaticResource ListenerAccentBrush}"
+                                            CornerRadius="16,16,0,0" />
+
+                                        <StackPanel Padding="20,18" Spacing="14">
+                                            <StackPanel Spacing="10">
+                                                <Border
+                                                    Width="42"
+                                                    Height="42"
+                                                    CornerRadius="12"
+                                                    Background="{StaticResource ListenerAccentMutedBrush}">
+                                                    <TextBlock
+                                                        Text="↓"
+                                                        FontSize="20"
+                                                        FontWeight="SemiBold"
+                                                        Foreground="{StaticResource ListenerAccentBrush}"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center" />
+                                                </Border>
+
+                                                <StackPanel Spacing="4">
+                                                    <TextBlock
+                                                        Text="音を受け取る"
+                                                        FontSize="18"
+                                                        FontWeight="SemiBold" />
+                                                    <TextBlock
+                                                        Text="{x:Bind ViewModel.ListenerEntryDescription, Mode=OneWay}"
+                                                        Style="{StaticResource BodyTextStyle}" />
+                                                </StackPanel>
+                                            </StackPanel>
+
+                                            <Button
+                                                Content="受信側で開始"
+                                                Click="OnStartListenerClick"
+                                                IsEnabled="{x:Bind ViewModel.CanStartListener, Mode=OneWay}"
+                                                HorizontalAlignment="Stretch"
+                                                Padding="0,10" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </StackPanel>
+                    </Grid>
                 </Border>
 
                 <!-- ══════════════════════════════════════════
@@ -299,22 +523,21 @@
                 <Border
                     x:Name="PathDiagnosingCard"
                     Visibility="Collapsed"
-                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    CornerRadius="16"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1"
-                    Padding="28,22">
-                    <StackPanel Spacing="10">
+                    Style="{StaticResource SectionCardStyle}">
+                    <StackPanel Spacing="12">
+                        <TextBlock
+                            Text="進行中"
+                            Style="{StaticResource EyebrowTextStyle}" />
                         <TextBlock
                             Text="{x:Bind ViewModel.PathStepTitle, Mode=OneWay}"
-                            FontSize="16"
+                            FontSize="22"
                             FontWeight="SemiBold" />
                         <TextBlock
                             Text="{x:Bind ViewModel.PathStepDescription, Mode=OneWay}"
-                            FontSize="13"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            TextWrapping="Wrap" />
-                        <ProgressBar IsIndeterminate="True" Height="4" />
+                            Style="{StaticResource BodyTextStyle}" />
+                        <ProgressBar
+                            IsIndeterminate="True"
+                            Height="6" />
                     </StackPanel>
                 </Border>
 
@@ -324,88 +547,107 @@
                 <Border
                     x:Name="SenderShowInitCard"
                     Visibility="Collapsed"
-                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    CornerRadius="16"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1"
-                    Padding="28,22">
-                    <StackPanel Spacing="12">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Border Background="#E8F0FE" CornerRadius="8" Padding="7,3">
-                                <TextBlock Text="送信側" FontSize="11" FontWeight="Bold" Foreground="#1A56DB" />
+                    Style="{StaticResource SectionCardStyle}">
+                    <StackPanel Spacing="16">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Border
+                                Background="{StaticResource SenderAccentMutedBrush}"
+                                CornerRadius="8"
+                                Padding="8,4">
+                                <TextBlock
+                                    Text="送信側"
+                                    FontSize="11"
+                                    FontWeight="Bold"
+                                    Foreground="{StaticResource SenderAccentBrush}" />
                             </Border>
                             <TextBlock
                                 Text="接続コードを Android に貼り付ける"
-                                FontSize="16"
+                                FontSize="22"
                                 FontWeight="SemiBold"
+                                TextWrapping="Wrap"
                                 VerticalAlignment="Center" />
                         </StackPanel>
                         <TextBlock
-                            Text="Windows 側で接続コードをコピーし、Android 側に貼り付けるだけで接続できます。応答は自動で戻るので、通常はこの画面で待つだけです。"
-                            FontSize="13"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            TextWrapping="Wrap" />
+                            Text="Windows 側で接続コードをコピーし、Android 側に貼り付けるだけで接続できます。応答は自動で戻るため、この画面では待機が基本です。"
+                            Style="{StaticResource BodyTextStyle}" />
+                        <Border Style="{StaticResource InsetCardStyle}">
+                            <StackPanel Spacing="12">
+                                <TextBlock
+                                    Text="接続コード"
+                                    Style="{StaticResource MetricLabelTextStyle}" />
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.CurrentConnectionCode, Mode=OneWay}"
+                                    FontSize="18"
+                                    FontFamily="Consolas"
+                                    FontWeight="SemiBold"
+                                    TextWrapping="Wrap"
+                                    IsTextSelectionEnabled="True" />
+                                <Button
+                                    Content="接続コードをコピー"
+                                    Click="OnCopyConnectionCodeClick"
+                                    HorizontalAlignment="Left"
+                                    Padding="14,8" />
+                            </StackPanel>
+                        </Border>
                         <TextBlock
-                            Text="⏱ 接続コードの有効期限は 10 分です"
+                            Text="接続コードの有効期限は 10 分です。"
                             FontSize="12"
                             Foreground="{ThemeResource SystemFillColorAttentionBrush}" />
 
-                        <StackPanel Spacing="8">
-                            <Button Content="接続コードをコピー" Click="OnCopyConnectionCodeClick" Padding="12,6" />
-                            <TextBlock Text="接続コード" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontWeight="SemiBold" />
+                        <Expander
+                            x:Name="SenderManualFallbackExpander"
+                            Header="従来の手動手順を使う"
+                            Padding="0">
                             <Border
-                                Background="{ThemeResource LayerFillColorDefaultBrush}"
-                                CornerRadius="8"
-                                BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
-                                BorderThickness="1"
-                                Padding="12">
-                                <TextBlock
-                                    Text="{x:Bind ViewModel.CurrentConnectionCode, Mode=OneWay}"
-                                    FontSize="15"
-                                    FontFamily="Consolas"
-                                    TextWrapping="Wrap"
-                                    IsTextSelectionEnabled="True" />
-                            </Border>
-                        </StackPanel>
-
-                        <Expander x:Name="SenderManualFallbackExpander" Header="従来の手動手順を使う" Padding="0">
-                            <StackPanel Spacing="10" Margin="0,10,0,0">
-                                <TextBlock
-                                    Text="接続コードを使わず、開始データと応答データを手動でやり取りする場合のみ使います。"
-                                    FontSize="12"
-                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                    TextWrapping="Wrap" />
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Button Content="開始データをコピー" Click="OnCopyPayloadClick" Padding="12,6" />
-                                    <Button Content="クリップボードの応答データを使う" Click="OnPastePayloadClick" Padding="12,6" />
+                                Style="{StaticResource InsetCardStyle}"
+                                Margin="0,12,0,0">
+                                <StackPanel Spacing="12">
+                                    <TextBlock
+                                        Text="接続コードを使わず、開始データと応答データを手動でやり取りする場合だけ使います。"
+                                        Style="{StaticResource BodyTextStyle}" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button
+                                            Content="開始データをコピー"
+                                            Click="OnCopyPayloadClick"
+                                            Padding="12,8" />
+                                        <Button
+                                            Content="クリップボードの応答データを使う"
+                                            Click="OnPastePayloadClick"
+                                            Padding="12,8" />
+                                    </StackPanel>
+                                    <TextBlock
+                                        Text="開始データ"
+                                        Style="{StaticResource MetricLabelTextStyle}" />
+                                    <Border
+                                        Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                        CornerRadius="12"
+                                        BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                                        BorderThickness="1"
+                                        Padding="12"
+                                        MaxHeight="140">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <TextBlock
+                                                Text="{x:Bind ViewModel.CurrentPayload, Mode=OneWay}"
+                                                Style="{StaticResource CodeValueTextStyle}" />
+                                        </ScrollViewer>
+                                    </Border>
+                                    <TextBlock
+                                        Text="受け取った応答データ"
+                                        Style="{StaticResource MetricLabelTextStyle}" />
+                                    <TextBox
+                                        x:Name="SenderConfirmPayloadInput"
+                                        PlaceholderText="Android 側から受け取った応答データを貼り付ける"
+                                        AcceptsReturn="True"
+                                        Height="96"
+                                        FontSize="12"
+                                        FontFamily="Consolas" />
+                                    <Button
+                                        Content="この応答データで進める"
+                                        Click="OnProcessSenderConfirmPayloadClick"
+                                        HorizontalAlignment="Left"
+                                        Padding="14,8" />
                                 </StackPanel>
-                                <TextBlock Text="開始データ" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontWeight="SemiBold" />
-                                <Border
-                                    Background="{ThemeResource LayerFillColorDefaultBrush}"
-                                    CornerRadius="8"
-                                    BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
-                                    BorderThickness="1"
-                                    Padding="10"
-                                    MaxHeight="120">
-                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                        <TextBlock
-                                            Text="{x:Bind ViewModel.CurrentPayload, Mode=OneWay}"
-                                            FontSize="11"
-                                            FontFamily="Consolas"
-                                            TextWrapping="Wrap"
-                                            IsTextSelectionEnabled="True" />
-                                    </ScrollViewer>
-                                </Border>
-                                <TextBlock Text="受け取った応答データ" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontWeight="SemiBold" />
-                                <TextBox
-                                    x:Name="SenderConfirmPayloadInput"
-                                    PlaceholderText="Android 側から受け取った応答データを貼り付ける"
-                                    AcceptsReturn="True"
-                                    Height="80"
-                                    FontSize="11"
-                                    FontFamily="Consolas" />
-                                <Button Content="この応答データで進める" Click="OnProcessSenderConfirmPayloadClick" Padding="12,6" />
-                            </StackPanel>
+                            </Border>
                         </Expander>
                     </StackPanel>
                 </Border>
@@ -416,63 +658,63 @@
                 <Border
                     x:Name="SenderVerifyCodeCard"
                     Visibility="Collapsed"
-                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    CornerRadius="16"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1"
-                    Padding="28,22">
-                    <StackPanel Spacing="10">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Border Background="#E8F0FE" CornerRadius="8" Padding="7,3">
-                                <TextBlock Text="送信側" FontSize="11" FontWeight="Bold" Foreground="#1A56DB" />
+                    Style="{StaticResource SectionCardStyle}">
+                    <StackPanel Spacing="16">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Border
+                                Background="{StaticResource SenderAccentMutedBrush}"
+                                CornerRadius="8"
+                                Padding="8,4">
+                                <TextBlock
+                                    Text="送信側"
+                                    FontSize="11"
+                                    FontWeight="Bold"
+                                    Foreground="{StaticResource SenderAccentBrush}" />
                             </Border>
                             <TextBlock
                                 Text="6桁コードを確認"
-                                FontSize="16"
+                                FontSize="22"
                                 FontWeight="SemiBold"
                                 VerticalAlignment="Center" />
                         </StackPanel>
                         <TextBlock
                             Text="両端末に同じ番号が表示されていることを確認してください。"
-                            FontSize="13"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            TextWrapping="Wrap" />
+                            Style="{StaticResource BodyTextStyle}" />
 
                         <Border
-                            Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
-                            CornerRadius="12"
-                            Padding="0,16"
-                            Margin="0,4"
+                            Style="{StaticResource InsetCardStyle}"
+                            Padding="0,20"
                             HorizontalAlignment="Center"
-                            MinWidth="240">
+                            MinWidth="280">
                             <StackPanel HorizontalAlignment="Center" Spacing="4">
                                 <TextBlock
                                     Text="照合コード"
-                                    FontSize="11"
-                                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                    FontWeight="SemiBold"
+                                    Style="{StaticResource MetricLabelTextStyle}"
                                     HorizontalAlignment="Center" />
                                 <TextBlock
                                     Text="{x:Bind ViewModel.VerificationCodeDisplay, Mode=OneWay}"
-                                    FontSize="40"
+                                    FontSize="42"
                                     FontWeight="Black"
                                     FontFamily="Consolas"
                                     HorizontalAlignment="Center" />
                             </StackPanel>
                         </Border>
 
-                        <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center" Margin="0,4,0,0">
+                        <StackPanel
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Center"
+                            Spacing="10">
                             <Button
-                                Content="✅ 一致 — 接続する"
+                                Content="一致しているので接続する"
                                 Click="OnApproveVerificationClick"
                                 IsEnabled="{x:Bind ViewModel.CanApproveCode, Mode=OneWay}"
                                 Style="{StaticResource AccentButtonStyle}"
                                 Padding="20,10" />
                             <Button
-                                Content="違う — やり直す"
+                                Content="違うのでやり直す"
                                 Click="OnRejectVerificationClick"
                                 IsEnabled="{x:Bind ViewModel.CanRejectCode, Mode=OneWay}"
-                                Padding="16,10" />
+                                Padding="18,10" />
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -483,42 +725,53 @@
                 <Border
                     x:Name="ListenerScanInitCard"
                     Visibility="Collapsed"
-                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    CornerRadius="16"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1"
-                    Padding="28,22">
-                    <StackPanel Spacing="12">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Border Background="#FEF0E0" CornerRadius="8" Padding="7,3">
-                                <TextBlock Text="受信側" FontSize="11" FontWeight="Bold" Foreground="#B45309" />
+                    Style="{StaticResource SectionCardStyle}">
+                    <StackPanel Spacing="16">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Border
+                                Background="{StaticResource ListenerAccentMutedBrush}"
+                                CornerRadius="8"
+                                Padding="8,4">
+                                <TextBlock
+                                    Text="受信側"
+                                    FontSize="11"
+                                    FontWeight="Bold"
+                                    Foreground="{StaticResource ListenerAccentBrush}" />
                             </Border>
                             <TextBlock
                                 Text="開始データを貼り付ける"
-                                FontSize="16"
+                                FontSize="22"
                                 FontWeight="SemiBold"
                                 VerticalAlignment="Center" />
                         </StackPanel>
                         <TextBlock
                             Text="Windows または Android から受け取った開始データを、このPCに貼り付けてください。"
-                            FontSize="13"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            TextWrapping="Wrap" />
+                            Style="{StaticResource BodyTextStyle}" />
 
-                        <Expander Header="手動で操作する" Padding="0">
-                            <StackPanel Spacing="10" Margin="0,10,0,0">
-                                <Button Content="クリップボードの開始データを使う" Click="OnPastePayloadClick" Padding="12,6" />
-                                <TextBlock Text="手動入力" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontWeight="SemiBold" />
+                        <Border Style="{StaticResource InsetCardStyle}">
+                            <StackPanel Spacing="12">
+                                <Button
+                                    Content="クリップボードの開始データを使う"
+                                    Click="OnPastePayloadClick"
+                                    HorizontalAlignment="Left"
+                                    Padding="14,8" />
+                                <TextBlock
+                                    Text="手動入力"
+                                    Style="{StaticResource MetricLabelTextStyle}" />
                                 <TextBox
                                     x:Name="ListenerInitPayloadInput"
                                     PlaceholderText="開始データを貼り付ける"
                                     AcceptsReturn="True"
-                                    Height="80"
-                                    FontSize="11"
+                                    Height="120"
+                                    FontSize="12"
                                     FontFamily="Consolas" />
-                                <Button Content="この開始データで進める" Click="OnProcessListenerInitPayloadClick" Padding="12,6" />
+                                <Button
+                                    Content="この開始データで進める"
+                                    Click="OnProcessListenerInitPayloadClick"
+                                    HorizontalAlignment="Left"
+                                    Padding="14,8" />
                             </StackPanel>
-                        </Expander>
+                        </Border>
                     </StackPanel>
                 </Border>
 
@@ -528,145 +781,168 @@
                 <Border
                     x:Name="ListenerShowConfirmCard"
                     Visibility="Collapsed"
-                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    CornerRadius="16"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1"
-                    Padding="28,22">
-                    <StackPanel Spacing="12">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Border Background="#FEF0E0" CornerRadius="8" Padding="7,3">
-                                <TextBlock Text="受信側" FontSize="11" FontWeight="Bold" Foreground="#B45309" />
+                    Style="{StaticResource SectionCardStyle}">
+                    <StackPanel Spacing="16">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Border
+                                Background="{StaticResource ListenerAccentMutedBrush}"
+                                CornerRadius="8"
+                                Padding="8,4">
+                                <TextBlock
+                                    Text="受信側"
+                                    FontSize="11"
+                                    FontWeight="Bold"
+                                    Foreground="{StaticResource ListenerAccentBrush}" />
                             </Border>
                             <TextBlock
                                 Text="応答データを送信側へ共有する"
-                                FontSize="16"
+                                FontSize="22"
                                 FontWeight="SemiBold"
+                                TextWrapping="Wrap"
                                 VerticalAlignment="Center" />
                         </StackPanel>
                         <TextBlock
                             Text="応答データをコピーして送信側へ渡してください。6桁コードが一致すると接続が完了します。"
-                            FontSize="13"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            TextWrapping="Wrap" />
+                            Style="{StaticResource BodyTextStyle}" />
                         <TextBlock
-                            Text="⏱ 応答データの有効期限は 10 分です"
+                            Text="応答データの有効期限は 10 分です。"
                             FontSize="12"
                             Foreground="{ThemeResource SystemFillColorAttentionBrush}" />
 
-                        <StackPanel Margin="0,4" Spacing="12">
-                            <Border
-                                Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
-                                CornerRadius="12"
-                                Padding="0,16"
-                                HorizontalAlignment="Center"
-                                MinWidth="240">
-                                <StackPanel HorizontalAlignment="Center" Spacing="4">
-                                    <TextBlock
-                                        Text="照合コード"
-                                        FontSize="11"
-                                        Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                        FontWeight="SemiBold"
-                                        HorizontalAlignment="Center" />
-                                    <TextBlock
-                                        Text="{x:Bind ViewModel.VerificationCodeDisplay, Mode=OneWay}"
-                                        FontSize="36"
-                                        FontWeight="Black"
-                                        FontFamily="Consolas"
-                                        HorizontalAlignment="Center" />
-                                    <TextBlock
-                                        Text="送信側でもこの番号が表示されていれば OK"
-                                        FontSize="12"
-                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                        TextWrapping="Wrap"
-                                        HorizontalAlignment="Center" />
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
+                        <Border
+                            Style="{StaticResource InsetCardStyle}"
+                            Padding="0,20"
+                            HorizontalAlignment="Center"
+                            MinWidth="280">
+                            <StackPanel HorizontalAlignment="Center" Spacing="6">
+                                <TextBlock
+                                    Text="照合コード"
+                                    Style="{StaticResource MetricLabelTextStyle}"
+                                    HorizontalAlignment="Center" />
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.VerificationCodeDisplay, Mode=OneWay}"
+                                    FontSize="38"
+                                    FontWeight="Black"
+                                    FontFamily="Consolas"
+                                    HorizontalAlignment="Center" />
+                                <TextBlock
+                                    Text="送信側でも同じ番号が出ていれば接続できます。"
+                                    Style="{StaticResource BodyTextStyle}"
+                                    HorizontalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
 
-                        <Expander Header="手動で操作する" Padding="0">
-                            <StackPanel Spacing="10" Margin="0,10,0,0">
-                                <Button Content="応答データをコピー" Click="OnCopyPayloadClick" Padding="12,6" />
-                                <TextBlock Text="応答データ" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontWeight="SemiBold" />
+                        <Border Style="{StaticResource InsetCardStyle}">
+                            <StackPanel Spacing="12">
+                                <Button
+                                    Content="応答データをコピー"
+                                    Click="OnCopyPayloadClick"
+                                    HorizontalAlignment="Left"
+                                    Padding="14,8" />
+                                <TextBlock
+                                    Text="応答データ"
+                                    Style="{StaticResource MetricLabelTextStyle}" />
                                 <Border
                                     Background="{ThemeResource LayerFillColorDefaultBrush}"
-                                    CornerRadius="8"
+                                    CornerRadius="12"
                                     BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
                                     BorderThickness="1"
-                                    Padding="10"
-                                    MaxHeight="120">
+                                    Padding="12"
+                                    MaxHeight="140">
                                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                                         <TextBlock
                                             Text="{x:Bind ViewModel.CurrentPayload, Mode=OneWay}"
-                                            FontSize="11"
-                                            FontFamily="Consolas"
-                                            TextWrapping="Wrap"
-                                            IsTextSelectionEnabled="True" />
+                                            Style="{StaticResource CodeValueTextStyle}" />
                                     </ScrollViewer>
                                 </Border>
                             </StackPanel>
-                        </Expander>
+                        </Border>
                     </StackPanel>
                 </Border>
 
                 <!-- ══════════════════════════════════════════
                      Connection details (always available, collapsed)
                      ══════════════════════════════════════════ -->
-                <Expander
-                    Header="接続の詳細"
-                    HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Stretch"
-                    Margin="0,4,0,0">
-                    <StackPanel Spacing="6" Margin="0,8,0,0">
-                        <StackPanel
-                            x:Name="SessionIdPanel"
-                            Visibility="Collapsed"
-                            Spacing="2">
-                            <TextBlock Text="セッションID" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
-                            <TextBlock
-                                Text="{x:Bind ViewModel.ActiveSessionId, Mode=OneWay}"
-                                FontSize="12"
-                                FontFamily="Consolas"
-                                IsTextSelectionEnabled="True" />
-                        </StackPanel>
-                        <TextBlock Text="{x:Bind ViewModel.NetworkPathLabel, Mode=OneWay}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <TextBlock Text="{x:Bind ViewModel.CandidateCountLabel, Mode=OneWay}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <TextBlock
-                            Text="{x:Bind ViewModel.SelectedCandidatePairLabel, Mode=OneWay}"
-                            FontSize="12"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <TextBlock
-                            Text="{x:Bind ViewModel.FailureHintLabel, Mode=OneWay}"
-                            FontSize="12"
-                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                            TextWrapping="Wrap" />
-                        <TextBlock
-                            Text="{x:Bind ViewModel.FailureCodeLabel, Mode=OneWay}"
-                            FontSize="12"
-                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                            TextWrapping="Wrap" />
-                        <TextBlock
-                            Text="音声ストリーム"
-                            FontSize="11"
-                            Margin="0,8,0,0"
-                            Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
-                        <TextBlock
-                            Text="{x:Bind ViewModel.AudioStreamSummaryLabel, Mode=OneWay}"
-                            FontSize="12"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            TextWrapping="Wrap" />
-                        <TextBlock
-                            Text="{x:Bind ViewModel.AudioBufferingLabel, Mode=OneWay}"
-                            FontSize="12"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            TextWrapping="Wrap" />
-                        <TextBlock
-                            Text="{x:Bind ViewModel.AudioHealthLabel, Mode=OneWay}"
-                            FontSize="12"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
-                </Expander>
+                <Border Style="{StaticResource SectionCardStyle}">
+                    <Expander
+                        Header="接続の詳細"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Stretch">
+                        <Grid Margin="0,16,0,0" RowSpacing="14">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <StackPanel
+                                x:Name="SessionIdPanel"
+                                Grid.Row="0"
+                                Visibility="Collapsed"
+                                Spacing="4">
+                                <TextBlock
+                                    Text="セッション ID"
+                                    Style="{StaticResource MetricLabelTextStyle}" />
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.ActiveSessionId, Mode=OneWay}"
+                                    Style="{StaticResource CodeValueTextStyle}" />
+                            </StackPanel>
+
+                            <StackPanel
+                                Grid.Row="1"
+                                Spacing="6">
+                                <TextBlock
+                                    Text="接続経路"
+                                    Style="{StaticResource MetricLabelTextStyle}" />
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.NetworkPathLabel, Mode=OneWay}"
+                                    Style="{StaticResource MetricValueTextStyle}" />
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.CandidateCountLabel, Mode=OneWay}"
+                                    Style="{StaticResource MetricValueTextStyle}" />
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.SelectedCandidatePairLabel, Mode=OneWay}"
+                                    Style="{StaticResource MetricValueTextStyle}" />
+                            </StackPanel>
+
+                            <StackPanel
+                                Grid.Row="2"
+                                Spacing="6">
+                                <TextBlock
+                                    Text="音声ストリーム"
+                                    Style="{StaticResource MetricLabelTextStyle}" />
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.AudioStreamSummaryLabel, Mode=OneWay}"
+                                    Style="{StaticResource MetricValueTextStyle}" />
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.AudioBufferingLabel, Mode=OneWay}"
+                                    Style="{StaticResource MetricValueTextStyle}" />
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.AudioHealthLabel, Mode=OneWay}"
+                                    Style="{StaticResource MetricValueTextStyle}" />
+                            </StackPanel>
+
+                            <StackPanel
+                                Grid.Row="3"
+                                Spacing="6">
+                                <TextBlock
+                                    Text="失敗診断"
+                                    Style="{StaticResource MetricLabelTextStyle}" />
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.FailureHintLabel, Mode=OneWay}"
+                                    FontSize="12"
+                                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                    TextWrapping="Wrap" />
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.FailureCodeLabel, Mode=OneWay}"
+                                    FontSize="12"
+                                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Grid>
+                    </Expander>
+                </Border>
 
             </StackPanel>
         </ScrollViewer>

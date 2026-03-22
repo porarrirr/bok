@@ -18,6 +18,8 @@
     <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\'))</RepoRoot>
     <NativeBuildOutputDir>$(RepoRoot)out\core-webrtc</NativeBuildOutputDir>
     <NativeVcpkgBinDir>$(RepoRoot)vcpkg_installed\x64-windows\bin</NativeVcpkgBinDir>
+    <NativeSystemRuntimeDir Condition="'$(PROCESSOR_ARCHITECTURE)' == 'x86' and '$(PROCESSOR_ARCHITEW6432)' != '' and Exists('$(SystemRoot)\Sysnative\msvcp140.dll')">$(SystemRoot)\Sysnative</NativeSystemRuntimeDir>
+    <NativeSystemRuntimeDir Condition="'$(NativeSystemRuntimeDir)' == ''">$(SystemRoot)\System32</NativeSystemRuntimeDir>
   </PropertyGroup>
 
   <ItemGroup>
@@ -31,18 +33,18 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="$(SystemRoot)\System32\msvcp140.dll"
-             Condition="Exists('$(SystemRoot)\System32\msvcp140.dll') and !Exists('$(MSBuildProjectDirectory)\runtimes\win-x64\native\msvcp140.dll')"
+    <Content Include="$(NativeSystemRuntimeDir)\msvcp140.dll"
+             Condition="Exists('$(NativeSystemRuntimeDir)\msvcp140.dll') and !Exists('$(MSBuildProjectDirectory)\runtimes\win-x64\native\msvcp140.dll')"
              Link="runtimes\win-x64\native\msvcp140.dll"
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="$(SystemRoot)\System32\vcruntime140.dll"
-             Condition="Exists('$(SystemRoot)\System32\vcruntime140.dll') and !Exists('$(MSBuildProjectDirectory)\runtimes\win-x64\native\vcruntime140.dll')"
+    <Content Include="$(NativeSystemRuntimeDir)\vcruntime140.dll"
+             Condition="Exists('$(NativeSystemRuntimeDir)\vcruntime140.dll') and !Exists('$(MSBuildProjectDirectory)\runtimes\win-x64\native\vcruntime140.dll')"
              Link="runtimes\win-x64\native\vcruntime140.dll"
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="$(SystemRoot)\System32\vcruntime140_1.dll"
-             Condition="Exists('$(SystemRoot)\System32\vcruntime140_1.dll') and !Exists('$(MSBuildProjectDirectory)\runtimes\win-x64\native\vcruntime140_1.dll')"
+    <Content Include="$(NativeSystemRuntimeDir)\vcruntime140_1.dll"
+             Condition="Exists('$(NativeSystemRuntimeDir)\vcruntime140_1.dll') and !Exists('$(MSBuildProjectDirectory)\runtimes\win-x64\native\vcruntime140_1.dll')"
              Link="runtimes\win-x64\native\vcruntime140_1.dll"
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />
