@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.example.p2paudio.logging.AppLogger
 import com.example.p2paudio.audio.PlaybackLatencyPreset
+import com.example.p2paudio.audio.UdpOpusApplication
 import com.example.p2paudio.model.AudioStreamDiagnostics
 import com.example.p2paudio.model.AudioStreamSource
 import com.example.p2paudio.model.AudioStreamState
@@ -149,6 +150,8 @@ class MainActivity : ComponentActivity() {
                         uiState = uiState,
                         onSelectTransportMode = viewModel::selectTransportMode,
                         onSelectReceiverLatencyPreset = viewModel::selectReceiverLatencyPreset,
+                        onSelectUdpSenderFrameDurationMs = viewModel::selectUdpSenderFrameDurationMs,
+                        onSelectUdpSenderApplication = viewModel::selectUdpSenderApplication,
                         onChooseSender = viewModel::beginSenderFlow,
                         onContinueSender = viewModel::startSenderFlowRequested,
                         onChooseListener = viewModel::beginListenerFlow,
@@ -214,6 +217,8 @@ private fun MainScreen(
     uiState: MainUiState,
     onSelectTransportMode: (TransportMode) -> Unit,
     onSelectReceiverLatencyPreset: (PlaybackLatencyPreset) -> Unit,
+    onSelectUdpSenderFrameDurationMs: (Int) -> Unit,
+    onSelectUdpSenderApplication: (UdpOpusApplication) -> Unit,
     onChooseSender: () -> Unit,
     onContinueSender: () -> Unit,
     onChooseListener: () -> Unit,
@@ -299,8 +304,12 @@ private fun MainScreen(
                     SetupStep.ENTRY -> EntryActionsCard(
                         transportMode = uiState.transportMode,
                         receiverLatencyPreset = uiState.receiverLatencyPreset,
+                        udpSenderFrameDurationMs = uiState.udpSenderFrameDurationMs,
+                        udpSenderApplication = uiState.udpSenderApplication,
                         onSelectTransportMode = onSelectTransportMode,
                         onSelectReceiverLatencyPreset = onSelectReceiverLatencyPreset,
+                        onSelectUdpSenderFrameDurationMs = onSelectUdpSenderFrameDurationMs,
+                        onSelectUdpSenderApplication = onSelectUdpSenderApplication,
                         onChooseSender = onChooseSender,
                         onChooseListener = onChooseListener,
                         canStartNewFlow = canStartNewFlow
@@ -316,6 +325,7 @@ private fun MainScreen(
                     SetupStep.SENDER_SHOW_INIT -> SenderShowInitCard(
                         uiState = uiState,
                         expirySeconds = expirySeconds,
+                        transportMode = uiState.transportMode,
                         onCopyPayload = {
                             clipboardManager.setText(AnnotatedString(uiState.initPayload))
                             transientMessage = initCopiedText
@@ -646,8 +656,12 @@ private fun ConnectionOverviewCard(
 private fun EntryActionsCard(
     transportMode: TransportMode,
     receiverLatencyPreset: PlaybackLatencyPreset,
+    udpSenderFrameDurationMs: Int,
+    udpSenderApplication: UdpOpusApplication,
     onSelectTransportMode: (TransportMode) -> Unit,
     onSelectReceiverLatencyPreset: (PlaybackLatencyPreset) -> Unit,
+    onSelectUdpSenderFrameDurationMs: (Int) -> Unit,
+    onSelectUdpSenderApplication: (UdpOpusApplication) -> Unit,
     onChooseSender: () -> Unit,
     onChooseListener: () -> Unit,
     canStartNewFlow: Boolean
@@ -680,6 +694,19 @@ private fun EntryActionsCard(
             onSelectPreset = onSelectReceiverLatencyPreset
         )
 
+        if (transportMode == TransportMode.UDP_OPUS) {
+            UdpSenderFrameDurationSelector(
+                selectedFrameDurationMs = udpSenderFrameDurationMs,
+                enabled = canStartNewFlow,
+                onSelectFrameDurationMs = onSelectUdpSenderFrameDurationMs
+            )
+            UdpSenderApplicationSelector(
+                selectedApplication = udpSenderApplication,
+                enabled = canStartNewFlow,
+                onSelectApplication = onSelectUdpSenderApplication
+            )
+        }
+
         ChecklistBlock(
             items = listOf(
                 stringResource(R.string.flow_checklist_item_network),
@@ -691,7 +718,7 @@ private fun EntryActionsCard(
             title = stringResource(R.string.action_start_sender),
             description = when (transportMode) {
                 TransportMode.WEBRTC -> stringResource(R.string.flow_entry_sender_description)
-                TransportMode.UDP_OPUS -> stringResource(R.string.transport_mode_udp_sender_unavailable)
+                TransportMode.UDP_OPUS -> stringResource(R.string.transport_mode_udp_sender_description)
             },
             enabled = canStartNewFlow,
             onClick = onChooseSender,
@@ -707,6 +734,78 @@ private fun EntryActionsCard(
             enabled = canStartNewFlow,
             onClick = onChooseListener,
             testTag = "entry_start_listener_button"
+        )
+    }
+}
+
+@Composable
+private fun UdpSenderFrameDurationSelector(
+    selectedFrameDurationMs: Int,
+    enabled: Boolean,
+    onSelectFrameDurationMs: (Int) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(R.string.udp_sender_frame_duration_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = stringResource(R.string.udp_sender_frame_duration_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        listOf(5, 10, 20, 40, 60).forEach { frameDurationMs ->
+            val label = stringResource(R.string.udp_sender_frame_duration_value, frameDurationMs)
+            if (selectedFrameDurationMs == frameDurationMs) {
+                Button(modifier = Modifier.fillMaxWidth(), onClick = { onSelectFrameDurationMs(frameDurationMs) }, enabled = enabled) {
+                    Text(label)
+                }
+            } else {
+                OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = { onSelectFrameDurationMs(frameDurationMs) }, enabled = enabled) {
+                    Text(label)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UdpSenderApplicationSelector(
+    selectedApplication: UdpOpusApplication,
+    enabled: Boolean,
+    onSelectApplication: (UdpOpusApplication) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(R.string.udp_sender_application_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        listOf(
+            UdpOpusApplication.RESTRICTED_LOWDELAY to R.string.udp_sender_application_lowdelay,
+            UdpOpusApplication.AUDIO to R.string.udp_sender_application_audio
+        ).forEach { (application, labelRes) ->
+            if (selectedApplication == application) {
+                Button(modifier = Modifier.fillMaxWidth(), onClick = { onSelectApplication(application) }, enabled = enabled) {
+                    Text(stringResource(labelRes))
+                }
+            } else {
+                OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = { onSelectApplication(application) }, enabled = enabled) {
+                    Text(stringResource(labelRes))
+                }
+            }
+        }
+        Text(
+            text = stringResource(
+                if (selectedApplication == UdpOpusApplication.AUDIO) {
+                    R.string.udp_sender_application_audio_description
+                } else {
+                    R.string.udp_sender_application_lowdelay_description
+                }
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -865,6 +964,7 @@ private fun DiagnosingCard() {
 private fun SenderShowInitCard(
     uiState: MainUiState,
     expirySeconds: Int,
+    transportMode: TransportMode,
     onCopyPayload: () -> Unit,
     onSharePayload: () -> Unit,
     onProcessConfirmPayload: (String) -> Unit
@@ -874,12 +974,21 @@ private fun SenderShowInitCard(
             .fillMaxWidth()
             .testTag("sender_init_step_card"),
         number = 2,
-        title = stringResource(R.string.flow_sender_step_title),
-        description = stringResource(R.string.flow_sender_step_description)
+        title = stringResource(
+            if (transportMode == TransportMode.UDP_OPUS) R.string.flow_udp_sender_step_title
+            else R.string.flow_sender_step_title
+        ),
+        description = stringResource(
+            if (transportMode == TransportMode.UDP_OPUS) R.string.flow_udp_sender_step_description
+            else R.string.flow_sender_step_description
+        )
     ) {
         if (uiState.initPayload.isBlank()) {
             Text(
-                text = stringResource(R.string.flow_sender_waiting_code),
+                text = stringResource(
+                    if (transportMode == TransportMode.UDP_OPUS) R.string.flow_udp_sender_waiting_code
+                    else R.string.flow_sender_waiting_code
+                ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -897,13 +1006,21 @@ private fun SenderShowInitCard(
                 onCopyPayload = onCopyPayload,
                 onSharePayload = onSharePayload
             )
-            PayloadInputSection(
-                title = stringResource(R.string.flow_sender_received_payload_title),
-                placeholder = stringResource(R.string.flow_sender_received_payload_placeholder),
-                submitLabel = stringResource(R.string.flow_sender_apply_received_payload),
-                textFieldTag = "sender_payload_input",
-                onSubmit = onProcessConfirmPayload
-            )
+            if (transportMode == TransportMode.WEBRTC) {
+                PayloadInputSection(
+                    title = stringResource(R.string.flow_sender_received_payload_title),
+                    placeholder = stringResource(R.string.flow_sender_received_payload_placeholder),
+                    submitLabel = stringResource(R.string.flow_sender_apply_received_payload),
+                    textFieldTag = "sender_payload_input",
+                    onSubmit = onProcessConfirmPayload
+                )
+            } else {
+                Text(
+                    text = stringResource(R.string.flow_udp_sender_waiting_tip),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

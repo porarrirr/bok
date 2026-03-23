@@ -16,6 +16,7 @@ import com.example.p2paudio.audio.AndroidPcmPlayer
 import com.example.p2paudio.audio.AndroidPcmSender
 import com.example.p2paudio.audio.PlaybackBufferConfig
 import com.example.p2paudio.audio.PlaybackLatencyPreset
+import com.example.p2paudio.audio.UdpOpusApplication
 import com.example.p2paudio.capture.AndroidAudioCaptureManager
 import com.example.p2paudio.capture.AudioCaptureRuntime
 import com.example.p2paudio.logging.AppLogger
@@ -32,6 +33,8 @@ import com.example.p2paudio.model.UdpConfirmPayload
 import com.example.p2paudio.protocol.ConnectionCodeClient
 import com.example.p2paudio.protocol.ConnectionCodeClientException
 import com.example.p2paudio.protocol.ConnectionCodeCodec
+import com.example.p2paudio.protocol.ConnectionCodeSession
+import com.example.p2paudio.protocol.ConnectionCodeSessionFactory
 import com.example.p2paudio.protocol.PairingPayloadValidator
 import com.example.p2paudio.protocol.QrPayloadCodec
 import com.example.p2paudio.protocol.VerificationCode
@@ -41,6 +44,7 @@ import com.example.p2paudio.transport.PairingAudioTransport
 import com.example.p2paudio.transport.TransportMode
 import com.example.p2paudio.transport.UdpListenerTransportException
 import com.example.p2paudio.transport.UdpOpusListenerTransport
+import com.example.p2paudio.transport.UdpOpusSenderTransport
 import com.example.p2paudio.webrtc.PeerConnectionController
 import com.example.p2paudio.webrtc.WebRtcFactoryProvider
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -60,16 +64,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         Context.MODE_PRIVATE
     )
     private val initialReceiverLatencyPreset = loadReceiverLatencyPreset()
+    private val initialUdpSenderFrameDurationMs = loadUdpSenderFrameDurationMs()
+    private val initialUdpSenderApplication = loadUdpSenderApplication()
     private var pcmPlayer = createWebRtcPcmPlayer(initialReceiverLatencyPreset)
     private var udpPcmPlayer = createUdpPcmPlayer(initialReceiverLatencyPreset)
     private var pcmSender: AndroidPcmSender? = null
+    private var udpSenderTransport: UdpOpusSenderTransport? = null
+    private var udpConnectionCodeSession: ConnectionCodeSession? = null
     private var playbackMessageShown = false
     private var waitingForCaptureServiceStart = false
 
     private val _uiState = MutableStateFlow(
         MainUiState(
             statusMessage = text(R.string.status_ready),
-            receiverLatencyPreset = initialReceiverLatencyPreset
+            receiverLatencyPreset = initialReceiverLatencyPreset,
+            udpSenderFrameDurationMs = initialUdpSenderFrameDurationMs,
+            udpSenderApplication = initialUdpSenderApplication
         )
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -164,14 +174,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun beginSenderFlow() {
-        if (_uiState.value.transportMode == TransportMode.UDP_OPUS) {
-            val message = text(R.string.status_udp_android_sender_unavailable)
-            resetToEntry(
-                statusMessage = message,
-                failure = null
-            )
-            return
-        }
         AppLogger.i("MainViewModel", "sender_flow_guidance", "Sender guidance selected")
         _uiState.update {
             it.copy(
@@ -216,10 +218,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startSenderFlowRequested() {
-        if (_uiState.value.transportMode == TransportMode.UDP_OPUS) {
-            beginSenderFlow()
-            return
-        }
         AppLogger.i("MainViewModel", "sender_flow_start", "Sender flow requested")
         if (!captureRuntime.isSupported()) {
             recoverToEntry(
@@ -350,7 +348,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 statusMessage = text(R.string.status_path_diagnosing)
             )
         }
-        createInitPayload()
+        if (_uiState.value.transportMode == TransportMode.UDP_OPUS) {
+            createUdpInitPayload()
+        } else {
+            createInitPayload()
+        }
     }
 
     private fun onCaptureServiceStartFailed(error: Throwable) {
@@ -424,6 +426,140 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun createUdpInitPayload() {
+        AppLogger.i("MainViewModel", "udp_init_generation_start", "Creating local UDP init payload")
+        viewModelScope.launch {
+            val session = runCatching {
+                val payload = com.example.p2paudio.model.UdpInitPayload(
+                    sessionId = java.util.UUID.randomUUID().toString(),
+                    senderDeviceName = Build.MODEL ?: "android",
+                    expiresAtUnixMs = System.currentTimeMillis() + PAYLOAD_TTL_MS
+                )
+                val encodedPayload = QrPayloadCodec.encodeUdpInit(payload)
+                ConnectionCodeSessionFactory().create(encodedPayload, payload.expiresAtUnixMs).also { created ->
+                    udpConnectionCodeSession?.close()
+                    udpConnectionCodeSession = created
+                    _uiState.update {
+                        it.copy(
+                            setupMode = SetupMode.SENDER,
+                            setupStep = SetupStep.SENDER_SHOW_INIT,
+                            payloadExpiresAtUnixMs = payload.expiresAtUnixMs,
+                            activeSessionId = payload.sessionId,
+                            initPayload = created.connectionCode,
+                            confirmPayload = "",
+                            verificationCode = "",
+                            pendingAnswerSdp = "",
+                            statusMessage = text(R.string.status_udp_sender_code_ready),
+                            failure = null
+                        )
+                    }
+                    AppLogger.i(
+                        "MainViewModel",
+                        "udp_init_generation_success",
+                        "UDP init connection code generated",
+                        context = mapOf("sessionId" to payload.sessionId)
+                    )
+                }
+            }.getOrElse { error ->
+                recoverToEntry(
+                    SessionFailure(
+                        FailureCode.NETWORK_INTERFACE_NOT_USABLE,
+                        error.message ?: text(R.string.error_network_interface_not_usable)
+                    )
+                )
+                return@launch
+            }
+
+            viewModelScope.launch {
+                awaitUdpConfirmSubmission(session)
+            }
+        }
+    }
+
+    private suspend fun awaitUdpConfirmSubmission(session: ConnectionCodeSession) {
+        val submission = try {
+            session.waitForConfirmPayload()
+        } catch (_: Exception) {
+            return
+        } finally {
+            if (udpConnectionCodeSession === session) {
+                udpConnectionCodeSession = null
+            }
+            session.close()
+        }
+
+        val confirm = try {
+            QrPayloadCodec.decodeUdpConfirm(submission.payload)
+        } catch (error: Exception) {
+            recoverToEntry(
+                SessionFailure(
+                    FailureCode.INVALID_PAYLOAD,
+                    error.message ?: text(R.string.error_invalid_confirm_payload)
+                )
+            )
+            return
+        }
+
+        PairingPayloadValidator.validateUdpConfirm(
+            payload = confirm,
+            expectedSessionId = _uiState.value.activeSessionId,
+            nowUnixMs = System.currentTimeMillis()
+        )?.let { failure ->
+            recoverToEntry(failure)
+            return
+        }
+
+        startUdpSenderTransport(confirm, submission.remoteAddress)
+    }
+
+    private fun startUdpSenderTransport(confirm: UdpConfirmPayload, remoteAddress: String) {
+        val audioRecord = captureRuntime.currentAudioRecord()
+        if (audioRecord == null) {
+            recoverToEntry(
+                SessionFailure(
+                    FailureCode.AUDIO_CAPTURE_NOT_SUPPORTED,
+                    text(R.string.error_audio_capture_not_supported)
+                )
+            )
+            return
+        }
+
+        stopUdpSenderTransport()
+        val transport = runCatching {
+            UdpOpusSenderTransport(
+                audioRecord = audioRecord,
+                sampleRate = AndroidAudioCaptureManager.SAMPLE_RATE,
+                channels = 2,
+                frameDurationMs = _uiState.value.udpSenderFrameDurationMs,
+                application = _uiState.value.udpSenderApplication,
+                remoteHost = remoteAddress,
+                remotePort = confirm.receiverPort,
+                failureListener = ::recoverToEntry
+            )
+        }.getOrElse { error ->
+            recoverToEntry(
+                SessionFailure(
+                    FailureCode.PEER_UNREACHABLE,
+                    error.message ?: text(R.string.error_peer_unreachable)
+                )
+            )
+            return
+        }
+        transport.start()
+        udpSenderTransport = transport
+        _uiState.update {
+            it.copy(
+                streamState = AudioStreamState.STREAMING,
+                setupMode = SetupMode.SENDER,
+                setupStep = SetupStep.ENTRY,
+                payloadExpiresAtUnixMs = 0L,
+                initPayload = "",
+                statusMessage = text(R.string.status_udp_streaming_captured_audio),
+                failure = null
+            )
+        }
+    }
+
     fun selectReceiverLatencyPreset(preset: PlaybackLatencyPreset) {
         val current = _uiState.value
         if (current.receiverLatencyPreset == preset) {
@@ -455,6 +591,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 audioStreamDiagnostics = AudioStreamDiagnostics()
             )
         }
+    }
+
+    fun selectUdpSenderFrameDurationMs(frameDurationMs: Int) {
+        val current = _uiState.value
+        if (current.udpSenderFrameDurationMs == frameDurationMs) {
+            return
+        }
+        if (current.setupStep != SetupStep.ENTRY || current.streamState != AudioStreamState.IDLE) {
+            return
+        }
+        if (frameDurationMs !in setOf(5, 10, 20, 40, 60)) {
+            return
+        }
+        saveUdpSenderFrameDurationMs(frameDurationMs)
+        _uiState.update { it.copy(udpSenderFrameDurationMs = frameDurationMs) }
+    }
+
+    fun selectUdpSenderApplication(application: UdpOpusApplication) {
+        val current = _uiState.value
+        if (current.udpSenderApplication == application) {
+            return
+        }
+        if (current.setupStep != SetupStep.ENTRY || current.streamState != AudioStreamState.IDLE) {
+            return
+        }
+        saveUdpSenderApplication(application)
+        _uiState.update { it.copy(udpSenderApplication = application) }
     }
 
     fun createConfirmFromInit(initRaw: String) {
@@ -1009,6 +1172,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             context = mapOf("sessionId" to uiState.value.activeSessionId)
         )
         waitingForCaptureServiceStart = false
+        udpConnectionCodeSession?.close()
+        udpConnectionCodeSession = null
+        stopUdpSenderTransport()
         stopPcmSender()
         pcmPlayer.stop()
         udpPcmPlayer.stop()
@@ -1076,6 +1242,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun resetToEntry(statusMessage: String, failure: SessionFailure?) {
         waitingForCaptureServiceStart = false
+        udpConnectionCodeSession?.close()
+        udpConnectionCodeSession = null
+        stopUdpSenderTransport()
         stopPcmSender()
         pcmPlayer.stop()
         udpPcmPlayer.stop()
@@ -1093,6 +1262,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun stopProjectionServiceDirectly() {
         val app = getApplication<Application>()
         app.stopService(Intent(app, AudioSendService::class.java))
+    }
+
+    private fun stopUdpSenderTransport() {
+        udpSenderTransport?.close()
+        udpSenderTransport = null
     }
 
     private fun stopUdpReceiveServiceDirectly() {
@@ -1282,6 +1456,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .apply()
     }
 
+    private fun loadUdpSenderFrameDurationMs(): Int {
+        return receiverLatencyPreferences.getInt(UDP_SENDER_FRAME_DURATION_KEY, 20)
+            .takeIf { it in setOf(5, 10, 20, 40, 60) } ?: 20
+    }
+
+    private fun saveUdpSenderFrameDurationMs(frameDurationMs: Int) {
+        receiverLatencyPreferences
+            .edit()
+            .putInt(UDP_SENDER_FRAME_DURATION_KEY, frameDurationMs)
+            .apply()
+    }
+
+    private fun loadUdpSenderApplication(): UdpOpusApplication {
+        val rawValue = receiverLatencyPreferences.getString(
+            UDP_SENDER_APPLICATION_KEY,
+            UdpOpusApplication.RESTRICTED_LOWDELAY.name
+        )
+        return UdpOpusApplication.entries.firstOrNull { it.name == rawValue }
+            ?: UdpOpusApplication.RESTRICTED_LOWDELAY
+    }
+
+    private fun saveUdpSenderApplication(application: UdpOpusApplication) {
+        receiverLatencyPreferences
+            .edit()
+            .putString(UDP_SENDER_APPLICATION_KEY, application.name)
+            .apply()
+    }
+
     sealed interface UiCommand {
         object RequestRecordAudioPermission : UiCommand
         data class RequestProjectionPermission(val captureIntent: Intent) : UiCommand
@@ -1300,6 +1502,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val PAYLOAD_TTL_MS = 600_000L
         private const val RECEIVER_LATENCY_PREFERENCES_NAME = "playback_preferences"
         private const val RECEIVER_LATENCY_PREFERENCE_KEY = "receiver_latency_preset"
+        private const val UDP_SENDER_FRAME_DURATION_KEY = "udp_sender_frame_duration_ms"
+        private const val UDP_SENDER_APPLICATION_KEY = "udp_sender_application"
     }
 }
 

@@ -1,6 +1,7 @@
 package com.example.p2paudio.ui
 
 import com.example.p2paudio.audio.PlaybackLatencyPreset
+import com.example.p2paudio.audio.UdpOpusApplication
 import com.example.p2paudio.model.AudioStreamState
 import com.example.p2paudio.model.AudioStreamDiagnostics
 import com.example.p2paudio.model.ConnectionDiagnostics
@@ -21,6 +22,8 @@ data class MainUiState(
     val pendingAnswerSdp: String = "",
     val activeSessionId: String = "",
     val receiverLatencyPreset: PlaybackLatencyPreset = PlaybackLatencyPreset.default,
+    val udpSenderFrameDurationMs: Int = 20,
+    val udpSenderApplication: UdpOpusApplication = UdpOpusApplication.RESTRICTED_LOWDELAY,
     val failure: SessionFailure? = null,
     val audioStreamDiagnostics: AudioStreamDiagnostics = AudioStreamDiagnostics(),
     val connectionDiagnostics: ConnectionDiagnostics = ConnectionDiagnostics()

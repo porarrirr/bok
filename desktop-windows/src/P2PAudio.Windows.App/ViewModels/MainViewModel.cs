@@ -23,15 +23,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private IWebRtcBridge _bridge;
     private readonly Func<IWebRtcBridge>? _startupBridgeFactory;
     private readonly IUdpAudioSenderBridge _udpBridge;
+    private readonly IUdpAudioReceiver _udpReceiver;
     private readonly IUdpReceiverDiscoveryService _udpReceiverDiscoveryService;
     private readonly IConnectionCodeSessionFactory _connectionCodeSessionFactory;
     private readonly Func<ILoopbackAudioSender> _webRtcLoopbackSenderFactory;
     private readonly Func<ILoopbackAudioSender> _udpLoopbackSenderFactory;
-    private readonly PcmPlaybackService _playbackService;
+    private PcmPlaybackService _playbackService;
     private readonly CancellationTokenSource _receiveLoopCts = new();
     private readonly SynchronizationContext? _uiContext = SynchronizationContext.Current;
     private BridgeBackendHealth _backendHealth;
     private BridgeBackendHealth _udpBackendHealth;
+    private BridgeBackendHealth _udpReceiverHealth;
     private Task? _startupTask;
     private bool _isStartupComplete;
     private bool _receiveLoopStarted;
@@ -56,6 +58,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             initialBridge: initializeImmediately ? CreateBridge() : CreateStartupPlaceholderBridge(),
             startupBridgeFactory: initializeImmediately ? null : CreateBridge,
             udpBridge: CreateUdpBridge(),
+            udpReceiver: CreateUdpReceiver(),
             udpReceiverDiscoveryService: new MdnsUdpReceiverDiscoveryService(),
             connectionCodeSessionFactory: null,
             initializeImmediately: initializeImmediately
@@ -66,6 +69,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public MainViewModel(IWebRtcBridge bridge) : this(
         bridge,
         udpBridge: new StubUdpAudioSenderBridge("UDP + Opus 送信モジュールはこのコンストラクターでは指定されていません。"),
+        udpReceiver: new StubUdpAudioReceiver("UDP + Opus 受信モジュールはこのコンストラクターでは指定されていません。"),
         udpReceiverDiscoveryService: new MdnsUdpReceiverDiscoveryService(),
         connectionCodeSessionFactory: null,
         initializeImmediately: true
@@ -77,6 +81,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         : this(
             bridge,
             udpBridge: new StubUdpAudioSenderBridge("UDP + Opus 送信モジュールはこのコンストラクターでは指定されていません。"),
+            udpReceiver: new StubUdpAudioReceiver("UDP + Opus 受信モジュールはこのコンストラクターでは指定されていません。"),
             udpReceiverDiscoveryService: new MdnsUdpReceiverDiscoveryService(),
             connectionCodeSessionFactory: null,
             initializeImmediately: initializeImmediately
@@ -93,9 +98,32 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Func<ILoopbackAudioSender>? webRtcLoopbackSenderFactory = null,
         Func<ILoopbackAudioSender>? udpLoopbackSenderFactory = null)
         : this(
+            bridge,
+            udpBridge,
+            udpReceiver: null,
+            udpReceiverDiscoveryService: udpReceiverDiscoveryService,
+            connectionCodeSessionFactory: connectionCodeSessionFactory,
+            initializeImmediately: initializeImmediately,
+            webRtcLoopbackSenderFactory: webRtcLoopbackSenderFactory,
+            udpLoopbackSenderFactory: udpLoopbackSenderFactory
+        )
+    {
+    }
+
+    public MainViewModel(
+        IWebRtcBridge bridge,
+        IUdpAudioSenderBridge udpBridge,
+        IUdpAudioReceiver? udpReceiver,
+        IUdpReceiverDiscoveryService udpReceiverDiscoveryService,
+        IConnectionCodeSessionFactory? connectionCodeSessionFactory,
+        bool initializeImmediately,
+        Func<ILoopbackAudioSender>? webRtcLoopbackSenderFactory = null,
+        Func<ILoopbackAudioSender>? udpLoopbackSenderFactory = null)
+        : this(
             initialBridge: initializeImmediately ? bridge : CreateStartupPlaceholderBridge(),
             startupBridgeFactory: initializeImmediately ? null : () => bridge,
             udpBridge: udpBridge,
+            udpReceiver: udpReceiver ?? CreateUdpReceiver(),
             udpReceiverDiscoveryService: udpReceiverDiscoveryService,
             connectionCodeSessionFactory: connectionCodeSessionFactory,
             initializeImmediately: initializeImmediately,
@@ -112,6 +140,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         : this(
             bridge,
             udpBridge: new StubUdpAudioSenderBridge("UDP + Opus 送信モジュールはこのコンストラクターでは指定されていません。"),
+            udpReceiver: new StubUdpAudioReceiver("UDP + Opus 受信モジュールはこのコンストラクターでは指定されていません。"),
             udpReceiverDiscoveryService: new MdnsUdpReceiverDiscoveryService(),
             connectionCodeSessionFactory: connectionCodeSessionFactory,
             initializeImmediately: initializeImmediately
@@ -123,6 +152,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         IWebRtcBridge initialBridge,
         Func<IWebRtcBridge>? startupBridgeFactory,
         IUdpAudioSenderBridge udpBridge,
+        IUdpAudioReceiver udpReceiver,
         IUdpReceiverDiscoveryService udpReceiverDiscoveryService,
         IConnectionCodeSessionFactory? connectionCodeSessionFactory,
         bool initializeImmediately,
@@ -132,6 +162,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _bridge = initialBridge;
         _startupBridgeFactory = startupBridgeFactory;
         _udpBridge = udpBridge;
+        _udpReceiver = udpReceiver;
         _udpReceiverDiscoveryService = udpReceiverDiscoveryService;
         _connectionCodeSessionFactory = connectionCodeSessionFactory ?? new ConnectionCodeSessionFactory();
         _webRtcLoopbackSenderFactory = webRtcLoopbackSenderFactory
@@ -143,6 +174,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _playbackService = new PcmPlaybackService();
         _backendHealth = CreatePendingBackendHealth();
         _udpBackendHealth = CreateBackendHealth(_udpBridge);
+        _udpReceiverHealth = CreateBackendHealth(_udpReceiver);
 
         BackendLabel = "内部処理を初期化しています...";
         StatusMessage = "起動準備をしています。";
@@ -190,6 +222,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private UdpOpusApplication selectedUdpOpusApplication = UdpOpusApplication.RestrictedLowDelay;
+
+    [ObservableProperty]
+    private UdpReceiveLatencyPreset selectedUdpReceiveLatencyPreset = UdpReceiveLatencyPreset.Ms50;
 
     [ObservableProperty]
     private string audioHealthLabel = "統計: -";
@@ -244,6 +279,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _ => 0
     };
 
+    public int SelectedUdpReceiveLatencyIndex => SelectedUdpReceiveLatencyPreset switch
+    {
+        UdpReceiveLatencyPreset.Ms20 => 0,
+        UdpReceiveLatencyPreset.Ms50 => 1,
+        UdpReceiveLatencyPreset.Ms100 => 2,
+        UdpReceiveLatencyPreset.Ms300 => 3,
+        _ => 1
+    };
+
     public string TransportModeLabel => SelectedTransportMode switch
     {
         TransportMode.WebRtc => "転送モード: WebRTC",
@@ -254,7 +298,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public string TransportModeDescription => SelectedTransportMode switch
     {
         TransportMode.WebRtc => "既存の WebRTC 接続と接続コードの流れを使います。",
-        TransportMode.UdpOpus => "WebRTC と同じ接続コードの流れで、この PC のメディア音声を Opus + UDP で Android へ低遅延送信します。",
+        TransportMode.UdpOpus => "WebRTC と同じ接続コードの流れで、Windows と Android のどちらにも UDP + Opus の送受信役を割り当てられます。",
         _ => string.Empty
     };
 
@@ -284,10 +328,30 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _ => "Opus application: RESTRICTED_LOWDELAY"
     };
 
+    public string UdpReceiveLatencyDescription => SelectedUdpReceiveLatencyPreset switch
+    {
+        UdpReceiveLatencyPreset.Ms20 => "20 ms: 最小寄りの設定です。遅延は最も小さい一方、回線の揺らぎには敏感です。",
+        UdpReceiveLatencyPreset.Ms50 => "50 ms: 既定値です。遅延と安定性のバランスが取りやすい設定です。",
+        UdpReceiveLatencyPreset.Ms100 => "100 ms: 少し余裕を持たせる設定です。短い揺らぎでも再生が安定しやすくなります。",
+        UdpReceiveLatencyPreset.Ms300 => "300 ms: 大きめのバッファです。遅延は増えますが、音切れは起きにくくなります。",
+        _ => "50 ms: 既定値です。"
+    };
+
+    public string UdpReceiveLatencySummary => SelectedUdpReceiveLatencyPreset switch
+    {
+        UdpReceiveLatencyPreset.Ms20 => "受信バッファ: 20 ms",
+        UdpReceiveLatencyPreset.Ms50 => "受信バッファ: 50 ms",
+        UdpReceiveLatencyPreset.Ms100 => "受信バッファ: 100 ms",
+        UdpReceiveLatencyPreset.Ms300 => "受信バッファ: 300 ms",
+        _ => "受信バッファ: 50 ms"
+    };
+
     public bool CanConfigureUdpOpusFrameDuration => CurrentSetupStep == SetupStep.Entry &&
         CurrentStreamState is StreamState.Idle or StreamState.Ended or StreamState.Failed;
 
     public bool CanConfigureUdpOpusApplication => CanConfigureUdpOpusFrameDuration;
+
+    public bool CanConfigureUdpReceiveLatency => CanConfigureUdpOpusFrameDuration;
 
     public string SenderEntryDescription => SelectedTransportMode switch
     {
@@ -299,7 +363,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public string ListenerEntryDescription => SelectedTransportMode switch
     {
         TransportMode.WebRtc => "相手の音をこのPCで再生",
-        TransportMode.UdpOpus => "UDP + Opus では Windows 側の受信は未対応です",
+        TransportMode.UdpOpus => "Android の音をこのPCで UDP + Opus 受信",
         _ => string.Empty
     };
 
@@ -327,6 +391,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 SetupStep.SenderShowInit => 2,
                 SetupStep.SenderVerifyCode => 3,
                 SetupStep.ListenerShowConfirm => 3,
+                SetupStep.ListenerWaitForConnection => 3,
                 _ => 1
             };
 
@@ -344,7 +409,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public string StepProgressLabel => SelectedTransportMode == TransportMode.UdpOpus &&
         CurrentStreamState is StreamState.Streaming or StreamState.Interrupted
-            ? "\u2462 UDP + Opus \u9001\u4FE1\u4E2D"
+            ? _udpBridge.IsStreaming
+                ? "\u2462 UDP + Opus \u9001\u4FE1\u4E2D"
+                : "\u2462 UDP + Opus \u53D7\u4FE1\u4E2D"
             : CurrentSetupStep switch
             {
                 SetupStep.Entry => "\u2460 \u5F79\u5272\u3092\u9078\u3076",
@@ -354,17 +421,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 SetupStep.ListenerScanInit => "\u2461 \u30C7\u30FC\u30BF\u3092\u5165\u529B",
                 SetupStep.SenderVerifyCode => "\u2462 \u30B3\u30FC\u30C9\u78BA\u8A8D",
                 SetupStep.ListenerShowConfirm => "\u2462 \u30B3\u30FC\u30C9\u78BA\u8A8D",
+                SetupStep.ListenerWaitForConnection => "\u2462 UDP + Opus \u53D7\u4FE1\u5F85\u6A5F",
                 _ => string.Empty
             };
 
     public bool CanStartSender => _isStartupComplete &&
-        GetSelectedBackendHealth().IsReady &&
+        GetSenderBackendHealth().IsReady &&
         (CurrentSetupStep == SetupStep.Entry || CurrentStreamState == StreamState.Failed) &&
         CurrentStreamState is StreamState.Idle or StreamState.Ended or StreamState.Failed;
 
     public bool CanStartListener => _isStartupComplete &&
-        SelectedTransportMode == TransportMode.WebRtc &&
-        _backendHealth.IsReady &&
+        GetListenerBackendHealth().IsReady &&
         (CurrentSetupStep == SetupStep.Entry || CurrentStreamState == StreamState.Failed) &&
         CurrentStreamState is StreamState.Idle or StreamState.Ended or StreamState.Failed;
 
@@ -418,7 +485,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         StatusMessage = mode switch
         {
             TransportMode.WebRtc => "WebRTC モードです。接続コードまたは手動の接続データ共有で進めます。",
-            TransportMode.UdpOpus => "UDP + Opus モードです。接続コードを Android 側に貼り付けると、Windows のメディア音声送信を開始できます。",
+            TransportMode.UdpOpus => "UDP + Opus モードです。Windows の送信/受信どちらでも接続コードの手順で進めます。",
             _ => "準備できました。"
         };
     }
@@ -461,9 +528,24 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    public void SelectUdpReceiveLatency(UdpReceiveLatencyPreset preset)
+    {
+        if (SelectedUdpReceiveLatencyPreset == preset || !CanConfigureUdpReceiveLatency)
+        {
+            return;
+        }
+
+        SelectedUdpReceiveLatencyPreset = preset;
+        _playbackService.UpdateProfile(preset.ToPlaybackProfile());
+        if (SelectedTransportMode == TransportMode.UdpOpus)
+        {
+            StatusMessage = $"{UdpReceiveLatencySummary} に変更しました。";
+        }
+    }
+
     public async Task StartSenderAsync()
     {
-        if (!EnsureBackendReady())
+        if (!EnsureSenderBackendReady())
         {
             return;
         }
@@ -533,15 +615,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         if (SelectedTransportMode == TransportMode.UdpOpus)
         {
-            StatusMessage = "UDP + Opus では Windows 側の受信は未対応です。WebRTC モードに切り替えてください。";
-            SetStreamState(StreamState.Idle);
-            SetFailureCode(null, clearWhenNull: true);
-            CurrentSetupStep = SetupStep.Entry;
-            FlowStateLabel = "案内: 最初の選択";
+            StartUdpListener();
             return;
         }
 
-        if (!EnsureBackendReady())
+        if (!EnsureListenerBackendReady())
         {
             return;
         }
@@ -575,6 +653,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         ResetConnectionCodeSession();
         _bridge.Close();
         _udpBridge.StopStreaming();
+        _udpReceiver.StopListening();
         StopLoopbackIfRunning();
         _playbackService.Stop();
 
@@ -626,9 +705,117 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         StatusMessage = $"UDP + Opus の接続コードを作成しました。Opus フレーム長は {SelectedUdpOpusFrameDurationMs} ms です。コピーして Android 側に貼り付けてください。";
     }
 
+    private void StartUdpListener()
+    {
+        if (!EnsureListenerBackendReady())
+        {
+            return;
+        }
+
+        ResetConnectionCodeSession();
+        _bridge.Close();
+        _udpBridge.StopStreaming();
+        _udpReceiver.StopListening();
+        StopLoopbackIfRunning();
+        _playbackService.Stop();
+        _playbackService = new PcmPlaybackService(SelectedUdpReceiveLatencyPreset.ToPlaybackProfile());
+
+        _pendingAnswerSdp = string.Empty;
+        _localSenderFingerprint = string.Empty;
+        CurrentPayload = string.Empty;
+        CurrentConnectionCode = string.Empty;
+        VerificationCode = string.Empty;
+        ActiveSessionId = string.Empty;
+        IsVerificationPending = false;
+        CurrentSetupStep = SetupStep.ListenerScanInit;
+        FlowStateLabel = "案内: 接続コードを入力";
+        StatusMessage = "Android の UDP + Opus 接続コードを貼り付けてください。";
+        SetFailureCode(null, clearWhenNull: true);
+        SetStreamState(StreamState.Idle);
+        UpdateDiagnostics(new ConnectionDiagnostics(
+            PathType: UsbTetheringDetector.ClassifyPrimaryPath(),
+            SelectedCandidatePairType: "udp_opus"
+        ));
+        ResetAudioStreamDetails();
+    }
+
+    private async Task CreateUdpListenerSessionAsync(string rawPayload)
+    {
+        if (!ConnectionCodeCodec.LooksLikeConnectionCode(rawPayload))
+        {
+            RestartSetup("UDP + Opus では Android の接続コードを貼り付けてください。", FailureCode.InvalidPayload);
+            return;
+        }
+
+        try
+        {
+            var connectionCode = ConnectionCodeCodec.Decode(rawPayload);
+            if (connectionCode.ExpiresAtUnixMs <= DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
+            {
+                RestartSetup("接続コードの有効期限が切れています。", FailureCode.SessionExpired);
+                return;
+            }
+
+            var initRaw = await ConnectionCodeClient.FetchInitPayloadAsync(connectionCode);
+            var initPayload = QrPayloadCodec.DecodeUdpInit(initRaw);
+            var failure = PairingPayloadValidator.ValidateUdpInit(initPayload, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            if (failure is not null)
+            {
+                RestartSetup(failure.Message, failure.Code);
+                return;
+            }
+
+            var startResult = await _udpReceiver.StartListeningAsync(connectionCode.Host, localPort: 49_152);
+            UpdateDiagnostics(startResult.Diagnostics);
+            if (!startResult.Success)
+            {
+                SetFailureState(
+                    $"UDP + Opus の受信待機を開始できませんでした: {startResult.ErrorMessage}",
+                    startResult.Diagnostics.NormalizedFailureCode ?? FailureCode.PeerUnreachable);
+                return;
+            }
+
+            var confirmPayload = QrPayloadCodec.EncodeUdpConfirm(UdpConfirmPayload.Create(
+                sessionId: initPayload.SessionId,
+                receiverDeviceName: Environment.MachineName,
+                receiverPort: startResult.ReceiverPort,
+                expiresAtUnixMs: Math.Min(
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + PayloadTtlMs,
+                    connectionCode.ExpiresAtUnixMs)
+            ));
+            await ConnectionCodeClient.SubmitConfirmPayloadAsync(connectionCode, confirmPayload);
+
+            ActiveSessionId = initPayload.SessionId;
+            CurrentSetupStep = SetupStep.ListenerWaitForConnection;
+            FlowStateLabel = "案内: UDP + Opus 受信待機";
+            SetStreamState(StreamState.Connecting);
+            StatusMessage = "Android へ受信先情報を送信しました。UDP + Opus の音声を待っています。";
+            SetFailureCode(null, clearWhenNull: true);
+        }
+        catch (ConnectionCodeClientException error)
+        {
+            RestartSetup(error.Failure.Message, error.Failure.Code);
+        }
+        catch (SessionFailure failure)
+        {
+            RestartSetup(failure.Message, failure.Code);
+        }
+        catch (Exception ex)
+        {
+            RestartSetup($"接続コードを処理できませんでした: {ex.Message}", FailureCode.InvalidPayload);
+        }
+    }
+
     public async Task ProcessInputPayloadAsync(string rawPayload)
     {
-        if (!EnsureBackendReady())
+        if (CurrentSetupStep is SetupStep.ListenerScanInit or SetupStep.ListenerWaitForConnection)
+        {
+            if (!EnsureListenerBackendReady())
+            {
+                return;
+            }
+        }
+        else if (!EnsureSenderBackendReady())
         {
             return;
         }
@@ -659,12 +846,19 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
         CurrentSetupStep = SetupStep.ListenerScanInit;
         FlowStateLabel = "案内: 開始データを入力";
-        await CreateConfirmFromInitAsync(rawPayload);
+        if (SelectedTransportMode == TransportMode.UdpOpus)
+        {
+            await CreateUdpListenerSessionAsync(rawPayload);
+        }
+        else
+        {
+            await CreateConfirmFromInitAsync(rawPayload);
+        }
     }
 
     public async Task PasteFromClipboardAsync()
     {
-        if (!EnsureBackendReady())
+        if (!EnsureListenerBackendReady())
         {
             return;
         }
@@ -681,7 +875,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public async Task ApproveVerificationAndConnectAsync()
     {
-        if (!EnsureBackendReady())
+        if (!EnsureSenderBackendReady())
         {
             return;
         }
@@ -730,6 +924,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         ResetConnectionCodeSession();
         _bridge.Close();
         _udpBridge.StopStreaming();
+        _udpReceiver.StopListening();
         StopLoopbackIfRunning();
         _playbackService.Stop();
 
@@ -766,6 +961,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _playbackService.Stop();
         DisposeBackend(_bridge);
         DisposeBackend(_udpBridge);
+        DisposeBackend(_udpReceiver);
         DisposeLoopbackSenderInstance(ref _webRtcLoopbackSender);
         DisposeLoopbackSenderInstance(ref _udpLoopbackSender);
         DisposeIfPossible(_playbackService);
@@ -1181,7 +1377,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    private bool EnsureBackendReady()
+    private bool EnsureSenderBackendReady()
     {
         if (!_isStartupComplete)
         {
@@ -1190,7 +1386,29 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             return false;
         }
 
-        var health = GetSelectedBackendHealth();
+        var health = GetSenderBackendHealth();
+        if (health.IsReady)
+        {
+            return true;
+        }
+
+        SetFailureState(
+            FormatBackendUnavailableMessage(health, SelectedTransportMode),
+            health.BlockingFailureCode ?? FailureCode.WebRtcNegotiationFailed
+        );
+        return false;
+    }
+
+    private bool EnsureListenerBackendReady()
+    {
+        if (!_isStartupComplete)
+        {
+            StatusMessage = "起動準備が完了するまでお待ちください。";
+            NotifyComputedProperties();
+            return false;
+        }
+
+        var health = GetListenerBackendHealth();
         if (health.IsReady)
         {
             return true;
@@ -1218,6 +1436,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         ResetConnectionCodeSession();
         _bridge.Close();
         _udpBridge.StopStreaming();
+        _udpReceiver.StopListening();
         StopLoopbackIfRunning();
         _playbackService.Stop();
         _pendingAnswerSdp = string.Empty;
@@ -1248,6 +1467,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         );
         ResetConnectionCodeSession();
         _udpBridge.StopStreaming();
+        _udpReceiver.StopListening();
         StopLoopbackIfRunning();
         CurrentSetupStep = SetupStep.Entry;
         FlowStateLabel = "案内: 最初からやり直し";
@@ -1314,11 +1534,46 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             {
                 if (SelectedTransportMode == TransportMode.UdpOpus)
                 {
+                    var receivedFrame = false;
+                    while (_udpReceiver.TryReceivePcmFrame(out var frame))
+                    {
+                        receivedFrame = true;
+                        _receiveIdleTicks = 0;
+                        _receivedPackets++;
+                        if (!_playbackService.PlayFrame(frame))
+                        {
+                            continue;
+                        }
+
+                        RunOnUiThread(() =>
+                        {
+                            if (CurrentStreamState == StreamState.Connecting &&
+                                CurrentSetupStep == SetupStep.ListenerWaitForConnection)
+                            {
+                                SetStreamState(StreamState.Streaming);
+                                FlowStateLabel = "案内: UDP + Opus 受信中";
+                                StatusMessage = "Android の音声を UDP + Opus で受信しています。";
+                            }
+                            else if (CurrentStreamState == StreamState.Interrupted)
+                            {
+                                SetStreamState(StreamState.Streaming);
+                                StatusMessage = "UDP + Opus の受信が復旧しました。";
+                            }
+                        });
+                    }
+
+                    if (receivedFrame)
+                    {
+                        LogReceiveStatsIfNeeded();
+                        continue;
+                    }
+
                     if (CurrentStreamState is StreamState.Connecting or StreamState.Streaming or StreamState.Interrupted)
                     {
                         EvaluateStreamHealth();
                     }
-                    await Task.Delay(200, cancellationToken);
+                    _receiveIdleTicks++;
+                    await Task.Delay(ReceiveLoopIdleDelayMs, cancellationToken);
                     continue;
                 }
 
@@ -1402,7 +1657,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         try
         {
             var diagnostics = SelectedTransportMode == TransportMode.UdpOpus
-                ? _udpBridge.GetDiagnostics()
+                ? GetActiveUdpDiagnostics()
                 : _bridge.GetDiagnostics();
             var code = diagnostics.NormalizedFailureCode ?? FailureCodeMapper.FromFailureHint(diagnostics.FailureHint);
             RunOnUiThread(() =>
@@ -1444,6 +1699,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
 
         UpdateDiagnostics(new ConnectionDiagnostics(PathType: UsbTetheringDetector.ClassifyPrimaryPath()));
+    }
+
+    private ConnectionDiagnostics GetActiveUdpDiagnostics()
+    {
+        return CurrentSetupStep == SetupStep.ListenerWaitForConnection ||
+               (CurrentStreamState is StreamState.Streaming or StreamState.Interrupted && !_udpBridge.IsStreaming)
+            ? _udpReceiver.GetDiagnostics()
+            : _udpBridge.GetDiagnostics();
     }
 
     private void UpdateDiagnosticsFromBridgeOr(ConnectionDiagnostics fallbackDiagnostics)
@@ -1540,7 +1803,32 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private BridgeBackendHealth GetSelectedBackendHealth()
     {
+        if (SelectedTransportMode != TransportMode.UdpOpus)
+        {
+            return _backendHealth;
+        }
+
+        return _udpBackendHealth.IsReady && _udpReceiverHealth.IsReady
+            ? new BridgeBackendHealth(
+                IsReady: true,
+                IsDevelopmentStub: false,
+                Message: "UDP + Opus の送受信モジュールを利用できます。",
+                BlockingFailureCode: null)
+            : new BridgeBackendHealth(
+                IsReady: false,
+                IsDevelopmentStub: false,
+                Message: $"送信: {_udpBackendHealth.Message} / 受信: {_udpReceiverHealth.Message}",
+                BlockingFailureCode: _udpBackendHealth.BlockingFailureCode ?? _udpReceiverHealth.BlockingFailureCode);
+    }
+
+    private BridgeBackendHealth GetSenderBackendHealth()
+    {
         return SelectedTransportMode == TransportMode.UdpOpus ? _udpBackendHealth : _backendHealth;
+    }
+
+    private BridgeBackendHealth GetListenerBackendHealth()
+    {
+        return SelectedTransportMode == TransportMode.UdpOpus ? _udpReceiverHealth : _backendHealth;
     }
 
     private void UpdateBackendLabel()
@@ -1553,11 +1841,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 : health.IsDevelopmentStub
                     ? "内部処理: WebRTC 開発用スタブ"
                     : "内部処理: WebRTC 接続モジュール未検出",
-            TransportMode.UdpOpus => _udpBridge.IsNativeBackend
-                ? "内部処理: UDP + Opus ネイティブ送信モジュール"
-                : health.IsDevelopmentStub
-                    ? "内部処理: UDP + Opus 開発用スタブ"
-                    : "内部処理: UDP + Opus 送信モジュール未検出",
+            TransportMode.UdpOpus => _udpBridge.IsNativeBackend && _udpReceiver.IsNativeBackend
+                ? "内部処理: UDP + Opus 送受信モジュール"
+                : "内部処理: UDP + Opus 一部機能制限あり",
             _ => "内部処理"
         };
     }
@@ -1668,6 +1954,28 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 },
                 ex);
             return new StubUdpAudioSenderBridge(startupReason);
+        }
+    }
+
+    private static IUdpAudioReceiver CreateUdpReceiver()
+    {
+        try
+        {
+            return new NativeUdpAudioReceiver();
+        }
+        catch (Exception ex)
+        {
+            var startupReason = FormatUdpBridgeStartupReason(ex);
+            AppLogger.E(
+                "MainViewModel",
+                "startup_udp_receiver_create_failed",
+                "Native UDP receiver creation failed",
+                new Dictionary<string, object?>
+                {
+                    ["startupReason"] = startupReason
+                },
+                ex);
+            return new StubUdpAudioReceiver(startupReason);
         }
     }
 
@@ -1789,7 +2097,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private static string FormatBackendUnavailableMessage(BridgeBackendHealth health, TransportMode mode)
     {
         var prefix = mode == TransportMode.UdpOpus
-            ? "UDP + Opus 送信モジュールが利用できません。"
+            ? "UDP + Opus モジュールが利用できません。"
             : "接続モジュールが利用できません。";
         return $"{prefix}{health.Message}";
     }
@@ -1915,6 +2223,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ListenerEntryDescription));
         OnPropertyChanged(nameof(UdpOpusFrameDurationSummary));
         OnPropertyChanged(nameof(UdpOpusApplicationSummary));
+        OnPropertyChanged(nameof(UdpReceiveLatencySummary));
         OnPropertyChanged(nameof(ShowManualPayloadFallback));
     }
 
@@ -1932,6 +2241,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(SelectedUdpOpusApplicationIndex));
         OnPropertyChanged(nameof(UdpOpusApplicationDescription));
         OnPropertyChanged(nameof(UdpOpusApplicationSummary));
+    }
+
+    partial void OnSelectedUdpReceiveLatencyPresetChanged(UdpReceiveLatencyPreset value)
+    {
+        _ = value;
+        OnPropertyChanged(nameof(SelectedUdpReceiveLatencyIndex));
+        OnPropertyChanged(nameof(UdpReceiveLatencyDescription));
+        OnPropertyChanged(nameof(UdpReceiveLatencySummary));
     }
 
     partial void OnVerificationCodeChanged(string value)
@@ -1960,6 +2277,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(PathStepDescription));
         OnPropertyChanged(nameof(CanConfigureUdpOpusFrameDuration));
         OnPropertyChanged(nameof(CanConfigureUdpOpusApplication));
+        OnPropertyChanged(nameof(CanConfigureUdpReceiveLatency));
     }
 
     private string GetRecommendedAction()
@@ -1969,7 +2287,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             return "内部処理の初期化が完了するまでお待ちください。";
         if (!selectedHealth.IsReady && CurrentSetupStep == SetupStep.Entry)
             return SelectedTransportMode == TransportMode.UdpOpus
-                ? "UDP + Opus 送信モジュールが見つかりません。必要なランタイムを入れてから再起動してください。"
+                ? "UDP + Opus の送受信モジュールを確認してください。必要なランタイムが不足している可能性があります。"
                 : "ネイティブ接続モジュールが見つかりません。必要なランタイムを入れてから再起動してください。";
         if (CurrentStreamState == StreamState.Streaming)
             return "音声共有中です。終了するときは「接続を終了する」を押してください。";
@@ -1986,7 +2304,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         return CurrentSetupStep switch
         {
             SetupStep.Entry => SelectedTransportMode == TransportMode.UdpOpus
-                ? "UDP + Opus では Windows のメディア音声送信だけをサポートします。Android 側で受信側を開き、接続コードを貼り付けてください。"
+                ? "UDP + Opus では送信側と受信側のどちらも選べます。接続コードの手順で進めてください。"
                 : "送信側か受信側を選ぶと、画面の案内に沿って進められます。",
             SetupStep.PathDiagnosing => "同じネットワーク上で直接つなぐための準備をしています。",
             SetupStep.UdpSenderDiscovering => "Android 側の UDP + Opus 受信待機を mDNS で探しています。見つかるとそのまま送信を開始します。",
@@ -1994,8 +2312,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 ? "接続コードをコピーして Android 側に貼り付けてください。Android 側が受信先情報を返すと、そのまま送信を開始します。"
                 : "接続コードをコピーして Android 側に貼り付けてください。従来どおり開始データの手動共有も使えます。",
             SetupStep.SenderVerifyCode => "両端末の6桁コードが同じなら接続してください。",
-            SetupStep.ListenerScanInit => "送信側から受け取った開始データを貼り付けてください。",
+            SetupStep.ListenerScanInit => SelectedTransportMode == TransportMode.UdpOpus
+                ? "Android 側で作成した UDP + Opus 接続コードを貼り付けてください。"
+                : "送信側から受け取った開始データを貼り付けてください。",
             SetupStep.ListenerShowConfirm => "応答データと6桁コードを送信側へ共有して接続を待ってください。",
+            SetupStep.ListenerWaitForConnection => "Android へ受信先情報は送信済みです。このまま UDP + Opus の音声到着を待ってください。",
             _ => string.Empty
         };
     }
@@ -2110,5 +2431,6 @@ public enum SetupStep
     ListenerScanInit,
     SenderShowInit,
     SenderVerifyCode,
-    ListenerShowConfirm
+    ListenerShowConfirm,
+    ListenerWaitForConnection
 }

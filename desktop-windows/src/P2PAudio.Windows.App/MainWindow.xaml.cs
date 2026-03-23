@@ -114,7 +114,13 @@ public sealed partial class MainWindow : Window
             : Visibility.Collapsed;
         ListenerScanInitCard.Visibility = !hideSetupCards && step == SetupStep.ListenerScanInit ? Visibility.Visible : Visibility.Collapsed;
         ListenerShowConfirmCard.Visibility = !hideSetupCards && step == SetupStep.ListenerShowConfirm ? Visibility.Visible : Visibility.Collapsed;
+        UdpListenerWaitingCard.Visibility = !hideSetupCards && step == SetupStep.ListenerWaitForConnection ? Visibility.Visible : Visibility.Collapsed;
         UdpOpusFrameDurationPanel.Visibility = ViewModel.SelectedTransportMode == TransportMode.UdpOpus
+            && step == SetupStep.Entry
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        UdpReceiveLatencyPanel.Visibility = ViewModel.SelectedTransportMode == TransportMode.UdpOpus
+            && step == SetupStep.Entry
             ? Visibility.Visible
             : Visibility.Collapsed;
 
@@ -194,6 +200,21 @@ public sealed partial class MainWindow : Window
             ? Services.UdpOpusApplication.Audio
             : Services.UdpOpusApplication.RestrictedLowDelay;
         ViewModel.SelectUdpOpusApplication(application);
+    }
+
+    private void OnUdpReceiveLatencySelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        var preset = UdpReceiveLatencyComboBox.SelectedIndex switch
+        {
+            0 => Services.UdpReceiveLatencyPreset.Ms20,
+            1 => Services.UdpReceiveLatencyPreset.Ms50,
+            2 => Services.UdpReceiveLatencyPreset.Ms100,
+            3 => Services.UdpReceiveLatencyPreset.Ms300,
+            _ => Services.UdpReceiveLatencyPreset.Ms50
+        };
+        ViewModel.SelectUdpReceiveLatency(preset);
     }
 
     private async void OnPastePayloadClick(object sender, RoutedEventArgs e)

@@ -9,8 +9,8 @@
     <string name="transport_mode_title">転送モード</string>
     <string name="transport_mode_webrtc">WebRTC</string>
     <string name="transport_mode_udp">UDP + Opus</string>
-    <string name="transport_mode_udp_note">UDP + Opus は Windows のメディア音声送信 → Android の受信再生に最適化した片方向モードです。接続は WebRTC と同じ接続コードの流れを使います。</string>
-    <string name="transport_mode_udp_sender_unavailable">Android からの UDP + Opus 送信はまだ準備中です。送信したい場合は Windows 側アプリを使ってください。</string>
+    <string name="transport_mode_udp_note">UDP + Opus は Android と Windows のどちらからでも使える片方向モードです。接続は WebRTC と同じ接続コードの流れを使います。</string>
+    <string name="transport_mode_udp_sender_description">この端末で再生している音を、Windows へ UDP + Opus で低遅延送信します。</string>
     <string name="transport_mode_udp_listener_description">Windows の接続コードを貼り付けて、メディア音声を UDP + Opus で低遅延受信します。</string>
     <string name="receiver_latency_title">受信バッファ（レイテンシー）</string>
     <string name="receiver_latency_note">Windows → Android の受信再生に効きます。低くすると遅延は減りますが、音切れしやすくなります。</string>
@@ -36,7 +36,7 @@
     <string name="status_failure_format">原因: %1$s</string>
     <string name="status_next_action_title">次にやること</string>
     <string name="status_ready">送信側か受信側を選んでください。</string>
-    <string name="status_udp_ready">UDP + Opus で使う役割を選んでください。Android では受信側で Windows の接続コードを貼り付けます。</string>
+    <string name="status_udp_ready">UDP + Opus で使う役割を選んでください。送信側では接続コードを作り、受信側では Windows の接続コードを貼り付けます。</string>
     <string name="status_sender_prepare">この端末の音を送る準備をします。案内を確認してから開始してください。</string>
     <string name="status_path_diagnosing">ローカル接続を確認し、接続データ交換の準備をしています。</string>
     <string name="status_listener_ready_to_scan">Windows の接続コードまたは送信側の開始データを貼り付けてください。</string>
@@ -45,7 +45,7 @@
     <string name="status_udp_receiving_audio">Windows のメディア音声を UDP + Opus で受信しています。</string>
     <string name="status_udp_waiting_generic">Windows からの UDP + Opus 接続を待っています。</string>
     <string name="status_udp_waiting_for_sender">Windows からの UDP + Opus 接続を待っています。サービス名: %1$s</string>
-    <string name="status_udp_android_sender_unavailable">Android からの UDP + Opus 送信はまだ準備中です。送信したい場合は Windows 側アプリを使ってください。</string>
+    <string name="status_udp_sender_code_ready">UDP + Opus の接続コードを作成しました。Windows 側に共有してください。</string>
     <string name="status_capturing">音声共有の準備をしています。</string>
     <string name="status_init_generated">開始データを作成しました。コピーまたは共有して受信側へ渡してください。</string>
     <string name="status_confirm_generated">応答データを作成しました。コピーまたは共有して送信側へ渡してください。</string>
@@ -56,6 +56,7 @@
     <string name="status_answer_applied">照合が完了しました。接続を開始しています。</string>
     <string name="status_session_ended">接続を終了しました。</string>
     <string name="status_streaming_captured_audio">この端末の音を送信しています。</string>
+    <string name="status_udp_streaming_captured_audio">この端末の音を UDP + Opus で Windows へ送信しています。</string>
     <string name="status_peer_disconnected">相手端末との接続が切れました。</string>
     <string name="status_ice_connection_failed">直接接続を確立できませんでした。</string>
     <string name="status_qr_expiry_remaining">接続情報の有効期限: あと %1$d 秒</string>
@@ -109,6 +110,10 @@
     <string name="flow_sender_step_title">開始データを相手に共有する</string>
     <string name="flow_sender_step_description">開始データを相手へ渡したら、返ってきた応答データを貼り付けます。</string>
     <string name="flow_sender_waiting_code">開始データを作成しています。</string>
+    <string name="flow_udp_sender_step_title">接続コードを相手に共有する</string>
+    <string name="flow_udp_sender_step_description">接続コードを Windows 側へ渡すと、相手が受信先情報を自動で返し、そのまま送信が始まります。</string>
+    <string name="flow_udp_sender_waiting_code">UDP + Opus の接続コードを作成しています。</string>
+    <string name="flow_udp_sender_waiting_tip">Windows 側がこの接続コードを取り込むと、そのまま UDP + Opus の送信が始まります。</string>
     <string name="flow_sender_scan_button">相手の応答データを取り込む</string>
     <string name="flow_sender_payload_title">開始データ</string>
     <string name="flow_sender_qr_description">送信側の開始データ</string>
@@ -179,6 +184,14 @@
     <string name="flow_checklist_item_nearby">接続データを渡せる手段（共有クリップボードやメッセージ送信など）を用意する</string>
     <string name="flow_checklist_item_permission">送信側では音声共有の権限を許可する</string>
     <string name="flow_checklist_item_android">送信側はAndroid 10以降の対応端末を使う</string>
+    <string name="udp_sender_frame_duration_title">Opus フレーム長</string>
+    <string name="udp_sender_frame_duration_note">短いほど低遅延ですが、ネットワークや CPU 負荷には敏感です。</string>
+    <string name="udp_sender_frame_duration_value">%1$d ms</string>
+    <string name="udp_sender_application_title">Opus application</string>
+    <string name="udp_sender_application_lowdelay">RESTRICTED_LOWDELAY</string>
+    <string name="udp_sender_application_audio">AUDIO</string>
+    <string name="udp_sender_application_lowdelay_description">遅延優先の設定です。最速寄りですが、音質の余裕は少なめです。</string>
+    <string name="udp_sender_application_audio_description">音楽や一般的な再生音向けです。低遅延より音質バランスを優先します。</string>
 
     <string name="flow_connected_title">接続中のポイント</string>
     <string name="flow_connected_sender_tip">この端末の音を送っています。共有中はこの画面を閉じないでください。</string>

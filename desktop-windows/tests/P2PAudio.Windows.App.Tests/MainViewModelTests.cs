@@ -210,12 +210,12 @@ public sealed class MainViewModelTests
 
         await viewModel.InitializeAsync();
 
-        Assert.Equal("内部処理: UDP + Opus ネイティブ送信モジュール", viewModel.BackendLabel);
-        Assert.Equal("UDP + Opus 送信モジュールを利用できます。", viewModel.StatusMessage);
+        Assert.Equal("内部処理: UDP + Opus 送受信モジュール", viewModel.BackendLabel);
+        Assert.Equal("UDP + Opus の送受信モジュールを利用できます。", viewModel.StatusMessage);
         Assert.DoesNotContain("接続モジュールが利用できません", viewModel.StatusMessage);
-        Assert.Contains("Windows のメディア音声送信", viewModel.RecommendedAction);
+        Assert.Contains("送信側と受信側", viewModel.RecommendedAction);
         Assert.True(viewModel.CanStartSender);
-        Assert.False(viewModel.CanStartListener);
+        Assert.True(viewModel.CanStartListener);
         viewModel.Shutdown();
     }
 
@@ -576,16 +576,16 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public void SelectTransportMode_Udp_DisablesListenerAction()
+    public void SelectTransportMode_Udp_EnablesListenerAction()
     {
         var viewModel = CreateViewModel();
 
         viewModel.SelectTransportMode(TransportMode.UdpOpus);
 
         Assert.Equal(TransportMode.UdpOpus, viewModel.SelectedTransportMode);
-        Assert.False(viewModel.CanStartListener);
+        Assert.True(viewModel.CanStartListener);
         Assert.True(viewModel.CanStartSender);
-        Assert.Contains("メディア音声", viewModel.TransportModeDescription);
+        Assert.Contains("送受信役", viewModel.TransportModeDescription);
         viewModel.Shutdown();
     }
 
@@ -1172,6 +1172,8 @@ public sealed class MainViewModelTests
 
         public string LastServiceName { get; private set; } = string.Empty;
 
+        public UdpOpusApplication LastApplication { get; private set; } = UdpOpusApplication.RestrictedLowDelay;
+
         public ConnectionDiagnostics Diagnostics { get; set; } = new(
             PathType: NetworkPathType.WifiLan,
             SelectedCandidatePairType: "udp_opus"
@@ -1194,11 +1196,12 @@ public sealed class MainViewModelTests
             )
         );
 
-        public Task<UdpAudioSenderResult> StartStreamingAsync(string remoteHost, int remotePort, string remoteServiceName)
+        public Task<UdpAudioSenderResult> StartStreamingAsync(string remoteHost, int remotePort, string remoteServiceName, UdpOpusApplication application)
         {
             LastHost = remoteHost;
             LastPort = remotePort;
             LastServiceName = remoteServiceName;
+            LastApplication = application;
             IsStreaming = StartResult.Success;
             return Task.FromResult(StartResult);
         }

@@ -6,13 +6,17 @@ namespace P2PAudio.Windows.App.Services;
 
 public sealed class PcmPlaybackService : IDisposable
 {
-    private const int DesiredLatencyMs = 80;
-    private const int PlaybackBufferDurationMs = 500;
+    public static readonly PcmPlaybackProfile DefaultProfile = new(
+        DesiredLatencyMs: 80,
+        BufferDurationMs: 500
+    );
+
     private const int MaxLoggedBufferLeadMs = 350;
     private const long StatsLogIntervalMs = 5_000;
 
     private readonly object _sync = new();
     private readonly PcmSequenceGapConcealer _gapConcealer = new();
+    private PcmPlaybackProfile _profile;
 
     private WaveOutEvent? _output;
     private BufferedWaveProvider? _bufferedProvider;
@@ -25,6 +29,15 @@ public sealed class PcmPlaybackService : IDisposable
     private long _lastStatsLogAtMs = Environment.TickCount64;
     private long _lastWarningLogAtMs;
 
+    public PcmPlaybackService() : this(DefaultProfile)
+    {
+    }
+
+    public PcmPlaybackService(PcmPlaybackProfile profile)
+    {
+        _profile = profile;
+    }
+
     public bool PlayPacket(byte[] packet)
     {
         var frame = PcmPacketCodec.Decode(packet);
@@ -36,96 +49,18 @@ public sealed class PcmPlaybackService : IDisposable
 
         lock (_sync)
         {
-            EnsureOutput(frame.SampleRate, frame.Channels);
-            if (_bufferedProvider is null)
-            {
-                return false;
-            }
-
-            var concealment = _gapConcealer.Prepare(frame);
-            if (concealment.FormatChanged)
-            {
-                AppLogger.I(
-                    "PcmPlayback",
-                    "pcm_format_changed",
-                    "Playback format changed; reset concealment state",
-                    new Dictionary<string, object?>
-                    {
-                        ["sampleRate"] = frame.SampleRate,
-                        ["channels"] = frame.Channels,
-                        ["frameSamplesPerChannel"] = frame.FrameSamplesPerChannel
-                    }
-                );
-            }
-
-            if (concealment.DroppedLateFrame)
-            {
-                _lateFramesDropped++;
-                LogWarningIfNeeded(
-                    "pcm_late_frame_dropped",
-                    "Dropped late PCM frame",
-                    new Dictionary<string, object?>
-                    {
-                        ["sequence"] = frame.Sequence,
-                        ["lateFramesDropped"] = _lateFramesDropped
-                    }
-                );
-                return true;
-            }
-
-            if (concealment.InsertedSilenceFrames > 0)
-            {
-                _insertedSilenceFrames += concealment.InsertedSilenceFrames;
-                LogWarningIfNeeded(
-                    "pcm_gap_concealed",
-                    "Inserted silence to conceal missing PCM frames",
-                    new Dictionary<string, object?>
-                    {
-                        ["sequence"] = frame.Sequence,
-                        ["insertedSilenceFrames"] = concealment.InsertedSilenceFrames,
-                        ["totalInsertedSilenceFrames"] = _insertedSilenceFrames
-                    }
-                );
-            }
-
-            if (concealment.SkippedDiscontinuityFrames > 0)
-            {
-                _sequenceDiscontinuities += concealment.SkippedDiscontinuityFrames;
-                LogWarningIfNeeded(
-                    "pcm_large_gap_skipped",
-                    "Skipped a large PCM discontinuity without stretching silence",
-                    new Dictionary<string, object?>
-                    {
-                        ["sequence"] = frame.Sequence,
-                        ["skippedFrames"] = concealment.SkippedDiscontinuityFrames,
-                        ["totalSkippedFrames"] = _sequenceDiscontinuities
-                    }
-                );
-            }
-
-            foreach (var playbackFrame in concealment.PlaybackFrames)
-            {
-                if (_bufferedProvider.BufferedBytes + playbackFrame.Length > _bufferedProvider.BufferLength)
-                {
-                    LogWarningIfNeeded(
-                        "pcm_buffer_overflow_imminent",
-                        "Playback buffer is close to overflow",
-                        new Dictionary<string, object?>
-                        {
-                            ["bufferedBytes"] = _bufferedProvider.BufferedBytes,
-                            ["bufferLength"] = _bufferedProvider.BufferLength,
-                            ["frameBytes"] = playbackFrame.Length
-                        }
-                    );
-                }
-
-                _bufferedProvider.AddSamples(playbackFrame, 0, playbackFrame.Length);
-                _playedFrames++;
-            }
-
-            LogStatsIfNeededUnsafe();
+            return PlayFrameUnsafe(frame);
         }
-        return true;
+    }
+
+    public bool PlayFrame(PcmFrame frame)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+
+        lock (_sync)
+        {
+            return PlayFrameUnsafe(frame);
+        }
     }
 
     public void Stop()
@@ -161,6 +96,18 @@ public sealed class PcmPlaybackService : IDisposable
         _lastWarningLogAtMs = 0;
     }
 
+    public void UpdateProfile(PcmPlaybackProfile profile)
+    {
+        lock (_sync)
+        {
+            _profile = profile;
+            if (_currentFormat is not null)
+            {
+                RecreateOutputUnsafe(_currentFormat.SampleRate, _currentFormat.Channels);
+            }
+        }
+    }
+
     private void EnsureOutput(int sampleRate, int channels)
     {
         if (sampleRate <= 0 || channels <= 0)
@@ -181,6 +128,11 @@ public sealed class PcmPlaybackService : IDisposable
             return;
         }
 
+        RecreateOutputUnsafe(sampleRate, channels);
+    }
+
+    private void RecreateOutputUnsafe(int sampleRate, int channels)
+    {
         _output?.Stop();
         _output?.Dispose();
 
@@ -188,12 +140,12 @@ public sealed class PcmPlaybackService : IDisposable
         _currentFormatKey = $"{sampleRate}-{channels}";
         _bufferedProvider = new BufferedWaveProvider(_currentFormat)
         {
-            BufferDuration = TimeSpan.FromMilliseconds(PlaybackBufferDurationMs),
+            BufferDuration = TimeSpan.FromMilliseconds(_profile.BufferDurationMs),
             DiscardOnBufferOverflow = true
         };
         _output = new WaveOutEvent
         {
-            DesiredLatency = DesiredLatencyMs,
+            DesiredLatency = _profile.DesiredLatencyMs,
             NumberOfBuffers = 3
         };
         _output.Init(_bufferedProvider);
@@ -206,10 +158,103 @@ public sealed class PcmPlaybackService : IDisposable
             {
                 ["sampleRate"] = sampleRate,
                 ["channels"] = channels,
-                ["desiredLatencyMs"] = DesiredLatencyMs,
-                ["bufferDurationMs"] = PlaybackBufferDurationMs
+                ["desiredLatencyMs"] = _profile.DesiredLatencyMs,
+                ["bufferDurationMs"] = _profile.BufferDurationMs
             }
         );
+    }
+
+    private bool PlayFrameUnsafe(PcmFrame frame)
+    {
+        EnsureOutput(frame.SampleRate, frame.Channels);
+        if (_bufferedProvider is null)
+        {
+            return false;
+        }
+
+        var concealment = _gapConcealer.Prepare(frame);
+        if (concealment.FormatChanged)
+        {
+            AppLogger.I(
+                "PcmPlayback",
+                "pcm_format_changed",
+                "Playback format changed; reset concealment state",
+                new Dictionary<string, object?>
+                {
+                    ["sampleRate"] = frame.SampleRate,
+                    ["channels"] = frame.Channels,
+                    ["frameSamplesPerChannel"] = frame.FrameSamplesPerChannel
+                }
+            );
+        }
+
+        if (concealment.DroppedLateFrame)
+        {
+            _lateFramesDropped++;
+            LogWarningIfNeeded(
+                "pcm_late_frame_dropped",
+                "Dropped late PCM frame",
+                new Dictionary<string, object?>
+                {
+                    ["sequence"] = frame.Sequence,
+                    ["lateFramesDropped"] = _lateFramesDropped
+                }
+            );
+            return true;
+        }
+
+        if (concealment.InsertedSilenceFrames > 0)
+        {
+            _insertedSilenceFrames += concealment.InsertedSilenceFrames;
+            LogWarningIfNeeded(
+                "pcm_gap_concealed",
+                "Inserted silence to conceal missing PCM frames",
+                new Dictionary<string, object?>
+                {
+                    ["sequence"] = frame.Sequence,
+                    ["insertedSilenceFrames"] = concealment.InsertedSilenceFrames,
+                    ["totalInsertedSilenceFrames"] = _insertedSilenceFrames
+                }
+            );
+        }
+
+        if (concealment.SkippedDiscontinuityFrames > 0)
+        {
+            _sequenceDiscontinuities += concealment.SkippedDiscontinuityFrames;
+            LogWarningIfNeeded(
+                "pcm_large_gap_skipped",
+                "Skipped a large PCM discontinuity without stretching silence",
+                new Dictionary<string, object?>
+                {
+                    ["sequence"] = frame.Sequence,
+                    ["skippedFrames"] = concealment.SkippedDiscontinuityFrames,
+                    ["totalSkippedFrames"] = _sequenceDiscontinuities
+                }
+            );
+        }
+
+        foreach (var playbackFrame in concealment.PlaybackFrames)
+        {
+            if (_bufferedProvider.BufferedBytes + playbackFrame.Length > _bufferedProvider.BufferLength)
+            {
+                LogWarningIfNeeded(
+                    "pcm_buffer_overflow_imminent",
+                    "Playback buffer is close to overflow",
+                    new Dictionary<string, object?>
+                    {
+                        ["bufferedBytes"] = _bufferedProvider.BufferedBytes,
+                        ["bufferLength"] = _bufferedProvider.BufferLength,
+                        ["frameBytes"] = playbackFrame.Length
+                    }
+                );
+            }
+
+            _bufferedProvider.AddSamples(playbackFrame, 0, playbackFrame.Length);
+            _playedFrames++;
+        }
+
+        LogStatsIfNeededUnsafe();
+        return true;
     }
 
     private void LogStatsIfNeededUnsafe()
@@ -278,3 +323,8 @@ public sealed class PcmPlaybackService : IDisposable
         Stop();
     }
 }
+
+public sealed record PcmPlaybackProfile(
+    int DesiredLatencyMs,
+    int BufferDurationMs
+);

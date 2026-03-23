@@ -120,11 +120,12 @@ public sealed class MainViewModelUdpOpusFrameDurationTests
         public bool IsNativeBackend => true;
         public bool IsStreaming { get; private set; }
 
-        public Task<UdpAudioSenderResult> StartStreamingAsync(string remoteHost, int remotePort, string remoteServiceName)
+        public Task<UdpAudioSenderResult> StartStreamingAsync(string remoteHost, int remotePort, string remoteServiceName, UdpOpusApplication application)
         {
             _ = remoteHost;
             _ = remotePort;
             _ = remoteServiceName;
+            _ = application;
             IsStreaming = true;
             return Task.FromResult(new UdpAudioSenderResult(true, "", "", new ConnectionDiagnostics()));
         }

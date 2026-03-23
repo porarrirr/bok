@@ -389,6 +389,35 @@
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
+
+                            <Border
+                                x:Name="UdpReceiveLatencyPanel"
+                                Visibility="Collapsed"
+                                Style="{StaticResource InsetCardStyle}">
+                                <StackPanel Spacing="12">
+                                    <TextBlock
+                                        Text="UDP + Opus 受信"
+                                        Style="{StaticResource MetricLabelTextStyle}" />
+                                    <StackPanel Spacing="6">
+                                        <TextBlock
+                                            Text="受信バッファ"
+                                            Style="{StaticResource MetricLabelTextStyle}" />
+                                        <ComboBox
+                                            x:Name="UdpReceiveLatencyComboBox"
+                                            SelectionChanged="OnUdpReceiveLatencySelectionChanged"
+                                            SelectedIndex="{x:Bind ViewModel.SelectedUdpReceiveLatencyIndex, Mode=OneWay}"
+                                            IsEnabled="{x:Bind ViewModel.CanConfigureUdpReceiveLatency, Mode=OneWay}">
+                                            <ComboBoxItem Content="20 ms" />
+                                            <ComboBoxItem Content="50 ms" />
+                                            <ComboBoxItem Content="100 ms" />
+                                            <ComboBoxItem Content="300 ms" />
+                                        </ComboBox>
+                                        <TextBlock
+                                            Text="{x:Bind ViewModel.UdpReceiveLatencyDescription, Mode=OneWay}"
+                                            Style="{StaticResource BodyTextStyle}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
 
                         <StackPanel
@@ -855,6 +884,44 @@
                                             Style="{StaticResource CodeValueTextStyle}" />
                                     </ScrollViewer>
                                 </Border>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <Border
+                    x:Name="UdpListenerWaitingCard"
+                    Visibility="Collapsed"
+                    Style="{StaticResource SectionCardStyle}">
+                    <StackPanel Spacing="16">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Border
+                                Background="{StaticResource ListenerAccentMutedBrush}"
+                                CornerRadius="8"
+                                Padding="8,4">
+                                <TextBlock
+                                    Text="受信側"
+                                    FontSize="11"
+                                    FontWeight="Bold"
+                                    Foreground="{StaticResource ListenerAccentBrush}" />
+                            </Border>
+                            <TextBlock
+                                Text="Android の音声を待っています"
+                                FontSize="22"
+                                FontWeight="SemiBold"
+                                VerticalAlignment="Center" />
+                        </StackPanel>
+                        <TextBlock
+                            Text="受信先情報は Android へ送信済みです。このまま最初の UDP + Opus パケット到着を待ってください。"
+                            Style="{StaticResource BodyTextStyle}" />
+                        <Border Style="{StaticResource InsetCardStyle}">
+                            <StackPanel Spacing="8">
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.UdpReceiveLatencySummary, Mode=OneWay}"
+                                    Style="{StaticResource MetricValueTextStyle}" />
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.UdpReceiveLatencyDescription, Mode=OneWay}"
+                                    Style="{StaticResource BodyTextStyle}" />
                             </StackPanel>
                         </Border>
                     </StackPanel>
