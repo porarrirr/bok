@@ -52,12 +52,14 @@ public sealed class MainViewModelTests
         FakeWebRtcBridge? bridge = null,
         FakeConnectionCodeSessionFactory? connectionCodeSessionFactory = null,
         FakeUdpAudioSenderBridge? udpBridge = null,
+        FakeUdpAudioReceiver? udpReceiver = null,
         FakeUdpReceiverDiscoveryService? udpReceiverDiscoveryService = null,
         FakeLoopbackAudioSender? webRtcLoopbackSender = null,
         FakeLoopbackAudioSender? udpLoopbackSender = null) =>
         new(
             bridge ?? new FakeWebRtcBridge(),
             udpBridge ?? new FakeUdpAudioSenderBridge(),
+            udpReceiver ?? new FakeUdpAudioReceiver(),
             udpReceiverDiscoveryService ?? new FakeUdpReceiverDiscoveryService(),
             connectionCodeSessionFactory ?? new FakeConnectionCodeSessionFactory(),
             initializeImmediately: true,
@@ -202,6 +204,7 @@ public sealed class MainViewModelTests
         var viewModel = new MainViewModel(
             webRtcBridge,
             udpBridge,
+            new FakeUdpAudioReceiver(),
             new FakeUdpReceiverDiscoveryService(),
             new FakeConnectionCodeSessionFactory(),
             initializeImmediately: false
@@ -470,6 +473,9 @@ public sealed class MainViewModelTests
 
         Assert.Equal("案内: 接続済み", viewModel.FlowStateLabel);
         Assert.Contains("相手の音声を受信しています", viewModel.StatusMessage);
+        Assert.Contains("受信 / WebRTC / PCM受信", viewModel.AudioStreamSummaryLabel);
+        Assert.Contains("48,000", viewModel.AudioStreamSummaryLabel);
+        Assert.Contains("受信済み", viewModel.AudioHealthLabel);
         viewModel.Shutdown();
     }
 
@@ -1234,6 +1240,89 @@ public sealed class MainViewModelTests
         public void Dispose()
         {
             DisposeCalls++;
+        }
+    }
+
+    private sealed class FakeUdpAudioReceiver : IUdpAudioReceiver, IDisposable
+    {
+        private readonly Queue<PcmFrame> _frames = new();
+        private readonly object _sync = new();
+
+        public TransportMode Mode => TransportMode.UdpOpus;
+
+        public bool IsNativeBackend => true;
+
+        public bool IsListening { get; private set; }
+
+        public ConnectionDiagnostics Diagnostics { get; set; } = new(
+            PathType: NetworkPathType.WifiLan,
+            SelectedCandidatePairType: "udp_opus"
+        );
+
+        public BridgeBackendHealth BackendHealth { get; set; } = new(
+            IsReady: true,
+            IsDevelopmentStub: false,
+            Message: "UDP + Opus 受信モジュールを利用できます。",
+            BlockingFailureCode: null
+        );
+
+        public Task<UdpAudioReceiverResult> StartListeningAsync(string expectedRemoteHost, int localPort)
+        {
+            _ = expectedRemoteHost;
+            IsListening = true;
+            return Task.FromResult(new UdpAudioReceiverResult(
+                Success: true,
+                ErrorMessage: string.Empty,
+                StatusMessage: "UDP + Opus の受信待機を開始しました。",
+                Diagnostics: Diagnostics,
+                ReceiverPort: localPort
+            ));
+        }
+
+        public bool TryReceivePcmFrame(out PcmFrame frame)
+        {
+            lock (_sync)
+            {
+                if (_frames.Count > 0)
+                {
+                    frame = _frames.Dequeue();
+                    return true;
+                }
+            }
+
+            frame = new PcmFrame(0, 0, 0, 0, 0, 0, []);
+            return false;
+        }
+
+        public void StopListening()
+        {
+            IsListening = false;
+            lock (_sync)
+            {
+                _frames.Clear();
+            }
+        }
+
+        public ConnectionDiagnostics GetDiagnostics() => Diagnostics;
+
+        public BridgeBackendHealth GetBackendHealth() => BackendHealth;
+
+        public void EnqueueIncomingFrame(PcmFrame frame)
+        {
+            lock (_sync)
+            {
+                _frames.Enqueue(frame);
+            }
+        }
+
+        public void Close()
+        {
+            StopListening();
+        }
+
+        public void Dispose()
+        {
+            StopListening();
         }
     }
 

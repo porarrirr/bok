@@ -920,7 +920,16 @@ private fun SenderPrepareCard(
             )
         )
         Text(
+            text = stringResource(R.string.flow_sender_prepare_permission_detail),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Text(
             text = stringResource(R.string.flow_sender_prepare_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = stringResource(R.string.flow_sender_prepare_capture_limit_note),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

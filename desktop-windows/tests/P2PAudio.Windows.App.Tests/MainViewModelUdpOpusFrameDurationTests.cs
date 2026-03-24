@@ -67,6 +67,7 @@ public sealed class MainViewModelUdpOpusFrameDurationTests
         return new MainViewModel(
             new FakeWebRtcBridge(),
             new FakeUdpAudioSenderBridge(),
+            new FakeUdpAudioReceiver(),
             new FakeUdpReceiverDiscoveryService(),
             new FakeConnectionCodeSessionFactory(),
             initializeImmediately: true,
@@ -148,6 +149,42 @@ public sealed class MainViewModelUdpOpusFrameDurationTests
         }
         public void Dispose()
         {
+        }
+    }
+
+    private sealed class FakeUdpAudioReceiver : IUdpAudioReceiver, IDisposable
+    {
+        public TransportMode Mode => TransportMode.UdpOpus;
+        public bool IsNativeBackend => true;
+        public bool IsListening { get; private set; }
+
+        public Task<UdpAudioReceiverResult> StartListeningAsync(string expectedRemoteHost, int localPort)
+        {
+            _ = expectedRemoteHost;
+            IsListening = true;
+            return Task.FromResult(new UdpAudioReceiverResult(true, "", "", new ConnectionDiagnostics(), localPort));
+        }
+
+        public bool TryReceivePcmFrame(out PcmFrame frame)
+        {
+            frame = new PcmFrame(0, 0, 0, 0, 0, 0, []);
+            return false;
+        }
+
+        public void StopListening()
+        {
+            IsListening = false;
+        }
+
+        public ConnectionDiagnostics GetDiagnostics() => new();
+        public BridgeBackendHealth GetBackendHealth() => new(true, false, "UDP + Opus 受信モジュールを利用できます。", null);
+        public void Close()
+        {
+            StopListening();
+        }
+        public void Dispose()
+        {
+            StopListening();
         }
     }
 

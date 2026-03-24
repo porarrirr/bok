@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -28,7 +27,6 @@ public sealed partial class MainWindow : Window
     {
         ViewModel = new MainViewModel(initializeImmediately: false);
         InitializeComponent();
-        TryApplySystemBackdrop();
         Activated += OnActivated;
         Closed += OnClosed;
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
@@ -139,14 +137,14 @@ public sealed partial class MainWindow : Window
             StreamState.Capturing or StreamState.Connecting => "SystemFillColorAttentionBrush",
             StreamState.Interrupted => "SystemFillColorCautionBrush",
             StreamState.Failed => "SystemFillColorCriticalBrush",
-            _ => "CardStrokeColorDefaultBrush"
+            _ => "AppChromeStrokeBrush"
         };
 
         if (Application.Current.Resources.TryGetValue(borderKey, out var brush) && brush is Brush b)
         {
             StatusHeroCard.BorderBrush = b;
         }
-        else if (Application.Current.Resources.TryGetValue("CardStrokeColorDefaultBrush", out var fallback) && fallback is Brush fb)
+        else if (Application.Current.Resources.TryGetValue("AppChromeStrokeBrush", out var fallback) && fallback is Brush fb)
         {
             StatusHeroCard.BorderBrush = fb;
         }
@@ -349,16 +347,6 @@ public sealed partial class MainWindow : Window
                 app.OnMainWindowClosed(this);
             }
         }
-    }
-
-    private void TryApplySystemBackdrop()
-    {
-        if (!MicaController.IsSupported())
-        {
-            return;
-        }
-
-        SystemBackdrop = new Microsoft.UI.Xaml.Media.MicaBackdrop();
     }
 
     private void EnsureWindowVisible()

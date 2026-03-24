@@ -10,23 +10,47 @@
                 <controls:XamlControlsResources />
             </ResourceDictionary.MergedDictionaries>
 
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="AppShellBackgroundBrush" Color="#F4F6F9" />
+                    <SolidColorBrush x:Key="AppHeaderBackgroundBrush" Color="#FBFCFE" />
+                    <SolidColorBrush x:Key="AppSurfaceBrush" Color="#FFFFFFFF" />
+                    <SolidColorBrush x:Key="AppSurfaceSubtleBrush" Color="#F0F3F7" />
+                    <SolidColorBrush x:Key="AppChromeStrokeBrush" Color="#D5DCE5" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="AppShellBackgroundBrush" Color="#111418" />
+                    <SolidColorBrush x:Key="AppHeaderBackgroundBrush" Color="#161A1F" />
+                    <SolidColorBrush x:Key="AppSurfaceBrush" Color="#1B2026" />
+                    <SolidColorBrush x:Key="AppSurfaceSubtleBrush" Color="#14181D" />
+                    <SolidColorBrush x:Key="AppChromeStrokeBrush" Color="#2D343D" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Default">
+                    <SolidColorBrush x:Key="AppShellBackgroundBrush" Color="#F4F6F9" />
+                    <SolidColorBrush x:Key="AppHeaderBackgroundBrush" Color="#FBFCFE" />
+                    <SolidColorBrush x:Key="AppSurfaceBrush" Color="#FFFFFFFF" />
+                    <SolidColorBrush x:Key="AppSurfaceSubtleBrush" Color="#F0F3F7" />
+                    <SolidColorBrush x:Key="AppChromeStrokeBrush" Color="#D5DCE5" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
             <SolidColorBrush x:Key="SenderAccentBrush" Color="#4D8DFF" />
             <SolidColorBrush x:Key="SenderAccentMutedBrush" Color="#174D8DFF" />
             <SolidColorBrush x:Key="ListenerAccentBrush" Color="#E59A3B" />
             <SolidColorBrush x:Key="ListenerAccentMutedBrush" Color="#18E59A3B" />
 
             <Style x:Key="SectionCardStyle" TargetType="Border">
-                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="Background" Value="{ThemeResource AppSurfaceBrush}" />
                 <Setter Property="CornerRadius" Value="20" />
-                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource AppChromeStrokeBrush}" />
                 <Setter Property="BorderThickness" Value="1" />
                 <Setter Property="Padding" Value="24" />
             </Style>
 
             <Style x:Key="InsetCardStyle" TargetType="Border">
-                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorSecondaryBrush}" />
+                <Setter Property="Background" Value="{ThemeResource AppSurfaceSubtleBrush}" />
                 <Setter Property="CornerRadius" Value="16" />
-                <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource AppChromeStrokeBrush}" />
                 <Setter Property="BorderThickness" Value="1" />
                 <Setter Property="Padding" Value="18" />
             </Style>

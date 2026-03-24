@@ -77,7 +77,7 @@
     <string name="status_next_action_verify">両端末の6桁コードが同じなら「一致している」を押してください。</string>
     <string name="status_next_action_connected">接続中です。音声共有が終わるまでこの画面を開いたままにしてください。</string>
     <string name="status_next_action_restart">もう一度最初から接続をやり直してください。</string>
-    <string name="status_next_action_permission">音声共有に必要な権限を許可して、もう一度開始してください。</string>
+    <string name="status_next_action_permission">必要なのは「マイク権限」と「音声共有の開始確認」です。両方を許可してから、もう一度開始してください。</string>
     <string name="status_next_action_capture_not_supported">この端末では内部音声共有が使えません。Android 10以降の対応端末をご利用ください。</string>
     <string name="status_next_action_usb_enable_tethering">USBテザリングを有効にしてケーブルを挿し直し、もう一度開始してください。</string>
     <string name="status_next_action_usb_replug">USB接続は見つかりましたが通信できません。ケーブル再接続と信頼設定を確認してください。</string>
@@ -105,7 +105,9 @@
     <string name="flow_sender_prepare_title">送信側の準備</string>
     <string name="flow_sender_prepare_description">この端末の音を送る前に、必要な権限と接続条件を確認します。</string>
     <string name="flow_sender_prepare_primary">権限を確認して開始する</string>
-    <string name="flow_sender_prepare_note">権限ダイアログが表示されたら、そのまま許可してください。</string>
+    <string name="flow_sender_prepare_permission_detail">このあと Android で 2 つの確認が出ます。1つ目はマイク権限、2つ目は内部音声共有を始めるためのシステム確認です。</string>
+    <string name="flow_sender_prepare_note">権限ダイアログが表示されたら、そのまま許可してください。どちらか一方でも拒否すると送信を開始できません。</string>
+    <string name="flow_sender_prepare_capture_limit_note">権限がそろっていても、再生しているアプリ側が内部音声キャプチャを禁止していると Windows では無音になります。その場合は別の再生元アプリでもお試しください。</string>
 
     <string name="flow_sender_step_title">開始データを相手に共有する</string>
     <string name="flow_sender_step_description">開始データを相手へ渡したら、返ってきた応答データを貼り付けます。</string>
@@ -182,7 +184,7 @@
     <string name="flow_checklist_title">事前に確認してください</string>
     <string name="flow_checklist_item_network">両端末を同じWi-FiまたはUSBテザリングに接続する</string>
     <string name="flow_checklist_item_nearby">接続データを渡せる手段（共有クリップボードやメッセージ送信など）を用意する</string>
-    <string name="flow_checklist_item_permission">送信側では音声共有の権限を許可する</string>
+    <string name="flow_checklist_item_permission">送信側ではマイク権限と音声共有の開始確認をどちらも許可する</string>
     <string name="flow_checklist_item_android">送信側はAndroid 10以降の対応端末を使う</string>
     <string name="udp_sender_frame_duration_title">Opus フレーム長</string>
     <string name="udp_sender_frame_duration_note">短いほど低遅延ですが、ネットワークや CPU 負荷には敏感です。</string>
@@ -194,7 +196,7 @@
     <string name="udp_sender_application_audio_description">音楽や一般的な再生音向けです。低遅延より音質バランスを優先します。</string>
 
     <string name="flow_connected_title">接続中のポイント</string>
-    <string name="flow_connected_sender_tip">この端末の音を送っています。共有中はこの画面を閉じないでください。</string>
+    <string name="flow_connected_sender_tip">この端末の音を送っています。共有中はこの画面を閉じないでください。Windows 側が無音のときは、再生元アプリが内部音声キャプチャを許可しているか確認してください。</string>
     <string name="flow_connected_listener_tip">相手の音を受信しています。音が止まったら両端末のネットワークを確認してください。</string>
     <string name="flow_connected_udp_listener_tip">Windows のメディア音声を UDP + Opus で再生中です。止まったら Windows 側の送信状態を確認してください。</string>
     <string name="flow_connected_generic_tip">接続が終わるまで、この画面を開いたままにしてください。</string>
@@ -211,7 +213,7 @@
     <string name="notification_receive_content_text">Windows のメディア音声をバックグラウンド受信しています</string>
 
     <string name="error_audio_capture_android10">音声共有はAndroid 10以降で利用できます。</string>
-    <string name="error_permission_denied">必要な権限が許可されませんでした。</string>
+    <string name="error_permission_denied">必要な権限が許可されませんでした。必要なのはマイク権限と、内部音声共有を開始するシステム確認です。</string>
     <string name="error_capture_start_failed">音声共有を開始できませんでした。</string>
     <string name="error_create_offer_failed">開始データを作成できませんでした。</string>
     <string name="error_create_answer_failed">応答データを作成できませんでした。</string>

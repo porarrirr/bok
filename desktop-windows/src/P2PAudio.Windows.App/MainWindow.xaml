@@ -8,7 +8,7 @@
     mc:Ignorable="d"
     Title="音声リンク (Windows)">
 
-    <Grid Background="Transparent">
+    <Grid Background="{ThemeResource AppShellBackgroundBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -16,8 +16,8 @@
 
         <Border
             Grid.Row="0"
-            Background="{ThemeResource LayerFillColorDefaultBrush}"
-            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+            Background="{ThemeResource AppHeaderBackgroundBrush}"
+            BorderBrush="{ThemeResource AppChromeStrokeBrush}"
             BorderThickness="0,0,0,1"
             Padding="32,16,32,14">
             <Grid ColumnSpacing="20">
@@ -92,7 +92,7 @@
                             <Border
                                 Width="6"
                                 HorizontalAlignment="Left"
-                                Background="{ThemeResource CardStrokeColorDefaultBrush}"
+                                Background="{ThemeResource AppChromeStrokeBrush}"
                                 CornerRadius="20,0,0,20" />
 
                             <Grid Padding="28,26">
@@ -648,9 +648,9 @@
                                         Text="開始データ"
                                         Style="{StaticResource MetricLabelTextStyle}" />
                                     <Border
-                                        Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                        Background="{ThemeResource AppSurfaceBrush}"
                                         CornerRadius="12"
-                                        BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                                        BorderBrush="{ThemeResource AppChromeStrokeBrush}"
                                         BorderThickness="1"
                                         Padding="12"
                                         MaxHeight="140">
@@ -872,9 +872,9 @@
                                     Text="応答データ"
                                     Style="{StaticResource MetricLabelTextStyle}" />
                                 <Border
-                                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                    Background="{ThemeResource AppSurfaceBrush}"
                                     CornerRadius="12"
-                                    BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource AppChromeStrokeBrush}"
                                     BorderThickness="1"
                                     Padding="12"
                                     MaxHeight="140">

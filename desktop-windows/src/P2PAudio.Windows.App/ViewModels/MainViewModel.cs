@@ -2,6 +2,7 @@ using System.Runtime.ExceptionServices;
 using CommunityToolkit.Mvvm.ComponentModel;
 using P2PAudio.Windows.App.Logging;
 using P2PAudio.Windows.App.Services;
+using P2PAudio.Windows.Core.Audio;
 using P2PAudio.Windows.Core.Models;
 using P2PAudio.Windows.Core.Networking;
 using P2PAudio.Windows.Core.Protocol;
@@ -1540,6 +1541,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                         receivedFrame = true;
                         _receiveIdleTicks = 0;
                         _receivedPackets++;
+                        RunOnUiThread(() => UpdateReceiveStreamDetails(frame, TransportMode.UdpOpus));
                         if (!_playbackService.PlayFrame(frame))
                         {
                             continue;
@@ -1583,6 +1585,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                     receivedPacket = true;
                     _receiveIdleTicks = 0;
                     _receivedPackets++;
+                    var decodedFrame = PcmPacketCodec.Decode(packet);
+                    if (decodedFrame is not null)
+                    {
+                        RunOnUiThread(() => UpdateReceiveStreamDetails(decodedFrame, TransportMode.WebRtc));
+                    }
                     if (!_playbackService.PlayPacket(packet))
                     {
                         continue;
@@ -1783,6 +1790,35 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             $"送出整形: {diagnostics.FrameSamplesPerChannel} samples ({diagnostics.FramesPerSecond}fps), 送信待ち {diagnostics.PendingSendFrames}, PCM蓄積 {diagnostics.PendingPcmBytes} bytes";
         AudioHealthLabel =
             $"統計: 送信済み {diagnostics.SentFrames}, 失敗 {diagnostics.SendFailures}, キュー整理 {diagnostics.PendingSendDrops}, ペーシング {(diagnostics.PacingEnabled ? "有効" : "無効")}";
+    }
+
+    private void UpdateReceiveStreamDetails(PcmFrame frame, TransportMode mode)
+    {
+        var transportLabel = mode switch
+        {
+            TransportMode.WebRtc => "WebRTC / PCM受信",
+            TransportMode.UdpOpus => "UDP + Opus / PCM受信",
+            _ => "PCM受信"
+        };
+        var channelLabel = frame.Channels switch
+        {
+            1 => "モノ",
+            2 => "ステレオ",
+            > 0 => $"{frame.Channels}ch",
+            _ => "-"
+        };
+        var frameDurationMs = frame.SampleRate <= 0
+            ? 0
+            : (int)Math.Round((double)frame.FrameSamplesPerChannel * 1000 / frame.SampleRate);
+
+        AudioStreamSummaryLabel =
+            $"音声ストリーム: 受信 / {transportLabel} / {frame.SampleRate:N0} Hz / {channelLabel} / {frame.BitsPerSample}bit / {frameDurationMs}ms";
+        AudioBufferingLabel =
+            mode == TransportMode.UdpOpus
+                ? $"受信整形: {frame.FrameSamplesPerChannel} samples, 受信レイテンシー設定 {UdpReceiveLatencySummary}"
+                : $"受信整形: {frame.FrameSamplesPerChannel} samples";
+        AudioHealthLabel =
+            $"統計: 受信済み {_receivedPackets}, 最終シーケンス {frame.Sequence}, 再生状態 {DescribeStreamState(CurrentStreamState)}";
     }
 
     private void ResetAudioStreamDetails()
