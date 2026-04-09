@@ -110,7 +110,7 @@ public partial class App : Application
         _ = MessageBox(
             hWnd: 0,
             text: $"{failureMessage}{Environment.NewLine}{Environment.NewLine}ログ: {AppLogger.CurrentLogFilePath}",
-            caption: "P2PAudio",
+            caption: AppIdentity.WindowTitle,
             type: MessageBoxOk | MessageBoxIconError);
     }
 }

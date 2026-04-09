@@ -10,33 +10,29 @@ struct ContentView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.93, green: 0.96, blue: 1.00),
-                    Color(red: 1.00, green: 0.95, blue: 0.90)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            AppTheme.backgroundGradient
+                .ignoresSafeArea()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 18) {
                     headerBlock
                     statusCard
                     entryCard
 
                     if let transientMessage {
-                        Text(transientMessage)
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(Color(red: 0.05, green: 0.36, blue: 0.49))
-                            .padding(.horizontal, 4)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
+                        InfoCallout(
+                            message: transientMessage,
+                            tint: AppTheme.accent,
+                            iconName: "checkmark.circle.fill"
+                        )
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                     }
 
                     flowSection
                 }
-                .padding(16)
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 28)
             }
         }
         .sheet(item: $scanTarget) { target in
@@ -63,157 +59,181 @@ struct ContentView: View {
     }
 
     private var headerBlock: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 6) {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(L10n.tr("main.title"))
                     .font(.system(size: 32, weight: .heavy, design: .rounded))
-                    .foregroundStyle(Color(red: 0.05, green: 0.17, blue: 0.28))
+                    .foregroundStyle(AppTheme.primaryText)
                 Text(L10n.tr("main.subtitle"))
-                    .font(.subheadline)
-                    .foregroundStyle(Color(red: 0.24, green: 0.34, blue: 0.42))
+                    .font(.body)
+                    .foregroundStyle(AppTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+
             Spacer(minLength: 12)
-            Button(L10n.tr("action.open_logs")) {
+
+            Button {
                 showingLogs = true
+            } label: {
+                VStack(spacing: 6) {
+                    Image(systemName: "text.alignleft")
+                        .font(.headline.weight(.semibold))
+                    Text(L10n.tr("action.open_logs"))
+                        .font(.subheadline.weight(.semibold))
+                }
+                .foregroundStyle(AppTheme.accent)
+                .frame(width: 92, minHeight: 72)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.white.opacity(0.96))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(AppTheme.accent.opacity(0.28), lineWidth: 1)
+                )
             }
-            .buttonStyle(SecondaryActionButtonStyle())
-            .frame(width: 88)
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(L10n.tr("action.open_logs")))
         }
     }
 
     private var statusCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(L10n.tr("status.connection_title"))
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L10n.tr("status.connection_title"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppTheme.secondaryText)
+                    Text(viewModel.streamState.readableLabel)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(AppTheme.primaryText)
+                    Text(viewModel.statusMessage)
+                        .font(.body)
+                        .foregroundStyle(AppTheme.primaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
-            Text(viewModel.streamState.readableLabel)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(viewModel.streamState.themeColor)
+                Spacer(minLength: 12)
 
-            Text(viewModel.statusMessage)
-                .font(.subheadline)
-
-            if !viewModel.activeSessionId.isEmpty {
-                Text(L10n.tr("status.session_id"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(viewModel.activeSessionId)
-                    .font(.caption.monospaced())
-                    .lineLimit(1)
-                    .textSelection(.enabled)
+                StateBadge(
+                    title: viewModel.streamState.readableLabel,
+                    systemImage: viewModel.streamState.symbolName,
+                    tint: viewModel.streamState.themeColor
+                )
             }
 
-            Divider().padding(.top, 2)
-            Text(L10n.tr("status.transport_mode_title"))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(viewModel.transportMode.readableLabel)
-                .font(.subheadline)
+            if !viewModel.activeSessionId.isEmpty {
+                PanelBlock(title: L10n.tr("status.session_id"), systemImage: "number") {
+                    Text(viewModel.activeSessionId)
+                        .font(.footnote.monospaced())
+                        .foregroundStyle(AppTheme.primaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+            }
+
+            PanelBlock(
+                title: L10n.tr("status.transport_mode_title"),
+                systemImage: "point.3.connected.trianglepath.dotted"
+            ) {
+                Text(viewModel.transportMode.readableLabel)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppTheme.primaryText)
+            }
 
             if viewModel.connectionDiagnostics.hasContent {
-                Divider().padding(.top, 2)
-                Text(L10n.tr("status.network_path_title"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(viewModel.connectionDiagnostics.pathType.readableLabel)
-                    .font(.subheadline)
-                Text(
-                    L10n.tr(
-                        "status.local_candidates_format",
-                        viewModel.connectionDiagnostics.localCandidatesCount
-                    )
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                if !viewModel.connectionDiagnostics.selectedCandidatePairType.isEmpty {
+                PanelBlock(title: L10n.tr("status.network_path_title"), systemImage: "wifi") {
+                    Text(viewModel.connectionDiagnostics.pathType.readableLabel)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppTheme.primaryText)
                     Text(
                         L10n.tr(
-                            "status.selected_pair_format",
-                            viewModel.connectionDiagnostics.selectedCandidatePairType
+                            "status.local_candidates_format",
+                            viewModel.connectionDiagnostics.localCandidatesCount
                         )
                     )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-                if !viewModel.connectionDiagnostics.failureHint.isEmpty {
-                    Text(
-                        L10n.tr(
-                            "status.failure_hint_format",
-                            viewModel.connectionDiagnostics.localizedHint
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.secondaryText)
+                    if !viewModel.connectionDiagnostics.selectedCandidatePairType.isEmpty {
+                        Text(
+                            L10n.tr(
+                                "status.selected_pair_format",
+                                viewModel.connectionDiagnostics.selectedCandidatePairType
+                            )
                         )
-                    )
-                    .font(.caption)
-                    .foregroundStyle(Color(red: 0.74, green: 0.18, blue: 0.22))
+                        .font(.footnote)
+                        .foregroundStyle(AppTheme.secondaryText)
+                    }
+                    if !viewModel.connectionDiagnostics.failureHint.isEmpty {
+                        InfoCallout(
+                            message: viewModel.connectionDiagnostics.localizedHint,
+                            tint: AppTheme.danger,
+                            iconName: "exclamationmark.triangle.fill"
+                        )
+                    }
                 }
             }
 
             if viewModel.audioStreamDiagnostics.hasContent() {
-                Divider().padding(.top, 2)
-                Text(L10n.tr("audio_diagnostics.title"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(
-                    L10n.tr(
-                        "audio_diagnostics.source_format",
-                        viewModel.audioStreamDiagnostics.source.readableLabel
+                PanelBlock(title: L10n.tr("audio_diagnostics.title"), systemImage: "waveform") {
+                    Text(
+                        L10n.tr(
+                            "audio_diagnostics.source_format",
+                            viewModel.audioStreamDiagnostics.source.readableLabel
+                        )
                     )
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                Text(
-                    L10n.tr(
-                        "audio_diagnostics.format_format",
-                        viewModel.audioStreamDiagnostics.sampleRate,
-                        viewModel.audioStreamDiagnostics.channels,
-                        viewModel.audioStreamDiagnostics.bitsPerSample
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.primaryText)
+                    Text(
+                        L10n.tr(
+                            "audio_diagnostics.format_format",
+                            viewModel.audioStreamDiagnostics.sampleRate,
+                            viewModel.audioStreamDiagnostics.channels,
+                            viewModel.audioStreamDiagnostics.bitsPerSample
+                        )
                     )
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                Text(
-                    L10n.tr(
-                        "audio_diagnostics.queue_format",
-                        viewModel.audioStreamDiagnostics.queueDepthFrames,
-                        viewModel.audioStreamDiagnostics.maxQueueFrames,
-                        viewModel.audioStreamDiagnostics.targetPrebufferFrames
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.secondaryText)
+                    Text(
+                        L10n.tr(
+                            "audio_diagnostics.queue_format",
+                            viewModel.audioStreamDiagnostics.queueDepthFrames,
+                            viewModel.audioStreamDiagnostics.maxQueueFrames,
+                            viewModel.audioStreamDiagnostics.targetPrebufferFrames
+                        )
                     )
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                Text(
-                    L10n.tr(
-                        "audio_diagnostics.frames_format",
-                        viewModel.audioStreamDiagnostics.playedFrames,
-                        viewModel.audioStreamDiagnostics.decodedPackets
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.secondaryText)
+                    Text(
+                        L10n.tr(
+                            "audio_diagnostics.frames_format",
+                            viewModel.audioStreamDiagnostics.playedFrames,
+                            viewModel.audioStreamDiagnostics.decodedPackets
+                        )
                     )
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                Text(
-                    L10n.tr(
-                        "audio_diagnostics.drops_format",
-                        viewModel.audioStreamDiagnostics.staleFrameDrops,
-                        viewModel.audioStreamDiagnostics.queueOverflowDrops
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.secondaryText)
+                    Text(
+                        L10n.tr(
+                            "audio_diagnostics.drops_format",
+                            viewModel.audioStreamDiagnostics.staleFrameDrops,
+                            viewModel.audioStreamDiagnostics.queueOverflowDrops
+                        )
                     )
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.secondaryText)
+                }
             }
 
-            Divider().padding(.top, 2)
-            Text(L10n.tr("status.next_action_title"))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(recommendedActionText)
-                .font(.subheadline)
+            InfoCallout(
+                title: L10n.tr("status.next_action_title"),
+                message: recommendedActionText,
+                tint: AppTheme.accent,
+                iconName: "lightbulb.fill"
+            )
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.black.opacity(0.06), lineWidth: 1)
-        )
+        .padding(18)
+        .appCardBackground()
     }
 
     private var entryCard: some View {
@@ -222,66 +242,59 @@ struct ContentView: View {
             title: L10n.tr("flow.entry.title"),
             description: L10n.tr("flow.entry.description")
         ) {
-            VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 10) {
                     Text(L10n.tr("transport_mode_title"))
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Picker(
-                        "",
+                        .foregroundStyle(AppTheme.secondaryText)
+                    TransportModeSelector(
                         selection: Binding(
                             get: { viewModel.transportMode },
                             set: { viewModel.selectTransportMode($0) }
                         )
-                    ) {
-                        ForEach(TransportMode.allCases) { mode in
-                            Text(mode.readableLabel).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    )
                     Text(viewModel.transportMode.descriptionText)
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                     if viewModel.transportMode == .udpOpus {
-                        Text(L10n.tr("transport_mode_udp_sender_note"))
-                            .font(.footnote)
-                            .foregroundStyle(Color(red: 0.74, green: 0.18, blue: 0.22))
+                        InfoCallout(
+                            message: L10n.tr("transport_mode_udp_sender_note"),
+                            tint: AppTheme.danger,
+                            iconName: "exclamationmark.circle.fill"
+                        )
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 10) {
                     Text(L10n.tr("receiver_latency_title"))
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Picker(
-                        "",
-                        selection: Binding(
-                            get: { viewModel.receiverLatencyPreset },
-                            set: { viewModel.selectReceiverLatencyPreset($0) }
-                        )
-                    ) {
-                        ForEach(PlaybackLatencyPreset.allCases) { preset in
-                            Text(preset.localizedLabel).tag(preset)
+                        .foregroundStyle(AppTheme.secondaryText)
+                    LatencyPresetSelector(
+                        selection: viewModel.receiverLatencyPreset,
+                        onSelect: { preset in
+                            viewModel.selectReceiverLatencyPreset(preset)
                         }
-                    }
-                    .pickerStyle(.menu)
+                    )
                     Text(
                         L10n.tr(
                             "receiver_latency_selected_format",
                             viewModel.receiverLatencyPreset.localizedLabel
                         )
                     )
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.05, green: 0.17, blue: 0.28))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppTheme.primaryText)
                     Text(viewModel.receiverLatencyPreset.localizedDescription)
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(L10n.tr("receiver_latency_note"))
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
-                HStack(spacing: 10) {
+                VStack(spacing: 10) {
                     Button(L10n.tr("action.start_sender")) {
                         viewModel.startSenderFlow()
                     }
@@ -291,12 +304,12 @@ struct ContentView: View {
                         viewModel.beginListenerFlow()
                     }
                     .buttonStyle(PrimaryActionButtonStyle())
-                }
 
-                Button(L10n.tr("action.stop_session")) {
-                    viewModel.endSession()
+                    Button(L10n.tr("action.stop_session")) {
+                        viewModel.endSession()
+                    }
+                    .buttonStyle(SecondaryActionButtonStyle())
                 }
-                .buttonStyle(SecondaryActionButtonStyle())
             }
         }
     }
@@ -314,8 +327,8 @@ struct ContentView: View {
             ) {
                 if viewModel.initPayloadRaw.isEmpty {
                     Text(L10n.tr("flow.sender.waiting_code"))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(.body)
+                        .foregroundStyle(AppTheme.secondaryText)
                 } else {
                     ConnectionCodePanel(
                         payloadTitle: L10n.tr("flow.sender.payload_title"),
@@ -343,7 +356,7 @@ struct ContentView: View {
                 description: L10n.tr("flow.verification.description")
             ) {
                 VerificationCodeBlock(code: viewModel.verificationCode)
-                HStack(spacing: 10) {
+                VStack(spacing: 10) {
                     Button(L10n.tr("flow.verification.match")) {
                         viewModel.approveVerificationAndConnect()
                     }
@@ -433,13 +446,13 @@ struct ContentView: View {
                 if viewModel.transportMode == .webRtc {
                     VerificationCodeBlock(code: viewModel.verificationCode)
                 }
-                Text(
-                    viewModel.transportMode == .webRtc
+                InfoCallout(
+                    message: viewModel.transportMode == .webRtc
                         ? L10n.tr("flow.listener_wait_connection.hint")
-                        : L10n.tr("flow.udp_listener_wait_connection.hint")
+                        : L10n.tr("flow.udp_listener_wait_connection.hint"),
+                    tint: AppTheme.accent,
+                    iconName: "bolt.horizontal.circle.fill"
                 )
-                .font(.footnote)
-                .foregroundStyle(.secondary)
                 ExpiryStatusView(expiresAtUnixMs: viewModel.payloadExpiresAtUnixMs)
             }
         }
@@ -505,6 +518,28 @@ struct ContentView: View {
     }
 }
 
+private enum AppTheme {
+    static let backgroundGradient = LinearGradient(
+        colors: [
+            Color(red: 0.94, green: 0.97, blue: 1.00),
+            Color(red: 1.00, green: 0.96, blue: 0.92)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    static let cardBackground = Color.white.opacity(0.97)
+    static let panelBackground = Color(red: 0.95, green: 0.97, blue: 0.99)
+    static let primaryText = Color(red: 0.07, green: 0.16, blue: 0.25)
+    static let secondaryText = Color(red: 0.34, green: 0.41, blue: 0.49)
+    static let border = Color(red: 0.78, green: 0.84, blue: 0.90)
+    static let accent = Color(red: 0.03, green: 0.41, blue: 0.57)
+    static let accentSoft = Color(red: 0.86, green: 0.93, blue: 0.98)
+    static let danger = Color(red: 0.74, green: 0.18, blue: 0.22)
+    static let success = Color(red: 0.10, green: 0.50, blue: 0.20)
+    static let warning = Color(red: 0.85, green: 0.47, blue: 0.08)
+    static let shadow = Color.black.opacity(0.08)
+}
+
 private struct StepCard<Content: View>: View {
     let number: Int
     let title: String
@@ -512,36 +547,186 @@ private struct StepCard<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 10) {
                 Text("\(number)")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(Color(red: 0.02, green: 0.35, blue: 0.49))
-                    .frame(width: 24, height: 24)
+                    .foregroundStyle(AppTheme.accent)
+                    .frame(width: 28, height: 28)
                     .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(Color(red: 0.84, green: 0.93, blue: 1.00))
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(AppTheme.accentSoft)
                     )
                 Text(title)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.08, green: 0.21, blue: 0.28))
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(AppTheme.primaryText)
             }
 
             Text(description)
-                .font(.subheadline)
-                .foregroundStyle(Color(red: 0.30, green: 0.39, blue: 0.45))
+                .font(.body)
+                .foregroundStyle(AppTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
 
             content
         }
+        .padding(18)
+        .appCardBackground()
+    }
+}
+
+private struct PanelBlock<Content: View>: View {
+    let title: String
+    let systemImage: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(title, systemImage: systemImage)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AppTheme.secondaryText)
+
+            VStack(alignment: .leading, spacing: 8) {
+                content
+            }
+        }
         .padding(14)
+        .appPanelBackground()
+    }
+}
+
+private struct StateBadge: View {
+    let title: String
+    let systemImage: String
+    let tint: Color
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(tint.opacity(0.12))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(tint.opacity(0.24), lineWidth: 1)
+            )
+    }
+}
+
+private struct InfoCallout: View {
+    let title: String?
+    let message: String
+    let tint: Color
+    let iconName: String
+
+    init(title: String? = nil, message: String, tint: Color, iconName: String) {
+        self.title = title
+        self.message = message
+        self.tint = tint
+        self.iconName = iconName
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: iconName)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(tint)
+                .frame(width: 18, height: 18)
+
+            VStack(alignment: .leading, spacing: 4) {
+                if let title, !title.isEmpty {
+                    Text(title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(tint)
+                }
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.92))
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(tint.opacity(0.10))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.black.opacity(0.06), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(tint.opacity(0.16), lineWidth: 1)
         )
+    }
+}
+
+private struct TransportModeSelector: View {
+    @Binding var selection: TransportMode
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ForEach(TransportMode.allCases) { mode in
+                Button {
+                    selection = mode
+                } label: {
+                    Text(mode.readableLabel)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(selection == mode ? Color.white : AppTheme.primaryText)
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(selection == mode ? AppTheme.accent : AppTheme.panelBackground)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(selection == mode ? AppTheme.accent : AppTheme.border, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+private struct LatencyPresetSelector: View {
+    let selection: PlaybackLatencyPreset
+    let onSelect: (PlaybackLatencyPreset) -> Void
+
+    var body: some View {
+        Menu {
+            ForEach(PlaybackLatencyPreset.allCases) { preset in
+                Button {
+                    onSelect(preset)
+                } label: {
+                    if preset == selection {
+                        Label(preset.localizedLabel, systemImage: "checkmark")
+                    } else {
+                        Text(preset.localizedLabel)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(selection.localizedLabel)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(AppTheme.accent)
+                    Text(L10n.tr("receiver_latency_title"))
+                        .font(.caption)
+                        .foregroundStyle(AppTheme.secondaryText)
+                }
+
+                Spacer(minLength: 12)
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppTheme.secondaryText)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity)
+            .appPanelBackground()
+        }
     }
 }
 
@@ -552,14 +737,18 @@ private struct VerificationCodeBlock: View {
         if code.isEmpty {
             EmptyView()
         } else {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(L10n.tr("flow.verification.code_label"))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppTheme.secondaryText)
                 Text(code)
                     .font(.system(size: 34, weight: .black, design: .rounded))
-                    .foregroundStyle(Color(red: 0.05, green: 0.17, blue: 0.28))
+                    .foregroundStyle(AppTheme.primaryText)
+                    .tracking(1.2)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .appPanelBackground()
         }
     }
 }
@@ -573,36 +762,31 @@ private struct PayloadInputPanel: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppTheme.secondaryText)
 
             ZStack(alignment: .topLeading) {
                 if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text(placeholder)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
+                        .font(.footnote.monospaced())
+                        .foregroundStyle(AppTheme.secondaryText)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 14)
                 }
+
                 TextEditor(text: $text)
-                    .font(.caption.monospaced())
-                    .frame(minHeight: 120)
+                    .font(.footnote.monospaced())
+                    .foregroundColor(AppTheme.primaryText)
+                    .frame(minHeight: 128)
                     .padding(6)
                     .background(Color.clear)
             }
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.black.opacity(0.12), lineWidth: 1)
-            )
+            .appPanelBackground()
 
             HStack {
                 Spacer()
                 Text(L10n.tr("common.char_count_format", text.count))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppTheme.secondaryText)
             }
         }
     }
@@ -615,38 +799,36 @@ private struct ConnectionCodePanel: View {
     let onCopyPayload: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             Text(payloadTitle)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppTheme.secondaryText)
 
             ScrollView {
                 Text(payloadValue)
-                    .font(.caption.monospaced())
+                    .font(.footnote.monospaced())
+                    .foregroundStyle(AppTheme.primaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
             }
-            .frame(minHeight: 88, maxHeight: 140)
-            .padding(10)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.black.opacity(0.12), lineWidth: 1)
-            )
+            .frame(minHeight: 100, maxHeight: 148)
+            .padding(12)
+            .appPanelBackground()
 
             HStack {
                 Button(L10n.tr("action.copy_payload"), action: onCopyPayload)
                     .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppTheme.accent)
                 Spacer()
                 Text(L10n.tr("common.char_count_format", payloadValue.count))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppTheme.secondaryText)
             }
 
             ResponsiveQRCode(payload: payloadValue, accessibilityDescription: payloadQrDescription)
+                .padding(14)
+                .frame(maxWidth: .infinity)
+                .appPanelBackground()
         }
     }
 }
@@ -663,12 +845,12 @@ private struct ExpiryStatusView: View {
                 )
                 if remainingSeconds > 0 {
                     Text(L10n.tr("status.expiry_remaining_format", remainingSeconds))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppTheme.secondaryText)
                 } else {
                     Text(L10n.tr("status.expiry_expired"))
-                        .font(.caption)
-                        .foregroundStyle(Color(red: 0.74, green: 0.18, blue: 0.22))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppTheme.danger)
                 }
             }
         }
@@ -678,15 +860,16 @@ private struct ExpiryStatusView: View {
 private struct PrimaryActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .frame(maxWidth: .infinity, minHeight: 48)
             .padding(.vertical, 10)
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.white)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(red: 0.02, green: 0.36, blue: 0.47))
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(AppTheme.accent)
             )
-            .opacity(configuration.isPressed ? 0.85 : 1)
+            .shadow(color: AppTheme.accent.opacity(0.18), radius: 14, x: 0, y: 6)
+            .opacity(configuration.isPressed ? 0.9 : 1)
             .scaleEffect(configuration.isPressed ? 0.99 : 1)
     }
 }
@@ -694,20 +877,45 @@ private struct PrimaryActionButtonStyle: ButtonStyle {
 private struct SecondaryActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .frame(maxWidth: .infinity, minHeight: 48)
             .padding(.vertical, 10)
             .font(.subheadline.weight(.semibold))
-            .foregroundStyle(Color(red: 0.02, green: 0.36, blue: 0.47))
+            .foregroundStyle(AppTheme.accent)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white.opacity(0.88))
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.white.opacity(0.96))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color(red: 0.02, green: 0.36, blue: 0.47).opacity(0.35), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(AppTheme.accent.opacity(0.28), lineWidth: 1)
             )
-            .opacity(configuration.isPressed ? 0.85 : 1)
+            .opacity(configuration.isPressed ? 0.9 : 1)
             .scaleEffect(configuration.isPressed ? 0.99 : 1)
+    }
+}
+
+private extension View {
+    func appCardBackground() -> some View {
+        background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(AppTheme.cardBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(AppTheme.border.opacity(0.55), lineWidth: 1)
+        )
+        .shadow(color: AppTheme.shadow, radius: 18, x: 0, y: 8)
+    }
+
+    func appPanelBackground() -> some View {
+        background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(AppTheme.panelBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(AppTheme.border.opacity(0.72), lineWidth: 1)
+        )
     }
 }
 
@@ -727,13 +935,32 @@ private extension AudioStreamState {
     var themeColor: Color {
         switch self {
         case .streaming:
-            return Color(red: 0.10, green: 0.50, blue: 0.20)
+            return AppTheme.success
         case .failed:
-            return Color(red: 0.74, green: 0.18, blue: 0.22)
+            return AppTheme.danger
         case .capturing, .connecting:
-            return Color(red: 0.85, green: 0.47, blue: 0.08)
+            return AppTheme.warning
         default:
-            return Color(red: 0.33, green: 0.38, blue: 0.42)
+            return AppTheme.secondaryText
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .idle:
+            return "pause.circle.fill"
+        case .capturing:
+            return "waveform.circle.fill"
+        case .connecting:
+            return "point.3.connected.trianglepath.dotted"
+        case .streaming:
+            return "play.circle.fill"
+        case .interrupted:
+            return "pause.circle.fill"
+        case .failed:
+            return "xmark.octagon.fill"
+        case .ended:
+            return "stop.circle.fill"
         }
     }
 }

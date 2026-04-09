@@ -15,6 +15,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <UseSystemDrawing>true</UseSystemDrawing>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+    <BuildTimestamp>$([System.DateTime]::Now.ToString("yyyy/MM/dd HH:mm:ss"))</BuildTimestamp>
     <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\'))</RepoRoot>
     <NativeBuildOutputDir>$(RepoRoot)out\core-webrtc</NativeBuildOutputDir>
     <NativeVcpkgBinDir>$(RepoRoot)vcpkg_installed\x64-windows\bin</NativeVcpkgBinDir>
@@ -30,6 +32,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\P2PAudio.Windows.Core\P2PAudio.Windows.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>BuildTimestamp</_Parameter1>
+      <_Parameter2>$(BuildTimestamp)</_Parameter2>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <ItemGroup>
@@ -75,5 +84,9 @@
           Condition="Exists('runtimes\\win-x64\\native')"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\AppIcon.ico"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+
 </Project>

@@ -32,9 +32,6 @@ on:
         description: "Release name (empty = auto)"
         required: false
         default: ""
-  push:
-    tags:
-      - "**"
   release:
     types:
       - published
@@ -52,7 +49,7 @@ jobs:
       PROJECT_SPEC_PATH_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.project_spec_path || 'mobile-ios/project.yml' }}
       SCHEME_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.scheme || 'P2PAudio' }}
       CONFIGURATION_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.configuration || 'Release' }}
-      PUBLISH_RELEASE: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) && 'true' || (github.event_name == 'release') && 'true' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release || 'false') }}
+      PUBLISH_RELEASE: ${{ (github.event_name == 'release') && 'true' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release || 'false') }}
       RELEASE_TAG_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || (github.event_name == 'release' && github.event.release.tag_name || '') }}
       RELEASE_NAME_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_name || (github.event_name == 'release' && github.event.release.name || '') }}
 
@@ -192,13 +189,35 @@ jobs:
           cp -R "$APP_PATH" "$EXPORT_PATH/Payload/"
           (cd "$EXPORT_PATH" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/build/unsigned.ipa" Payload)
 
+      - name: Resolve asset names
+        run: |
+          set -euo pipefail
+          SCHEME_SAFE="$(printf '%s' "$SCHEME_INPUT" | tr '[:space:]/' '--')"
+          if [ -n "$RELEASE_TAG_INPUT" ]; then
+            VERSION_LABEL="$RELEASE_TAG_INPUT"
+          else
+            VERSION_LABEL="run-${GITHUB_RUN_NUMBER}"
+          fi
+          VERSION_SAFE="$(printf '%s' "$VERSION_LABEL" | tr '[:space:]/' '--')"
+          IPA_NAME="${SCHEME_SAFE}-${VERSION_SAFE}-unsigned.ipa"
+          DSYM_NAME="${SCHEME_SAFE}-${VERSION_SAFE}-dSYMs.zip"
+
+          mv "$GITHUB_WORKSPACE/build/unsigned.ipa" "$GITHUB_WORKSPACE/build/$IPA_NAME"
+          DSYM_DIR="$ARCHIVE_PATH/dSYMs"
+          if [ -d "$DSYM_DIR" ] && find "$DSYM_DIR" -maxdepth 1 -name '*.dSYM' | grep -q .; then
+            ditto -c -k --sequesterRsrc --keepParent "$DSYM_DIR" "$GITHUB_WORKSPACE/build/$DSYM_NAME"
+            echo "DSYM_ASSET_PATH=build/$DSYM_NAME" >> "$GITHUB_ENV"
+          fi
+
+          echo "IPA_ASSET_PATH=build/$IPA_NAME" >> "$GITHUB_ENV"
+
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: ios-ipa-unsigned
           path: |
-            build/unsigned.ipa
-            build/P2PAudio.xcarchive/dSYMs/*.dSYM
+            ${{ env.IPA_ASSET_PATH }}
+            ${{ env.DSYM_ASSET_PATH }}
           if-no-files-found: error
 
       - name: Resolve release metadata
@@ -208,11 +227,7 @@ jobs:
           TAG_INPUT="$RELEASE_TAG_INPUT"
           NAME_INPUT="$RELEASE_NAME_INPUT"
 
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            DEFAULT_TAG="${GITHUB_REF_NAME}"
-          else
-            DEFAULT_TAG="ios-unsigned-${GITHUB_RUN_NUMBER}"
-          fi
+          DEFAULT_TAG="ios-unsigned-${GITHUB_RUN_NUMBER}"
 
           if [ -n "$TAG_INPUT" ]; then
             RELEASE_TAG="$TAG_INPUT"
@@ -238,5 +253,7 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          overwrite_files: true
           files: |
-            build/unsigned.ipa
+            ${{ env.IPA_ASSET_PATH }}
+            ${{ env.DSYM_ASSET_PATH }}

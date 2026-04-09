@@ -11,6 +11,7 @@ private struct ConverterInputContext {
 
 final class IOSOpusDecoder {
     typealias LogHandler = (AppLogLevel, String, String, [String: String]) -> Void
+    private static let needsMoreInputStatus = OSStatus(kAudioCodecProduceOutputPacketNeedsMoreInputData)
 
     private let frameListener: (PcmFrame, UInt64) -> Void
     private let logHandler: LogHandler?
@@ -53,7 +54,7 @@ final class IOSOpusDecoder {
                     channels: UInt32(packet.channels),
                     packetDescription: AudioStreamPacketDescription(
                         mStartOffset: 0,
-                        mVariableFramesInPacket: 0,
+                        mVariableFramesInPacket: UInt32(packet.frameSamplesPerChannel),
                         mDataByteSize: UInt32(opusBuffer.count)
                     ),
                     consumed: false
@@ -82,7 +83,8 @@ final class IOSOpusDecoder {
             }
         }
 
-        guard status == noErr else {
+        let needsMoreInput = status == Self.needsMoreInputStatus
+        guard status == noErr || needsMoreInput else {
             log(
                 .error,
                 "Opus decode failed",
@@ -102,6 +104,21 @@ final class IOSOpusDecoder {
 
         if producedByteCount <= 0 {
             zeroOutputPacketCount += 1
+            if needsMoreInput {
+                if zeroOutputPacketCount == 1 || zeroOutputPacketCount % 50 == 0 {
+                    log(
+                        .debug,
+                        "Opus decoder buffered packet while waiting for more input",
+                        metadata: [
+                            "sequence": String(packet.sequence),
+                            "bufferedPackets": String(zeroOutputPacketCount),
+                            "opusPayloadBytes": String(packet.opusPayload.count)
+                        ]
+                    )
+                }
+                return
+            }
+
             log(
                 .warning,
                 "Opus decoder produced no PCM bytes",
@@ -114,6 +131,7 @@ final class IOSOpusDecoder {
             return
         }
 
+        zeroOutputPacketCount = 0
         pcmData.count = producedByteCount
         let bytesPerSampleFrame = max(packet.channels * 2, 1)
         let frameSamplesPerChannel = producedByteCount / bytesPerSampleFrame
@@ -155,7 +173,7 @@ final class IOSOpusDecoder {
     }
 
     private func ensureConverter(for packet: UdpOpusPacket) throws {
-        let nextKey = "\(packet.sampleRate)-\(packet.channels)-\(packet.frameSamplesPerChannel)"
+        let nextKey = "\(packet.sampleRate)-\(packet.channels)"
         if converter != nil, formatKey == nextKey {
             return
         }
@@ -167,7 +185,7 @@ final class IOSOpusDecoder {
             mFormatID: kAudioFormatOpus,
             mFormatFlags: 0,
             mBytesPerPacket: 0,
-            mFramesPerPacket: UInt32(packet.frameSamplesPerChannel),
+            mFramesPerPacket: 0,
             mBytesPerFrame: 0,
             mChannelsPerFrame: UInt32(packet.channels),
             mBitsPerChannel: 0,
@@ -275,7 +293,7 @@ final class IOSOpusDecoder {
             ioData.pointee.mNumberBuffers = 1
             ioData.pointee.mBuffers.mDataByteSize = 0
             ioData.pointee.mBuffers.mData = nil
-            return noErr
+            return Self.needsMoreInputStatus
         }
 
         context.pointee.consumed = true

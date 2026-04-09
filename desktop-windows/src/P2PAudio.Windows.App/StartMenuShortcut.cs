@@ -8,8 +8,8 @@ namespace P2PAudio.Windows.App;
 internal static class StartMenuShortcut
 {
     private const string ShortcutName = "P2PAudio.lnk";
-    private const string AppName = "P2PAudio";
     private const string LauncherScriptName = "run-app.ps1";
+    private static string AppName => AppIdentity.WindowTitle;
     private static readonly string PowerShellExecutablePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.System),
         "WindowsPowerShell",

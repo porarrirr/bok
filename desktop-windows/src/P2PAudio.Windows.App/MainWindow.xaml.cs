@@ -19,6 +19,7 @@ public sealed partial class MainWindow : Window
 
     private DispatcherTimer? _transientTimer;
     private bool _startupInitialized;
+    private bool _windowIconApplied;
 
     [DllImport("user32.dll")]
     private static extern bool ShowWindow(nint hWnd, int nCmdShow);
@@ -27,6 +28,8 @@ public sealed partial class MainWindow : Window
     {
         ViewModel = new MainViewModel(initializeImmediately: false);
         InitializeComponent();
+        Title = AppIdentity.WindowTitle;
+        AppTitleTextBlock.Text = AppIdentity.HeaderTitle;
         Activated += OnActivated;
         Closed += OnClosed;
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
@@ -38,6 +41,7 @@ public sealed partial class MainWindow : Window
     public void Present()
     {
         Activate();
+        ApplyWindowIcon();
         EnsureWindowVisible();
         _ = DispatcherQueue.TryEnqueue(EnsureWindowVisible);
     }
@@ -369,5 +373,39 @@ public sealed partial class MainWindow : Window
 
         _ = ShowWindow(windowHandle, SwRestore);
         _ = ShowWindow(windowHandle, SwShow);
+    }
+
+    private void ApplyWindowIcon()
+    {
+        if (_windowIconApplied)
+        {
+            return;
+        }
+
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico");
+        if (!File.Exists(iconPath))
+        {
+            AppLogger.W(
+                "MainWindow",
+                "window_icon_missing",
+                "Window icon file was not found",
+                new Dictionary<string, object?>
+                {
+                    ["iconPath"] = iconPath
+                });
+            return;
+        }
+
+        AppWindow.SetIcon(iconPath);
+        _windowIconApplied = true;
+
+        AppLogger.I(
+            "MainWindow",
+            "window_icon_applied",
+            "Window icon applied",
+            new Dictionary<string, object?>
+            {
+                ["iconPath"] = iconPath
+            });
     }
 }

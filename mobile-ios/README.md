@@ -43,7 +43,8 @@ The workflow now:
 2. runs iOS unit tests on a simulator,
 3. archives an unsigned `.ipa`,
 4. uploads the IPA artifact,
-5. optionally publishes it to GitHub Releases.
+5. when a GitHub Release is published, attaches the unsigned `.ipa` and `dSYMs.zip` to that Release,
+6. optionally allows the same publish flow from `workflow_dispatch`.
 
 ## Notes
 

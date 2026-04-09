@@ -28,6 +28,7 @@
 
                 <StackPanel Spacing="4" VerticalAlignment="Center">
                     <TextBlock
+                        x:Name="AppTitleTextBlock"
                         Text="音声リンク"
                         FontSize="28"
                         FontWeight="SemiBold" />
