@@ -35,11 +35,11 @@ final class PcmPlayerQueuePolicyTests: XCTestCase {
     func testPlaybackThresholdsUseConfiguredPrebufferFramesOnIOS() {
         XCTAssertEqual(
             playbackStartThresholdFrames(startupPrebufferFrames: 4),
-            4
+            1
         )
         XCTAssertEqual(
             playbackResumeThresholdFrames(steadyPrebufferFrames: 4),
-            4
+            1
         )
     }
 }

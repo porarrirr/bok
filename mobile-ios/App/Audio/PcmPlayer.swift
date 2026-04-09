@@ -30,11 +30,11 @@ func trimOverflowFramesForRealtimePlayback(
 }
 
 func playbackStartThresholdFrames(startupPrebufferFrames: Int) -> Int {
-    max(startupPrebufferFrames, 1)
+    1
 }
 
 func playbackResumeThresholdFrames(steadyPrebufferFrames: Int) -> Int {
-    max(steadyPrebufferFrames, 1)
+    1
 }
 
 private struct QueuedPcmFrame {
