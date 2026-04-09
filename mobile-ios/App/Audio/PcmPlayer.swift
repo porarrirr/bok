@@ -29,12 +29,12 @@ func trimOverflowFramesForRealtimePlayback(
     )
 }
 
-func playbackStartThresholdFrames(startupPrebufferFrames: Int, minTrackBufferFrames: Int) -> Int {
-    max(startupPrebufferFrames, minTrackBufferFrames)
+func playbackStartThresholdFrames(startupPrebufferFrames: Int) -> Int {
+    max(startupPrebufferFrames, 1)
 }
 
-func playbackResumeThresholdFrames(steadyPrebufferFrames: Int, minTrackBufferFrames: Int) -> Int {
-    max(steadyPrebufferFrames, max(minTrackBufferFrames / 2, 1))
+func playbackResumeThresholdFrames(steadyPrebufferFrames: Int) -> Int {
+    max(steadyPrebufferFrames, 1)
 }
 
 private struct QueuedPcmFrame {
@@ -274,12 +274,10 @@ final class PcmPlayer {
         }
 
         let startThresholdFrames = playbackStartThresholdFrames(
-            startupPrebufferFrames: startupPrebufferFrames,
-            minTrackBufferFrames: minTrackBufferFrames
+            startupPrebufferFrames: startupPrebufferFrames
         )
         let resumeThresholdFrames = playbackResumeThresholdFrames(
-            steadyPrebufferFrames: steadyPrebufferFrames,
-            minTrackBufferFrames: minTrackBufferFrames
+            steadyPrebufferFrames: steadyPrebufferFrames
         )
 
         if !playbackStarted && scheduledFrames >= startThresholdFrames {
@@ -401,12 +399,10 @@ final class PcmPlayer {
                 startupTargetFrames: startupPrebufferFrames,
                 targetPrebufferFrames: playbackStarted
                     ? playbackResumeThresholdFrames(
-                        steadyPrebufferFrames: steadyPrebufferFrames,
-                        minTrackBufferFrames: minTrackBufferFrames
+                        steadyPrebufferFrames: steadyPrebufferFrames
                     )
                     : playbackStartThresholdFrames(
-                        startupPrebufferFrames: startupPrebufferFrames,
-                        minTrackBufferFrames: minTrackBufferFrames
+                        startupPrebufferFrames: startupPrebufferFrames
                     ),
                 maxQueueFrames: maxQueueFrames,
                 queueDepthFrames: pendingFrames.count + scheduledFrames,

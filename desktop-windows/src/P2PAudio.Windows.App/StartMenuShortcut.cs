@@ -232,7 +232,7 @@ internal static class StartMenuShortcut
             TargetPath: powerShellPath,
             WorkingDirectory: workingDirectory,
             IconLocation: $"{normalizedCurrentExecutablePath},0",
-            Arguments: $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{normalizedLauncherScriptPath}\"",
+            Arguments: $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{normalizedLauncherScriptPath}\" -AppPath \"{normalizedCurrentExecutablePath}\"",
             Description: AppName
         );
     }

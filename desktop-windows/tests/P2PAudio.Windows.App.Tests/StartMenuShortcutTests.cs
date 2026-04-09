@@ -254,7 +254,7 @@ public sealed class StartMenuShortcutTests
             Assert.Equal(Path.GetDirectoryName(normalizedLauncherScriptPath), definition.WorkingDirectory);
             Assert.Equal($"{normalizedExecutablePath},0", definition.IconLocation);
             Assert.Equal(
-                $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{normalizedLauncherScriptPath}\"",
+                $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{normalizedLauncherScriptPath}\" -AppPath \"{normalizedExecutablePath}\"",
                 definition.Arguments);
             Assert.Equal("P2PAudio", definition.Description);
         }

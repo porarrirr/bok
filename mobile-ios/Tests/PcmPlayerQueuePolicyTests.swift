@@ -32,14 +32,14 @@ final class PcmPlayerQueuePolicyTests: XCTestCase {
         XCTAssertEqual(pendingSequenceNumbers, [5, 6])
     }
 
-    func testPlaybackStartThresholdUsesMinimumTrackWarmup() {
+    func testPlaybackThresholdsUseConfiguredPrebufferFramesOnIOS() {
         XCTAssertEqual(
-            playbackStartThresholdFrames(startupPrebufferFrames: 4, minTrackBufferFrames: 12),
-            12
+            playbackStartThresholdFrames(startupPrebufferFrames: 4),
+            4
         )
         XCTAssertEqual(
-            playbackResumeThresholdFrames(steadyPrebufferFrames: 4, minTrackBufferFrames: 12),
-            6
+            playbackResumeThresholdFrames(steadyPrebufferFrames: 4),
+            4
         )
     }
 }
