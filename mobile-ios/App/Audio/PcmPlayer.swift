@@ -29,11 +29,11 @@ func trimOverflowFramesForRealtimePlayback(
     )
 }
 
-func playbackStartThresholdFrames(startupPrebufferFrames: Int) -> Int {
+func playbackStartThresholdFrames(startupPrebufferFrames _: Int) -> Int {
     1
 }
 
-func playbackResumeThresholdFrames(steadyPrebufferFrames: Int) -> Int {
+func playbackResumeThresholdFrames(steadyPrebufferFrames _: Int) -> Int {
     1
 }
 
@@ -74,6 +74,7 @@ final class PcmPlayer {
     private var currentChannels = 0
     private var currentBitsPerSample = 0
     private var currentFrameSamplesPerChannel = 0
+    private var lastQueueStateLogDecodedPackets: Int64 = 0
 
     init(
         source: AudioStreamSource,
@@ -120,10 +121,28 @@ final class PcmPlayer {
 
         if let expectedSequence, frame.sequence < expectedSequence {
             staleFrameDrops += 1
+            log(
+                .warning,
+                "Dropped stale PCM frame",
+                metadata: [
+                    "source": source.rawValue,
+                    "sequence": String(frame.sequence),
+                    "expectedSequence": String(expectedSequence),
+                    "staleFrameDrops": String(staleFrameDrops)
+                ]
+            )
             publishDiagnosticsUnsafe()
             return
         }
         if pendingFrames.contains(where: { $0.frame.sequence == frame.sequence }) {
+            log(
+                .debug,
+                "Dropped duplicate PCM frame",
+                metadata: [
+                    "source": source.rawValue,
+                    "sequence": String(frame.sequence)
+                ]
+            )
             return
         }
 
@@ -160,6 +179,22 @@ final class PcmPlayer {
                     "droppedFrames": String(trimResult.droppedFrameCount),
                     "scheduledFrames": String(scheduledFrames),
                     "queueDepth": String(pendingFrames.count)
+                ]
+            )
+        }
+
+        if decodedPackets == 1 || decodedPackets - lastQueueStateLogDecodedPackets >= 50 {
+            lastQueueStateLogDecodedPackets = decodedPackets
+            log(
+                .debug,
+                "PCM frame queued for playback",
+                metadata: [
+                    "source": source.rawValue,
+                    "sequence": String(frame.sequence),
+                    "pendingFrames": String(pendingFrames.count),
+                    "scheduledFrames": String(scheduledFrames),
+                    "decodedPackets": String(decodedPackets),
+                    "playbackStarted": String(playbackStarted)
                 ]
             )
         }
@@ -242,11 +277,33 @@ final class PcmPlayer {
     private func drainQueueUnsafe(format: AVAudioFormat) {
         while let next = nextFrameToScheduleUnsafe(), scheduledFrames < maxQueueFrames {
             guard let buffer = makeBuffer(frame: next.frame, format: format) else {
+                log(
+                    .warning,
+                    "Failed to create PCM buffer for playback",
+                    metadata: [
+                        "source": source.rawValue,
+                        "sequence": String(next.frame.sequence),
+                        "pcmBytes": String(next.frame.pcmData.count),
+                        "frameSamplesPerChannel": String(next.frame.frameSamplesPerChannel)
+                    ]
+                )
                 continue
             }
 
             let scheduledGeneration = generation
             scheduledFrames += 1
+            if scheduledFrames == 1 || scheduledFrames % 50 == 0 {
+                log(
+                    .debug,
+                    "Scheduled PCM buffer for playback",
+                    metadata: [
+                        "source": source.rawValue,
+                        "sequence": String(next.frame.sequence),
+                        "scheduledFrames": String(scheduledFrames),
+                        "pendingFrames": String(pendingFrames.count)
+                    ]
+                )
+            }
             playerNode.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
                 self?.queue.async { [weak self] in
                     guard let self, self.generation == scheduledGeneration else {
@@ -380,6 +437,7 @@ final class PcmPlayer {
         currentChannels = 0
         currentBitsPerSample = 0
         currentFrameSamplesPerChannel = 0
+        lastQueueStateLogDecodedPackets = 0
         if notifyDiagnostics {
             diagnosticsHandler(AudioStreamDiagnostics())
         }

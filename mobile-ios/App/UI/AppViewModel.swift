@@ -116,6 +116,11 @@ final class AppViewModel: ObservableObject {
             Task { @MainActor [weak self] in
                 self?.connectionDiagnostics = diagnostics
             }
+        },
+        logHandler: { [weak self] level, category, message, metadata in
+            Task { @MainActor [weak self] in
+                self?.log(level, category, message, metadata: metadata)
+            }
         }
     )
 

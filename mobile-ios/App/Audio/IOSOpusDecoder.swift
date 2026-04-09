@@ -10,12 +10,21 @@ private struct ConverterInputContext {
 }
 
 final class IOSOpusDecoder {
+    typealias LogHandler = (AppLogLevel, String, String, [String: String]) -> Void
+
     private let frameListener: (PcmFrame, UInt64) -> Void
+    private let logHandler: LogHandler?
     private var converter: AudioConverterRef?
     private var formatKey: String?
+    private var decodedPacketCount = 0
+    private var zeroOutputPacketCount = 0
 
-    init(frameListener: @escaping (PcmFrame, UInt64) -> Void) {
+    init(
+        frameListener: @escaping (PcmFrame, UInt64) -> Void,
+        logHandler: LogHandler? = nil
+    ) {
         self.frameListener = frameListener
+        self.logHandler = logHandler
     }
 
     deinit {
@@ -74,6 +83,17 @@ final class IOSOpusDecoder {
         }
 
         guard status == noErr else {
+            log(
+                .error,
+                "Opus decode failed",
+                metadata: [
+                    "sequence": String(packet.sequence),
+                    "status": String(status),
+                    "sampleRate": String(packet.sampleRate),
+                    "channels": String(packet.channels),
+                    "frameSamplesPerChannel": String(packet.frameSamplesPerChannel)
+                ]
+            )
             throw SessionFailure(
                 code: .webrtcNegotiationFailed,
                 message: L10n.tr("error.opus_decoder_unavailable")
@@ -81,12 +101,35 @@ final class IOSOpusDecoder {
         }
 
         if producedByteCount <= 0 {
+            zeroOutputPacketCount += 1
+            log(
+                .warning,
+                "Opus decoder produced no PCM bytes",
+                metadata: [
+                    "sequence": String(packet.sequence),
+                    "zeroOutputPackets": String(zeroOutputPacketCount),
+                    "opusPayloadBytes": String(packet.opusPayload.count)
+                ]
+            )
             return
         }
 
         pcmData.count = producedByteCount
         let bytesPerSampleFrame = max(packet.channels * 2, 1)
         let frameSamplesPerChannel = producedByteCount / bytesPerSampleFrame
+        decodedPacketCount += 1
+        if decodedPacketCount == 1 || decodedPacketCount % 50 == 0 {
+            log(
+                .debug,
+                "Opus packet decoded to PCM",
+                metadata: [
+                    "sequence": String(packet.sequence),
+                    "decodedPackets": String(decodedPacketCount),
+                    "producedBytes": String(producedByteCount),
+                    "frameSamplesPerChannel": String(frameSamplesPerChannel)
+                ]
+            )
+        }
         frameListener(
             PcmFrame(
                 sequence: packet.sequence,
@@ -107,6 +150,8 @@ final class IOSOpusDecoder {
         }
         converter = nil
         formatKey = nil
+        decodedPacketCount = 0
+        zeroOutputPacketCount = 0
     }
 
     private func ensureConverter(for packet: UdpOpusPacket) throws {
@@ -143,6 +188,16 @@ final class IOSOpusDecoder {
         var newConverter: AudioConverterRef?
         let status = AudioConverterNew(&inputDescription, &outputDescription, &newConverter)
         guard status == noErr, let newConverter else {
+            log(
+                .error,
+                "Failed to create Opus audio converter",
+                metadata: [
+                    "status": String(status),
+                    "sampleRate": String(packet.sampleRate),
+                    "channels": String(packet.channels),
+                    "frameSamplesPerChannel": String(packet.frameSamplesPerChannel)
+                ]
+            )
             throw SessionFailure(
                 code: .webrtcNegotiationFailed,
                 message: L10n.tr("error.opus_decoder_unavailable")
@@ -162,6 +217,15 @@ final class IOSOpusDecoder {
             )
         }
         guard cookieStatus == noErr else {
+            log(
+                .error,
+                "Failed to configure Opus magic cookie",
+                metadata: [
+                    "status": String(cookieStatus),
+                    "sampleRate": String(packet.sampleRate),
+                    "channels": String(packet.channels)
+                ]
+            )
             AudioConverterDispose(newConverter)
             throw SessionFailure(
                 code: .webrtcNegotiationFailed,
@@ -171,6 +235,15 @@ final class IOSOpusDecoder {
 
         converter = newConverter
         formatKey = nextKey
+        log(
+            .info,
+            "Prepared Opus decoder converter",
+            metadata: [
+                "sampleRate": String(packet.sampleRate),
+                "channels": String(packet.channels),
+                "frameSamplesPerChannel": String(packet.frameSamplesPerChannel)
+            ]
+        )
     }
 
     private func makeOpusMagicCookie(sampleRate: Int, channels: Int) -> Data {
@@ -218,6 +291,14 @@ final class IOSOpusDecoder {
             }
         }
         return noErr
+    }
+
+    private func log(
+        _ level: AppLogLevel,
+        _ message: String,
+        metadata: [String: String] = [:]
+    ) {
+        logHandler?(level, "IOSOpusDecoder", message, metadata)
     }
 }
 

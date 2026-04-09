@@ -9,6 +9,7 @@ private struct QueuedRealtimeDecodePacket {
 final class UdpOpusListenerTransport {
     typealias StateHandler = (AudioStreamState, String?) -> Void
     typealias DiagnosticsHandler = (ConnectionDiagnostics) -> Void
+    typealias LogHandler = (AppLogLevel, String, String, [String: String]) -> Void
 
     static let udpPort = 49_152
     static let maxOpusPayloadBytes = 1_500
@@ -18,6 +19,7 @@ final class UdpOpusListenerTransport {
     private let stateHandler: StateHandler
     private let pcmFrameHandler: (PcmFrame, UInt64) -> Void
     private let diagnosticsHandler: DiagnosticsHandler
+    private let logHandler: LogHandler?
     private let receiveQueue = DispatchQueue(label: "com.example.p2paudio.udp-receive", qos: .userInitiated)
     private let decodeQueue = DispatchQueue(label: "com.example.p2paudio.udp-decode", qos: .userInitiated)
     private let decodeCondition = NSCondition()
@@ -28,16 +30,22 @@ final class UdpOpusListenerTransport {
     private var socketFileDescriptor: Int32 = -1
     private var isRunning = false
     private var streamingStarted = false
+    private var receivedPacketCount = 0
+    private var decodeDequeuedPacketCount = 0
+    private var droppedDecodeQueuePacketCount = 0
+    private var lastReceivedSequence: Int?
 
     init(
         stateHandler: @escaping StateHandler,
         pcmFrameHandler: @escaping (PcmFrame, UInt64) -> Void,
-        diagnosticsHandler: @escaping DiagnosticsHandler = { _ in }
+        diagnosticsHandler: @escaping DiagnosticsHandler = { _ in },
+        logHandler: LogHandler? = nil
     ) {
         self.stateHandler = stateHandler
         self.pcmFrameHandler = pcmFrameHandler
         self.diagnosticsHandler = diagnosticsHandler
-        self.decoder = IOSOpusDecoder(frameListener: pcmFrameHandler)
+        self.logHandler = logHandler
+        self.decoder = IOSOpusDecoder(frameListener: pcmFrameHandler, logHandler: logHandler)
     }
 
     func startListening() throws {
@@ -99,6 +107,10 @@ final class UdpOpusListenerTransport {
         socketFileDescriptor = fileDescriptor
         isRunning = true
         streamingStarted = false
+        receivedPacketCount = 0
+        decodeDequeuedPacketCount = 0
+        droppedDecodeQueuePacketCount = 0
+        lastReceivedSequence = nil
         diagnosticsHandler(
             ConnectionDiagnostics(
                 pathType: NetworkPathClassifier.classifyFromLocalInterfaces(),
@@ -106,6 +118,15 @@ final class UdpOpusListenerTransport {
             )
         )
         stateHandler(.connecting, L10n.tr("status.udp_waiting_for_connection"))
+        log(
+            .info,
+            "UDP listener started",
+            metadata: [
+                "port": String(Self.udpPort),
+                "receiveBufferBytes": String(receiveBufferSize),
+                "maxPacketBytes": String(Self.maxPacketBytes)
+            ]
+        )
 
         receiveQueue.async { [weak self] in
             self?.runReceiveLoop()
@@ -136,6 +157,15 @@ final class UdpOpusListenerTransport {
         decoder.close()
         diagnosticsHandler(ConnectionDiagnostics())
         streamingStarted = false
+        log(
+            .info,
+            "UDP listener stopped",
+            metadata: [
+                "receivedPackets": String(receivedPacketCount),
+                "decodedPackets": String(decodeDequeuedPacketCount),
+                "droppedDecodeQueuePackets": String(droppedDecodeQueuePacketCount)
+            ]
+        )
 
         if wasRunning && emitEnded {
             stateHandler(.ended, nil)
@@ -174,7 +204,41 @@ final class UdpOpusListenerTransport {
 
             let packetData = Data(buffer.prefix(Int(bytesRead)))
             guard let packet = UdpOpusPacketCodec.decode(packetData) else {
+                log(
+                    .warning,
+                    "Dropped malformed UDP packet",
+                    metadata: [
+                        "bytesRead": String(bytesRead)
+                    ]
+                )
                 continue
+            }
+
+            receivedPacketCount += 1
+            if let lastReceivedSequence, packet.sequence != lastReceivedSequence + 1 {
+                log(
+                    .warning,
+                    "UDP packet sequence discontinuity detected",
+                    metadata: [
+                        "expectedSequence": String(lastReceivedSequence + 1),
+                        "actualSequence": String(packet.sequence),
+                        "receivedPackets": String(receivedPacketCount)
+                    ]
+                )
+            }
+            lastReceivedSequence = packet.sequence
+            if receivedPacketCount == 1 || receivedPacketCount % 50 == 0 {
+                log(
+                    .debug,
+                    "UDP packet received",
+                    metadata: [
+                        "sequence": String(packet.sequence),
+                        "payloadBytes": String(packet.opusPayload.count),
+                        "frameSamplesPerChannel": String(packet.frameSamplesPerChannel),
+                        "decodeQueueDepth": String(currentDecodeQueueDepth()),
+                        "receivedPackets": String(receivedPacketCount)
+                    ]
+                )
             }
 
             if !streamingStarted {
@@ -196,11 +260,40 @@ final class UdpOpusListenerTransport {
             }
 
             do {
+                decodeDequeuedPacketCount += 1
+                if decodeDequeuedPacketCount == 1 || decodeDequeuedPacketCount % 50 == 0 {
+                    log(
+                        .debug,
+                        "UDP packet dequeued for decode",
+                        metadata: [
+                            "sequence": String(nextPacket.packet.sequence),
+                            "decodeQueueDepth": String(currentDecodeQueueDepth()),
+                            "dequeuedPackets": String(decodeDequeuedPacketCount)
+                        ]
+                    )
+                }
                 try decoder.decode(nextPacket.packet, arrivalRealtimeMs: nextPacket.arrivalRealtimeMs)
             } catch let failure as SessionFailure {
+                log(
+                    .error,
+                    "UDP decode failed with session failure",
+                    metadata: [
+                        "sequence": String(nextPacket.packet.sequence),
+                        "failureCode": failure.code.rawValue,
+                        "reason": failure.message
+                    ]
+                )
                 fail(failure)
                 return
             } catch {
+                log(
+                    .error,
+                    "UDP decode failed with unexpected error",
+                    metadata: [
+                        "sequence": String(nextPacket.packet.sequence),
+                        "reason": error.localizedDescription
+                    ]
+                )
                 fail(
                     SessionFailure(
                         code: .peerUnreachable,
@@ -225,6 +318,15 @@ final class UdpOpusListenerTransport {
 
         while pendingDecodePackets.count >= Self.maxDecodeQueuePackets {
             pendingDecodePackets.removeFirst()
+            droppedDecodeQueuePacketCount += 1
+            log(
+                .warning,
+                "Dropped queued UDP packet before decode",
+                metadata: [
+                    "maxDecodeQueuePackets": String(Self.maxDecodeQueuePackets),
+                    "droppedDecodeQueuePackets": String(droppedDecodeQueuePacketCount)
+                ]
+            )
         }
 
         pendingDecodePackets.append(
@@ -257,6 +359,16 @@ final class UdpOpusListenerTransport {
     }
 
     private func fail(_ failure: SessionFailure) {
+        log(
+            .error,
+            "UDP listener failed",
+            metadata: [
+                "failureCode": failure.code.rawValue,
+                "reason": failure.message,
+                "receivedPackets": String(receivedPacketCount),
+                "decodedPackets": String(decodeDequeuedPacketCount)
+            ]
+        )
         diagnosticsHandler(
             ConnectionDiagnostics(
                 pathType: NetworkPathClassifier.classifyFromLocalInterfaces(),
@@ -278,5 +390,19 @@ final class UdpOpusListenerTransport {
         lifecycleLock.lock()
         defer { lifecycleLock.unlock() }
         return isRunning
+    }
+
+    private func currentDecodeQueueDepth() -> Int {
+        decodeCondition.lock()
+        defer { decodeCondition.unlock() }
+        return pendingDecodePackets.count
+    }
+
+    private func log(
+        _ level: AppLogLevel,
+        _ message: String,
+        metadata: [String: String] = [:]
+    ) {
+        logHandler?(level, "UdpOpus", message, metadata)
     }
 }
